@@ -1,0 +1,121 @@
+# ==============================================================================
+# Слой 2 (Глобальное Docker-ядро): Оркестрация контейнеров (docker-compose.yml)
+# Разворачивает изолированный стек из 3 сервисов:
+# 1. mcp-coop-core     — ASGI-сервер (FastAPI + FastMCP + DecisionEngine + Harness²)
+# 2. mcp-coop-postgres — PostgreSQL 16 + pgvector + pg_trgm (память и компоненты)
+# 3. mcp-coop-redis    — Redis 7 Alpine (оперативный кэш сессий и анти-зацикливание)
+# ==============================================================================
+
+name: mcp-coop-agentic-factory
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Центральное аналитическое ядро и MCP-сервер (Python 3.12 Slim)
+  # ----------------------------------------------------------------------------
+  mcp-coop-core:
+    build:
+      # Контекстом сборки выступает корень репозитория, чтобы иметь доступ к pyproject.toml и src/core
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: mcp-coop-core:latest
+    container_name: mcp-coop-core
+    restart: unless-stopped
+    ports:
+      # КРИТИЧНО ДЛЯ БЕЗОПАСНОСТИ: биндим порт строго на loopback-интерфейс (127.0.0.1),
+      # чтобы локальный шлюз хуков и MCP-сервер не были доступны из внешней локальной сети
+      - "127.0.0.1:8787:8787"
+    environment:
+      # Строки подключения к PostgreSQL и Redis внутри изолированной bridge-сети Docker
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://mcp_coop:mcp_coop_secret@mcp-coop-postgres:5432/mcp_coop}
+      POSTGRES_DSN: ${POSTGRES_DSN:-postgresql://mcp_coop:mcp_coop_secret@mcp-coop-postgres:5432/mcp_coop}
+      REDIS_URL: ${REDIS_URL:-redis://mcp-coop-redis:6379/0}
+      # Настройки HTTP-сервера ядра
+      HOST: "0.0.0.0"
+      PORT: "8787"
+      # Опциональные ключи внешних тонких HTTP-клиентов (Tier 2 Decisions API и EmbeddingGemma 2).
+      # Если ключи не заданы, ядро работает со 100% автономностью на детерминированных правилах и FTS
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_DECISIONS_API_URL: ${OPENAI_DECISIONS_API_URL:-https://api.openai.com/v1/decisions}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+    depends_on:
+      # Гарантируем запуск Python-ядра только после полной готовности БД и кэша принимать соединения,
+      # исключая ошибки ConnectionRefusedError при накатке миграций и инициализации пула на старте
+      mcp-coop-postgres:
+        condition: service_healthy
+      mcp-coop-redis:
+        condition: service_healthy
+    healthcheck:
+      # Проверяем доступность эндпоинта /health встроенным клиентом urllib.request
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - mcp-coop-net
+
+  # ----------------------------------------------------------------------------
+  # 2. Персистентное хранилище знаний, компонентов Harness² и векторов (pgvector)
+  # ----------------------------------------------------------------------------
+  mcp-coop-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: mcp-coop-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mcp_coop}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcp_coop_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-mcp_coop}
+    ports:
+      # Привязка к 127.0.0.1 позволяет безопасно подключаться к БД с хоста для отладки/инспекции
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Именованный том сохраняет таблицы проектов, скилов и векторной памяти при пересборке контейнеров
+      - mcp_coop_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Нативная утилита pg_isready проверяет, что сервер PostgreSQL завершил инициализацию WAL и принимает запросы
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-mcp_coop} -d $${POSTGRES_DB:-mcp_coop}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - mcp-coop-net
+
+  # ----------------------------------------------------------------------------
+  # 3. Оперативная память активных сессий и счётчиков ошибок (Redis 7 Alpine)
+  # ----------------------------------------------------------------------------
+  mcp-coop-redis:
+    image: redis:7-alpine
+    container_name: mcp-coop-redis
+    restart: unless-stopped
+    # Включаем AOF-персистентность (appendonly), чтобы контекст активных сессий и счётчики сбоев
+    # сохранялись даже при перезапуске контейнера или Docker Desktop
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - mcp_coop_redisdata:/data
+    healthcheck:
+      # Проверяем мгновенный отклик движка Redis командой PING -> PONG
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - mcp-coop-net
+
+# Именованные тома под управлением Docker для сохранности данных между перезапусками
+volumes:
+  mcp_coop_pgdata:
+    name: mcp_coop_pgdata
+  mcp_coop_redisdata:
+    name: mcp_coop_redisdata
+
+# Выделенная внутренняя сеть для изоляции трафика между Python-ядром, PostgreSQL и Redis
+networks:
+  mcp-coop-net:
+    name: mcp-coop-net
+    driver: bridge
