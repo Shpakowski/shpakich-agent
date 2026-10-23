@@ -1,4 +1,4 @@
-# 🏭 mcp-coop-agentic-factories
+# 🏭 mcp-coop-agentic-factory
 
 **Автономный самообучающийся ИИ-харнес («Фабрика агентов»)** — глобальный центр управления знаниями, правилами и скилами для нативных ИИ-агентов (**Antigravity**, **Claude Code**, **Cursor**).
 
@@ -11,13 +11,13 @@
 Перейдите в любую папку вашего проекта и выполните:
 
 ```bash
-bunx mcp-coop-agentic-factories init
+bunx mcp-coop-agentic-factory init
 ```
 
 **Что произойдёт автоматически:**
 1. Поднимется глобальное изолированное Docker-ядро в `~/.mcp-coop/` (если ещё не запущено).
 2. Определится технологический стек проекта (`typescript`, `bun`, `python`, `docker` и т.д.).
-3. Сгенерируется нативный плагин `.agents/plugins/mcp-coop-agentic-factories/` с правилами (`AGENTS.md`), скилами (`SKILL.md`), MCP-подключением (`mcp_config.json`) и жизненными хуками (`hooks.json`).
+3. Сгенерируется нативный плагин `.agents/plugins/mcp-coop-agentic-factory/` с правилами (`AGENTS.md`), скилами (`SKILL.md`), MCP-подключением (`mcp_config.json`) и жизненными хуками (`hooks.json`).
 4. Развернётся локальный граф контекста `.context/` (`Graph-as-Code`: `schema.md` + `index.md`) с тройным контуром контроля актуальности.
 
 ---
@@ -55,10 +55,10 @@ flowchart LR
 ## 💻 Команды CLI
 
 ```bash
-bunx mcp-coop-agentic-factories init     # Инициализировать харнес и плагин в текущем проекте
-bunx mcp-coop-agentic-factories sync     # Принудительно подтянуть свежие правила и скилы из ядра
-bunx mcp-coop-agentic-factories status   # Проверить статус Docker-ядра, БД и количество правил/скилов
-bunx mcp-coop-agentic-factories down     # Остановить глобальное Docker-ядро
+bunx mcp-coop-agentic-factory init     # Инициализировать харнес и плагин в текущем проекте
+bunx mcp-coop-agentic-factory sync     # Принудительно подтянуть свежие правила и скилы из ядра
+bunx mcp-coop-agentic-factory status   # Проверить статус Docker-ядра, БД и количество правил/скилов
+bunx mcp-coop-agentic-factory down     # Остановить глобальное Docker-ядро
 ```
 
 ---

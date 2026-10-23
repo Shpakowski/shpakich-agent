@@ -70,7 +70,7 @@ def main() -> None:
     try:
         raw_input = sys.stdin.read().strip()
         payload = json.loads(raw_input) if raw_input else {}
-    except Exception:
+    except (OSError, json.JSONDecodeError, ValueError):
         payload = {}
 
     # 2. Находим карту графа `.context/index.md` в корне рабочего пространства
@@ -85,7 +85,7 @@ def main() -> None:
 
     try:
         index_content = index_path.read_text(encoding="utf-8")
-    except Exception as exc:
+    except OSError as exc:
         response = build_warning_response(f"read error: {exc}")
         print(json.dumps(response, ensure_ascii=False))
         return

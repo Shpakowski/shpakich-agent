@@ -27,4 +27,5 @@ governed_by: []
 ## Логи контекста (AI Traces)
 - 2026-10-24: Реализованы и подключены через `.agents/hooks.json` 3 локальных Python-скрипта контроля `.context/`.
 - 2026-10-24: В `inject_context_map.py` и `enforce_context_sync.py` все строковые литералы в коде переведены на английский с защитой от Language Drift (ответ пользователю на его языке), комментарии сохранены на русском.
+- 2026-10-24: Уточнён перехват исключений (`OSError`, `json.JSONDecodeError`, `ValueError` вместо слепого `Exception`) для прохождения строгих проверок `pyright` и `ruff`.
 

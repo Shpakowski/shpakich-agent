@@ -1,4 +1,4 @@
-# Техническая спецификация (SPEC): `mcp-coop-agentic-factories`
+# Техническая спецификация (SPEC): `mcp-coop-agentic-factory`
 
 > **Статус документа:** Draft v1.0 (Spec-Driven Development)  
 > **Назначение:** Единый источник истины (Single Source of Truth) перед этапом планирования и написания кода.
@@ -7,11 +7,11 @@
 
 ## 1. Суть и концепция системы
 
-**`mcp-coop-agentic-factories`** — автономный, самообучающийся инфраструктурный слой («Фабрика агентов») для ИИ-ассистированной инженерии.  
+**`mcp-coop-agentic-factory`** — автономный, самообучающийся инфраструктурный слой («Фабрика агентов») для ИИ-ассистированной инженерии.  
 Система работает как изолированный глобальный центр управления знаниями и качеством разработки, который перехватывает, координирует и эволюционирует поведение нативных ИИ-агентов (**Antigravity** в первой версии, с архитектурным расширением под **Claude Code** и **Cursor**) в любом локальном проекте разработчика.
 
 ### Ключевая парадигма
-1. **Хост-машина остаётся абсолютно чистой:** На хосте запускается только легковесный CLI-инжектор на **Bun** (`bunx mcp-coop-agentic-factories init`), который не тянет за собой ни баз данных, ни ML-библиотек.
+1. **Хост-машина остаётся абсолютно чистой:** На хосте запускается только легковесный CLI-инжектор на **Bun** (`bunx mcp-coop-agentic-factory init`), который не тянет за собой ни баз данных, ни ML-библиотек.
 2. **Вся аналитика и память — в глобальном Docker-стеке:** Постоянно работающее в фоне ядро на **Python (`FastAPI` + `FastMCP`) + PostgreSQL (`pgvector` + FTS) + Redis** обслуживает сразу все локальные проекты разработчика.
 3. **Эволюция без переобучения весов (`Harness²`):** Вместо модификации весов LLM система оптимизирует **харнес** (окружение вокруг агента) по методологии **Google Research `Harness²`** через цикл **Propose → Probe → Compose**, разделяя накопленный опыт на **инвариантный** (`invariant`, глобальный для всех проектов) и **доменно-специфичный** (`domain-specific`, по тегам технологического стека).
 
@@ -22,8 +22,8 @@
 ```mermaid
 flowchart TB
     subgraph Host["Хост-машина разработчика (Любая папка проекта)"]
-        CLI["Слой 1: Bun CLI Инжектор\nbunx mcp-coop-agentic-factories init"]
-        Plugin[".agents/plugins/mcp-coop-agentic-factories/\n├── plugin.json\n├── mcp_config.json\n├── hooks.json\n├── rules/AGENTS.md\n└── skills/<name>/SKILL.md"]
+        CLI["Слой 1: Bun CLI Инжектор\nbunx mcp-coop-agentic-factory init"]
+        Plugin[".agents/plugins/mcp-coop-agentic-factory/\n├── plugin.json\n├── mcp_config.json\n├── hooks.json\n├── rules/AGENTS.md\n└── skills/<name>/SKILL.md"]
         NativeAgent["Нативный ИИ-агент\n(Antigravity / Claude Code / Cursor)"]
     end
 
@@ -59,7 +59,7 @@ flowchart TB
 ### 3.1. Слой 1: Слой инициализации и CLI-триггер (Хостовый пакет на Bun)
 
 * **Среда выполнения:** Bun (TypeScript).
-* **Точка входа:** `bunx mcp-coop-agentic-factories <command>`.
+* **Точка входа:** `bunx mcp-coop-agentic-factory <command>`.
 * **Команды CLI:**
   1. `init [--agent antigravity|claude|cursor]` — инициализация харнеса в текущей рабочей директории:
      - Проверяет доступность глобального Docker-ядра (`GET http://127.0.0.1:8787/health`).
@@ -78,11 +78,11 @@ flowchart TB
   5. `down` — корректная остановка глобального Docker-стека.
 
 #### Спецификация генерируемого плагина для Antigravity
-В целевом проекте создаётся директория `.agents/plugins/mcp-coop-agentic-factories/`:
+В целевом проекте создаётся директория `.agents/plugins/mcp-coop-agentic-factory/`:
 
 ```text
-.agents/plugins/mcp-coop-agentic-factories/
-├── plugin.json                # Манифест плагина: { "name": "mcp-coop-agentic-factories" }
+.agents/plugins/mcp-coop-agentic-factory/
+├── plugin.json                # Манифест плагина: { "name": "mcp-coop-agentic-factory" }
 ├── mcp_config.json            # Подключение к локальному Python MCP-серверу в Docker
 ├── hooks.json                 # Перехват всех фаз жизненного цикла агента
 ├── rules/
@@ -135,7 +135,7 @@ flowchart TB
      - Инициализирует ключ сессии в Redis (`session:{conversationId}`).
    - **Выход:**
      - Поле `injectSteps`: инжектит стартовый `systemMessage` с кратким резюме активных инвариантных правил и доступных MCP-инструментов фабрики.
-     - Внутреннее поле для CLI-моста (`_syncFiles`): передаёт новые/обновлённые файлы `rules/AGENTS.md` и `skills/*/SKILL.md`, которые CLI-мост мгновенно сохраняет в `.agents/plugins/mcp-coop-agentic-factories/` до первого шага агента.
+     - Внутреннее поле для CLI-моста (`_syncFiles`): передаёт новые/обновлённые файлы `rules/AGENTS.md` и `skills/*/SKILL.md`, которые CLI-мост мгновенно сохраняет в `.agents/plugins/mcp-coop-agentic-factory/` до первого шага агента.
 
 2. **`PreToolUse` (`POST /api/hooks/pre-tool-use`)**:
    - **Вход:** `conversationId`, `stepIdx`, `toolCall: { name, args }`.
@@ -216,7 +216,7 @@ flowchart TB
    - При последующих срабатываниях кандидата ядро отслеживает метрику успешности (`success_count` vs `failure_count` в сессиях, где этот кандидат был применён).
    - При наличии ключа `OPENAI_API_KEY` вызывается **OpenAI Decisions API (`Score` + `Predicate`)** для оценки качества предложенного правила/скила по инженерной рубрике (ясность, отсутствие конфликтов, переиспользуемость).
 3. **Compose (Включение в базовый харнес):**
-   - Валидированные правки получают статус `status = 'composed'`, увеличивают глобальную версию харнеса и автоматически раскатываются во все подходящие проекты при следующем `SessionStart` или `bunx mcp-coop-agentic-factories sync`.
+   - Валидированные правки получают статус `status = 'composed'`, увеличивают глобальную версию харнеса и автоматически раскатываются во все подходящие проекты при следующем `SessionStart` или `bunx mcp-coop-agentic-factory sync`.
 
 ---
 
@@ -369,12 +369,12 @@ MCP-сервер поднимается внутри контейнера `mcp-c
 
 ## 7. Критерии приёмки (Acceptance Criteria)
 
-1. **Запуск одной командой:** Вызов `bunx mcp-coop-agentic-factories init` (или локально `bun run src/cli/index.ts init`) в любой папке проекта автоматически проверяет/поднимает Docker-стек (`mcp-coop-core`, `mcp-coop-postgres`, `mcp-coop-redis`), определяет стек папки и генерирует рабочую директорию `.agents/plugins/mcp-coop-agentic-factories/`.
+1. **Запуск одной командой:** Вызов `bunx mcp-coop-agentic-factory init` (или локально `bun run src/cli/index.ts init`) в любой папке проекта автоматически проверяет/поднимает Docker-стек (`mcp-coop-core`, `mcp-coop-postgres`, `mcp-coop-redis`), определяет стек папки и генерирует рабочую директорию `.agents/plugins/mcp-coop-agentic-factory/`.
 2. **Чистая хост-машина и лёгкий Docker:** Все аналитические процессы, БД и Python MCP-сервер изолированы внутри Docker Compose; образ Python-ядра не содержит тяжёлых локальных ML-фреймворков и потребляет минимум памяти (~50–70 МБ RAM).
 3. **Рабочий контур перехвата (Шлюз контекста):**
    - `PreToolUse` реально блокирует опасные команды (`decision: "deny"`) и перезаписывает команды пакетного менеджера через `overwrite` (например, `npm` -> `bun` в Bun-проекте).
    - При повторном падении команды `PostToolUse` + `PreInvocation` перехватывают ошибку в Redis, находят решение в `memories` и инжектят подсказку через `ephemeralMessage`, а при 2+ повторах одной и той же сломанной команды `PreToolUse` блокирует зацикливание.
 4. **Кросс-проектная эволюция (`Harness²` в действии):**
    - Скил или правило, добавленные через MCP-сервер в Проекте А, сохраняются в глобальной БД.
-   - При срабатывании хука `SessionStart` (или `sync`) в Проекте Б с совместимым стеком новые файлы `SKILL.md` и обновлённый `rules/AGENTS.md` автоматически появляются на диске в `.agents/plugins/mcp-coop-agentic-factories/`.
+   - При срабатывании хука `SessionStart` (или `sync`) в Проекте Б с совместимым стеком новые файлы `SKILL.md` и обновлённый `rules/AGENTS.md` автоматически появляются на диске в `.agents/plugins/mcp-coop-agentic-factory/`.
 

@@ -33,8 +33,13 @@ def load_session_state(state_path: Path) -> dict:
     if state_path.is_file():
         try:
             return json.loads(state_path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except (OSError, json.JSONDecodeError, ValueError):
+            return {
+                "code_modified": False,
+                "context_updated": False,
+                "reminder_sent": False,
+                "modified_files": [],
+            }
     return {
         "code_modified": False,
         "context_updated": False,
@@ -47,8 +52,8 @@ def save_session_state(state_path: Path, state: dict) -> None:
     """Сохраняет состояние сессии на диск."""
     try:
         state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        pass
+    except OSError as exc:
+        sys.stderr.write(f"[mcp-coop] Failed to save session state: {exc}\n")
 
 
 def main() -> None:
@@ -56,7 +61,7 @@ def main() -> None:
     try:
         raw_input = sys.stdin.read().strip()
         payload = json.loads(raw_input) if raw_input else {}
-    except Exception:
+    except (OSError, json.JSONDecodeError, ValueError):
         print(json.dumps({"decision": "allow"}))
         return
 
