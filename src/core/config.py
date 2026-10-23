@@ -32,7 +32,7 @@ class CoreSettings(BaseSettings):
 
     # Базовые метаданные сервиса и параметры сетевого биндинга внутри Docker-сети
     app_name: str = Field(
-        default="mcp-coop-core",
+        default="mcp-coop-agentic-factory-core",
         description="Logical service name reported in telemetry and health checks.",
     )
     version: str = Field(
@@ -54,12 +54,12 @@ class CoreSettings(BaseSettings):
 
     # Строки подключения к инфраструктуре хранения (имена хостов соответствуют сервисам в docker-compose.yml)
     postgres_dsn: str = Field(
-        default="postgresql://mcp_coop:mcp_coop_secret@mcp-coop-postgres:5432/mcp_coop",
+        default="postgresql://mcp_coop:mcp_coop_secret@mcp-coop-agentic-factory-postgres:5432/mcp_coop_agentic_factory",
         validation_alias=AliasChoices("MCP_COOP_POSTGRES_DSN", "POSTGRES_DSN", "DATABASE_URL"),
         description="Asyncpg connection DSN for the hybrid vector and full-text memory store.",
     )
     redis_url: str = Field(
-        default="redis://mcp-coop-redis:6379/0",
+        default="redis://mcp-coop-agentic-factory-redis:6379/0",
         validation_alias=AliasChoices("MCP_COOP_REDIS_URL", "REDIS_URL"),
         description="Redis connection URL for event queues, pub/sub, and ephemeral session state.",
     )

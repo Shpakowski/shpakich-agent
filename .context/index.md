@@ -25,7 +25,7 @@ updated_at: "2026-10-24"
 * **[[mod-context-hooks]]** ([`entities/modules/mod-context-hooks.md`](./entities/modules/mod-context-hooks.md)) — Локальные Python-хуки контроля и авто-инъекции графа `.context/` (`inject_context_map.py`, `track_file_changes.py`, `enforce_context_sync.py`).
 * **[[mod-bun-cli]]** ([`entities/modules/mod-bun-cli.md`](./entities/modules/mod-bun-cli.md)) — Каркас кросс-рантаймового CLI-инжектора (`bunx` + `npx`, сборка через `tsc`): `package.json`, `tsconfig.json`, `src/cli/index.ts`.
 * **[[mod-python-core]]** ([`entities/modules/mod-python-core.md`](./entities/modules/mod-python-core.md)) — Каркас глобального Python 3.12 ядра (`FastAPI` + `lifespan` + `CoreSettings` с `AliasChoices`): `pyproject.toml`, `src/core/config.py`, `src/core/main.py`.
-* **[[mod-docker-stack]]** ([`entities/modules/mod-docker-stack.md`](./entities/modules/mod-docker-stack.md)) — Инфраструктурный Docker Compose стек (`mcp-coop-core`, `pgvector:pg16`, `redis:7-alpine`) и правила исключений: `.gitignore`, `.dockerignore`, `docker/Dockerfile`, `docker/docker-compose.yml`.
+* **[[mod-docker-stack]]** ([`entities/modules/mod-docker-stack.md`](./entities/modules/mod-docker-stack.md)) — Инфраструктурный Docker Compose стек (`mcp-coop-agentic-factory-core`, `pgvector:pg16`, `redis:7-alpine`) и правила исключений: `.gitignore`, `.dockerignore`, `docker/Dockerfile`, `docker/docker-compose.yml`.
 
 ## 2. Контракты и интерфейсы (`.context/entities/contracts/`)
 *(Пока пусто — узлы создаются по мере реализации контрактов)*

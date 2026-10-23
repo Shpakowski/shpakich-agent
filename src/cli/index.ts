@@ -47,10 +47,10 @@ Usage:
   ${CLI_NAME} <command> [options]
 
 Commands:
-  init      Initialize ~/.mcp-coop/ global stack and inject workspace hooks (.context/, AGENTS.md)
+  init      Initialize ~/.mcp-coop-agentic-factory/ global stack and inject workspace hooks (.context/, AGENTS.md)
   sync      Synchronize local workspace rules and context graph with the factory seed
   status    Check health status of global Docker containers and local context hooks
-  down      Gracefully stop the global ~/.mcp-coop/ Docker Compose stack
+  down      Gracefully stop the global ~/.mcp-coop-agentic-factory/ Docker Compose stack
   hook      Execute an internal lifecycle hook handler (SessionStart, PostToolUse, Stop)
 
 Options:
@@ -144,7 +144,7 @@ async function dispatchCommand(ctx: ParsedCliContext): Promise<void> {
       break;
     case "down":
       process.stdout.write(
-        `[${CLI_NAME}] Stopping global ~/.mcp-coop/ Docker stack (runtime="${runtime}")...\n`,
+        `[${CLI_NAME}] Stopping global ~/.mcp-coop-agentic-factory/ Docker stack (runtime="${runtime}")...\n`,
       );
       break;
     case "hook": {

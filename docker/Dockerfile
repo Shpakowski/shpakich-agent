@@ -1,5 +1,5 @@
 # ==============================================================================
-# Слой 2 (Глобальное Docker-ядро): Dockerfile для сервиса mcp-coop-core
+# Слой 2 (Глобальное Docker-ядро): Dockerfile для сервиса mcp-coop-agentic-factory-core
 # Собирает легковесный контейнер на базе Python 3.12 Slim с единым ASGI-сервером
 # (FastAPI + FastMCP + Uvicorn) без тяжёлых локальных ML-фреймворков.
 # ==============================================================================
@@ -10,9 +10,9 @@
 FROM python:3.12-slim
 
 # Метаданные образа по стандарту OCI для идентификации компонента фабрики
-LABEL org.opencontainers.image.title="mcp-coop-core" \
+LABEL org.opencontainers.image.title="mcp-coop-agentic-factory-core" \
       org.opencontainers.image.description="Global FastAPI + FastMCP Core for mcp-coop-agentic-factory" \
-      org.opencontainers.image.vendor="MCP-COOP-DAO"
+      org.opencontainers.image.vendor="MCP-COOP"
 
 # Настраиваем переменные окружения рантайма Python и пакетного менеджера pip:
 # - PYTHONDONTWRITEBYTECODE=1: запрещает запись .pyc файлов на диск контейнера

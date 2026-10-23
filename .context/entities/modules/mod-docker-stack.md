@@ -23,16 +23,17 @@ governed_by: []
 ## Архитектурная роль и состав модуля
 
 1. **`.gitignore`**: защищает репозиторий от попадания секретов (`.env`), артефактов сборки Bun/TypeScript (`node_modules/`, `dist/`) и кэшей Python (`__pycache__/`, `.venv/`, `.pytest_cache/`).
-2. **`.dockerignore`**: минимизирует контекст сборки образа `mcp-coop-core`, отсекая хостовый CLI (`src/cli`, `node_modules`), историю `.git`, локальные хуки `.agents` и документацию `*.md` (с сохранением `!README.md` для корректной сборки пакета из `pyproject.toml`).
+2. **`.dockerignore`**: минимизирует контекст сборки образа `mcp-coop-agentic-factory-core`, отсекая хостовый CLI (`src/cli`, `node_modules`), историю `.git`, локальные хуки `.agents` и документацию `*.md` (с сохранением `!README.md` для корректной сборки пакета из `pyproject.toml`).
 3. **`docker/Dockerfile`**:
    - Базируется на легковесном образе `python:3.12-slim` (без тяжёлых локальных ML-фреймворков).
    - Настраивает переменные `PYTHONDONTWRITEBYTECODE=1`, `PYTHONUNBUFFERED=1`, `PIP_NO_CACHE_DIR=1`.
    - Исполняет процесс от непривилегированного системного пользователя `appuser` (UID `10001`).
    - Использует нативный `HEALTHCHECK` к `http://127.0.0.1:8787/health` через встроенный модуль `urllib.request`, избавляя образ от необходимости установки `curl` или `wget`.
 4. **`docker/docker-compose.yml`**:
-   - Оркеструет 3 контейнера в изолированной сети `mcp-coop-net`: `mcp-coop-core`, `mcp-coop-postgres` (`pgvector/pgvector:pg16`) и `mcp-coop-redis` (`redis:7-alpine` с AOF-персистентностью).
+   - Оркеструет 3 контейнера в изолированной сети `mcp-coop-agentic-factory-net`: `mcp-coop-agentic-factory-core`, `mcp-coop-agentic-factory-postgres` (`pgvector/pgvector:pg16`) и `mcp-coop-agentic-factory-redis` (`redis:7-alpine` с AOF-персистентностью).
    - Жёстко привязывает сетевые порты к loopback-интерфейсу хоста (`127.0.0.1:8787:8787`), исключая внешний доступ из локальной сети.
    - Координирует порядок запуска через `depends_on` с условием `condition: service_healthy` на основе проверок `pg_isready` и `redis-cli ping`.
 
 ## Логи контекста (AI Traces)
 - 2026-10-24: Создан инфраструктурный скелет Слой 2 (`.gitignore`, `.dockerignore`, `docker/Dockerfile`, `docker/docker-compose.yml`) по стандартам безопасности и легковесности 2026 года с подробными русскоязычными комментариями.
+- 2026-10-24: Имена контейнеров, томов, сети и директории рантайма приведены к полному префиксу `mcp-coop-agentic-factory-*`, а `vendor` в `Dockerfile` изменён на `MCP-COOP` для исключения конфликтов с другими проектами.

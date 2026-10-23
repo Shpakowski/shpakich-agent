@@ -1,9 +1,9 @@
 # ==============================================================================
 # Слой 2 (Глобальное Docker-ядро): Оркестрация контейнеров (docker-compose.yml)
 # Разворачивает изолированный стек из 3 сервисов:
-# 1. mcp-coop-core     — ASGI-сервер (FastAPI + FastMCP + DecisionEngine + Harness²)
-# 2. mcp-coop-postgres — PostgreSQL 16 + pgvector + pg_trgm (память и компоненты)
-# 3. mcp-coop-redis    — Redis 7 Alpine (оперативный кэш сессий и анти-зацикливание)
+# 1. mcp-coop-agentic-factory-core     — ASGI-сервер (FastAPI + FastMCP + DecisionEngine + Harness²)
+# 2. mcp-coop-agentic-factory-postgres — PostgreSQL 16 + pgvector + pg_trgm (память и компоненты)
+# 3. mcp-coop-agentic-factory-redis    — Redis 7 Alpine (оперативный кэш сессий и анти-зацикливание)
 # ==============================================================================
 
 name: mcp-coop-agentic-factory
@@ -12,13 +12,13 @@ services:
   # ----------------------------------------------------------------------------
   # 1. Центральное аналитическое ядро и MCP-сервер (Python 3.12 Slim)
   # ----------------------------------------------------------------------------
-  mcp-coop-core:
+  mcp-coop-agentic-factory-core:
     build:
       # Контекстом сборки выступает корень репозитория, чтобы иметь доступ к pyproject.toml и src/core
       context: ..
       dockerfile: docker/Dockerfile
-    image: mcp-coop-core:latest
-    container_name: mcp-coop-core
+    image: mcp-coop-agentic-factory-core:latest
+    container_name: mcp-coop-agentic-factory-core
     restart: unless-stopped
     ports:
       # КРИТИЧНО ДЛЯ БЕЗОПАСНОСТИ: биндим порт строго на loopback-интерфейс (127.0.0.1),
@@ -26,9 +26,9 @@ services:
       - "127.0.0.1:8787:8787"
     environment:
       # Строки подключения к PostgreSQL и Redis внутри изолированной bridge-сети Docker
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://mcp_coop:mcp_coop_secret@mcp-coop-postgres:5432/mcp_coop}
-      POSTGRES_DSN: ${POSTGRES_DSN:-postgresql://mcp_coop:mcp_coop_secret@mcp-coop-postgres:5432/mcp_coop}
-      REDIS_URL: ${REDIS_URL:-redis://mcp-coop-redis:6379/0}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://mcp_coop:mcp_coop_secret@mcp-coop-agentic-factory-postgres:5432/mcp_coop_agentic_factory}
+      POSTGRES_DSN: ${POSTGRES_DSN:-postgresql://mcp_coop:mcp_coop_secret@mcp-coop-agentic-factory-postgres:5432/mcp_coop_agentic_factory}
+      REDIS_URL: ${REDIS_URL:-redis://mcp-coop-agentic-factory-redis:6379/0}
       # Настройки HTTP-сервера ядра
       HOST: "0.0.0.0"
       PORT: "8787"
@@ -42,9 +42,9 @@ services:
     depends_on:
       # Гарантируем запуск Python-ядра только после полной готовности БД и кэша принимать соединения,
       # исключая ошибки ConnectionRefusedError при накатке миграций и инициализации пула на старте
-      mcp-coop-postgres:
+      mcp-coop-agentic-factory-postgres:
         condition: service_healthy
-      mcp-coop-redis:
+      mcp-coop-agentic-factory-redis:
         condition: service_healthy
     healthcheck:
       # Проверяем доступность эндпоинта /health встроенным клиентом urllib.request
@@ -54,41 +54,41 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - mcp-coop-net
+      - mcp-coop-agentic-factory-net
 
   # ----------------------------------------------------------------------------
   # 2. Персистентное хранилище знаний, компонентов Harness² и векторов (pgvector)
   # ----------------------------------------------------------------------------
-  mcp-coop-postgres:
+  mcp-coop-agentic-factory-postgres:
     image: pgvector/pgvector:pg16
-    container_name: mcp-coop-postgres
+    container_name: mcp-coop-agentic-factory-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-mcp_coop}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcp_coop_secret}
-      POSTGRES_DB: ${POSTGRES_DB:-mcp_coop}
+      POSTGRES_DB: ${POSTGRES_DB:-mcp_coop_agentic_factory}
     ports:
       # Привязка к 127.0.0.1 позволяет безопасно подключаться к БД с хоста для отладки/инспекции
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       # Именованный том сохраняет таблицы проектов, скилов и векторной памяти при пересборке контейнеров
-      - mcp_coop_pgdata:/var/lib/postgresql/data
+      - mcp_coop_agentic_factory_pgdata:/var/lib/postgresql/data
     healthcheck:
       # Нативная утилита pg_isready проверяет, что сервер PostgreSQL завершил инициализацию WAL и принимает запросы
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-mcp_coop} -d $${POSTGRES_DB:-mcp_coop}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-mcp_coop} -d $${POSTGRES_DB:-mcp_coop_agentic_factory}"]
       interval: 5s
       timeout: 5s
       retries: 5
       start_period: 10s
     networks:
-      - mcp-coop-net
+      - mcp-coop-agentic-factory-net
 
   # ----------------------------------------------------------------------------
   # 3. Оперативная память активных сессий и счётчиков ошибок (Redis 7 Alpine)
   # ----------------------------------------------------------------------------
-  mcp-coop-redis:
+  mcp-coop-agentic-factory-redis:
     image: redis:7-alpine
-    container_name: mcp-coop-redis
+    container_name: mcp-coop-agentic-factory-redis
     restart: unless-stopped
     # Включаем AOF-персистентность (appendonly), чтобы контекст активных сессий и счётчики сбоев
     # сохранялись даже при перезапуске контейнера или Docker Desktop
@@ -96,7 +96,7 @@ services:
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
-      - mcp_coop_redisdata:/data
+      - mcp_coop_agentic_factory_redisdata:/data
     healthcheck:
       # Проверяем мгновенный отклик движка Redis командой PING -> PONG
       test: ["CMD", "redis-cli", "ping"]
@@ -105,17 +105,17 @@ services:
       retries: 5
       start_period: 5s
     networks:
-      - mcp-coop-net
+      - mcp-coop-agentic-factory-net
 
 # Именованные тома под управлением Docker для сохранности данных между перезапусками
 volumes:
-  mcp_coop_pgdata:
-    name: mcp_coop_pgdata
-  mcp_coop_redisdata:
-    name: mcp_coop_redisdata
+  mcp_coop_agentic_factory_pgdata:
+    name: mcp_coop_agentic_factory_pgdata
+  mcp_coop_agentic_factory_redisdata:
+    name: mcp_coop_agentic_factory_redisdata
 
 # Выделенная внутренняя сеть для изоляции трафика между Python-ядром, PostgreSQL и Redis
 networks:
-  mcp-coop-net:
-    name: mcp-coop-net
+  mcp-coop-agentic-factory-net:
+    name: mcp-coop-agentic-factory-net
     driver: bridge

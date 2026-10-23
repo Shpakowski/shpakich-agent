@@ -27,16 +27,16 @@ flowchart TB
         NativeAgent["Нативный ИИ-агент\n(Antigravity / Claude Code / Cursor)"]
     end
 
-    subgraph Docker["Слой 2: Глобальное Docker-ядро (~/.mcp-coop/)"]
-        subgraph PyCore["Контейнер: mcp-coop-core (Python 3.12 Slim)"]
+    subgraph Docker["Слой 2: Глобальное Docker-ядро (~/.mcp-coop-agentic-factory/)"]
+        subgraph PyCore["Контейнер: mcp-coop-agentic-factory-core (Python 3.12 Slim)"]
             FastAPI["Слой 3: Шлюз контекста (FastAPI)\n/api/hooks/* + /api/projects/*"]
             FastMCP["Локальный MCP-сервер (FastMCP)\nStreamable HTTP (/mcp)"]
             DecisionEngine["Двухуровневый DecisionEngine\nTier 1: Local Rules + Search\nTier 2: OpenAI Decisions API"]
             HarnessEngine["Слой 4: Движок самообучения (Harness²)\n8 компонентов | Propose → Probe → Compose"]
             EmbedClient["Тонкий HTTP-клиент эмбеддингов\nEmbeddingGemma 2 API + FTS Fallback"]
         end
-        PG[("Контейнер: mcp-coop-postgres\nPostgreSQL 16 + pgvector + pg_trgm")]
-        Redis[("Контейнер: mcp-coop-redis\nRedis 7 Alpine (Кэш сессий и ошибок)")]
+        PG[("Контейнер: mcp-coop-agentic-factory-postgres\nPostgreSQL 16 + pgvector + pg_trgm")]
+        Redis[("Контейнер: mcp-coop-agentic-factory-redis\nRedis 7 Alpine (Кэш сессий и ошибок)")]
     end
 
     CLI -->|"1. Проверяет / поднимает Docker Compose"| PyCore
@@ -63,7 +63,7 @@ flowchart TB
 * **Команды CLI:**
   1. `init [--agent antigravity|claude|cursor]` — инициализация харнеса в текущей рабочей директории:
      - Проверяет доступность глобального Docker-ядра (`GET http://127.0.0.1:8787/health`).
-     - Если ядро не запущено — автоматически разворачивает конфигурацию Docker Compose в `~/.mcp-coop/runtime/` и выполняет `docker compose up -d --build`.
+     - Если ядро не запущено — автоматически разворачивает конфигурацию Docker Compose в `~/.mcp-coop-agentic-factory/runtime/` и выполняет `docker compose up -d --build`.
      - Запускает **Stack Detector**: сканирует файлы проекта (`package.json`, `bun.lockb`, `tsconfig.json`, `pyproject.toml`, `requirements.txt`, `Dockerfile`, `docker-compose.yml`, `Cargo.toml`, `go.mod`) и формирует массив тегов стека (например: `["global", "typescript", "bun", "docker"]`).
      - Запускает **Agent Detector**: определяет активного ИИ-агента по окружению и директориям (по умолчанию **Antigravity**, с возможностью явного выбора или автоопределения).
      - Регистрирует проект в Python-ядре (`POST /api/projects/register`) и получает скомпилированный срез всех 8 компонентов харнеса под стек проекта.
@@ -109,15 +109,15 @@ flowchart TB
 
 ### 3.2. Слой 2: Слой изоляции (Глобальное Docker-ядро на Python)
 
-* **Расположение глобального стейта на хосте:** `~/.mcp-coop/`.
-* **Конфигурация `~/.mcp-coop/.env`:** хранит опциональные API-ключи (`OPENAI_API_KEY` для Decisions API, `GEMINI_API_KEY` / `HF_TOKEN` для внешнего API `EmbeddingGemma 2`).
+* **Расположение глобального стейта на хосте:** `~/.mcp-coop-agentic-factory/`.
+* **Конфигурация `~/.mcp-coop-agentic-factory/.env`:** хранит опциональные API-ключи (`OPENAI_API_KEY` для Decisions API, `GEMINI_API_KEY` / `HF_TOKEN` для внешнего API `EmbeddingGemma 2`).
 * **Топология `docker-compose.yml` (3 контейнера):**
 
 | Контейнер | Образ | Назначение и ресурсы |
 | :--- | :--- | :--- |
-| **`mcp-coop-core`** | `python:3.12-slim` | Единый асинхронный ASGI-сервер (`FastAPI` + `FastMCP` + `uvicorn`) на порту `8787`. Без локального PyTorch/CUDA — потребление RAM **~50–70 МБ**. |
-| **`mcp-coop-postgres`** | `pgvector/pgvector:pg16` | Персистентное хранилище проектов, 8 компонентов `Harness²`, логов перехвата, полнотекстового индекса (`tsvector` + `pg_trgm`) и векторов (`vector(768)`). |
-| **`mcp-coop-redis`** | `redis:7-alpine` | Оперативная память активных сессий (`conversationId`), счётчики зацикливания команд, кэш скомпилированных правил для суб-миллисекундного ответа в хуках. |
+| **`mcp-coop-agentic-factory-core`** | `python:3.12-slim` | Единый асинхронный ASGI-сервер (`FastAPI` + `FastMCP` + `uvicorn`) на порту `8787`. Без локального PyTorch/CUDA — потребление RAM **~50–70 МБ**. |
+| **`mcp-coop-agentic-factory-postgres`** | `pgvector/pgvector:pg16` | Персистентное хранилище проектов, 8 компонентов `Harness²`, логов перехвата, полнотекстового индекса (`tsvector` + `pg_trgm`) и векторов (`vector(768)`). |
+| **`mcp-coop-agentic-factory-redis`** | `redis:7-alpine` | Оперативная память активных сессий (`conversationId`), счётчики зацикливания команд, кэш скомпилированных правил для суб-миллисекундного ответа в хуках. |
 
 ---
 
@@ -248,7 +248,7 @@ my-project/
   - При попытке завершить ответ (`Stop`), если `code_modified == true` и `context_updated == false`, хук блокирует остановку (`{"decision": "continue", "reason": "..."}`) и требует актуализировать `.context/`.
 
 #### 3. Парсинг и обход графа в Python-ядре (`NetworkX` + `Pydantic`)
-* Внутри `mcp-coop-core` модуль `src/core/graph/context_graph.py` парсит YAML-шапки и `[[wiki-ссылки]]` в ориентированный граф `NetworkX` (`DiGraph`), проверяя целостность ссылок и существование файлов из поля `files: [...]`.
+* Внутри `mcp-coop-agentic-factory-core` модуль `src/core/graph/context_graph.py` парсит YAML-шапки и `[[wiki-ссылки]]` в ориентированный граф `NetworkX` (`DiGraph`), проверяя целостность ссылок и существование файлов из поля `files: [...]`.
 
 ---
 
@@ -333,7 +333,7 @@ CREATE TABLE hook_events (
 
 ## 5. Спецификация локального MCP-сервера (`FastMCP` в Python-ядре)
 
-MCP-сервер поднимается внутри контейнера `mcp-coop-core` и доступен по адресу `http://127.0.0.1:8787/mcp` (Streamable HTTP). Он предоставляет нативному агенту 7 инструментов:
+MCP-сервер поднимается внутри контейнера `mcp-coop-agentic-factory-core` и доступен по адресу `http://127.0.0.1:8787/mcp` (Streamable HTTP). Он предоставляет нативному агенту 7 инструментов:
 
 1. **`coop_search_memory(query: str, stack_tags: list[str] = [])`**
    - Ищет решённые ошибки, архитектурные паттерны и правила во всех проектах (гибридный поиск: `pgvector` косинусная близость через API `EmbeddingGemma 2` при наличии ключа + PostgreSQL `tsvector` и `pg_trgm`).
@@ -369,7 +369,7 @@ MCP-сервер поднимается внутри контейнера `mcp-c
 
 ## 7. Критерии приёмки (Acceptance Criteria)
 
-1. **Запуск одной командой:** Вызов `bunx mcp-coop-agentic-factory init` (или локально `bun run src/cli/index.ts init`) в любой папке проекта автоматически проверяет/поднимает Docker-стек (`mcp-coop-core`, `mcp-coop-postgres`, `mcp-coop-redis`), определяет стек папки и генерирует рабочую директорию `.agents/plugins/mcp-coop-agentic-factory/`.
+1. **Запуск одной командой:** Вызов `bunx mcp-coop-agentic-factory init` (или локально `bun run src/cli/index.ts init`) в любой папке проекта автоматически проверяет/поднимает Docker-стек (`mcp-coop-agentic-factory-core`, `mcp-coop-agentic-factory-postgres`, `mcp-coop-agentic-factory-redis`), определяет стек папки и генерирует рабочую директорию `.agents/plugins/mcp-coop-agentic-factory/`.
 2. **Чистая хост-машина и лёгкий Docker:** Все аналитические процессы, БД и Python MCP-сервер изолированы внутри Docker Compose; образ Python-ядра не содержит тяжёлых локальных ML-фреймворков и потребляет минимум памяти (~50–70 МБ RAM).
 3. **Рабочий контур перехвата (Шлюз контекста):**
    - `PreToolUse` реально блокирует опасные команды (`decision: "deny"`) и перезаписывает команды пакетного менеджера через `overwrite` (например, `npm` -> `bun` в Bun-проекте).
