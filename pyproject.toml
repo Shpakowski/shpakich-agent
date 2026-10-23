@@ -1,0 +1,49 @@
+# Конфигурация сборки и зависимостей Python-ядра (PEP 621).
+# Определяет легковесный стек контейнера core-engine (FastAPI, FastMCP, asyncpg, redis, networkx)
+# без тяжёлых локальных ML-фреймворков согласно архитектурным инвариантам проекта.
+
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-coop-agentic-factory"
+version = "0.1.0"
+description = "Self-learning multi-agent context and memory factory (FastAPI + FastMCP Core Engine)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    # Асинхронный веб-фреймворк и ASGI-сервер для приёма телеметрии и REST API
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    # Протокол Model Context Protocol (FastMCP) для предоставления инструментов ИИ-агентам
+    "mcp>=1.2.0",
+    # Асинхронные драйверы персистентного хранилища (PostgreSQL + pgvector) и очередей (Redis)
+    "asyncpg>=0.30.0",
+    "redis>=5.2.0",
+    # Графовая библиотека для валидации DAG и анализа связей Контекстного Графа (.context/)
+    "networkx>=3.4.0",
+    # Асинхронный HTTP-клиент для тонких вызовов внешних API (EmbeddingGemma 2 / OpenAI Decisions)
+    "httpx>=0.28.0",
+    # Строгая валидация контрактов данных и типизированная конфигурация через переменные окружения
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    # Парсинг YAML frontmatter в Markdown-узлах графа (.context/entities/)
+    "pyyaml>=6.0.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.7.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/core"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
