@@ -85,6 +85,7 @@ class SessionMetaField(StrEnum):
     WORKSPACE_PATH = "workspace_path"
     RESOLVED_ERROR = "resolved_error"
     REFLECTION_PROMPTED = "reflection_prompted"
+    CONTEXT_UPDATED = "context_updated"
 
 
 class RedisFlag(StrEnum):
@@ -232,6 +233,34 @@ class FailMode(StrEnum):
     FAIL_CLOSED_DENY = "fail_closed_deny"
 
 
+class EmbeddingDialect(StrEnum):
+    """Протокольные диалекты тонкого HTTP-клиента векторных эмбеддингов (EmbeddingGemma 2 / Gemini / OpenAI)."""
+
+    AUTO = "auto"
+    OPENAI_COMPATIBLE = "openai_compatible"
+    GEMINI_NATIVE = "gemini_native"
+
+
+class EmbeddingTaskType(StrEnum):
+    """Типы задач для асимметричных эмбеддингов поиска (запрос против индексируемого документа)."""
+
+    RETRIEVAL_QUERY = "RETRIEVAL_QUERY"
+    RETRIEVAL_DOCUMENT = "RETRIEVAL_DOCUMENT"
+
+
+class MCPToolName(StrEnum):
+    """Канонические имена инструментов MCP-шлюза (`FastMCP`, префикс `coop_`)."""
+
+    SEARCH_MEMORY = "coop_search_memory"
+    LEARN_MEMORY = "coop_learn_memory"
+    PROPOSE_HARNESS_EDIT = "coop_propose_harness_edit"
+    PUBLISH_SKILL = "coop_publish_skill"
+    QUERY_CONTEXT_GRAPH = "coop_query_context_graph"
+    UPSERT_CONTEXT_NODE = "coop_upsert_context_node"
+    GET_FACTORY_STATUS = "coop_get_factory_status"
+    MANAGE_DECISION_PROVIDERS = "coop_manage_decision_providers"
+
+
 __all__ = [
     "AgentType",
     "ComponentStatus",
@@ -243,11 +272,14 @@ __all__ = [
     "DecisionDomain",
     "DecisionProviderDialect",
     "DecisionQuestionType",
+    "EmbeddingDialect",
+    "EmbeddingTaskType",
     "FailMode",
     "FileWriteStrategy",
     "GuardrailAction",
     "HookDialect",
     "HookEventType",
+    "MCPToolName",
     "McpConfigFormat",
     "ProviderHealthStatus",
     "RedisFlag",

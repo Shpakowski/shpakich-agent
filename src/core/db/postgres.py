@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS memories (
 
 CREATE INDEX IF NOT EXISTS idx_memories_tsv ON memories USING GIN (search_tsv);
 CREATE INDEX IF NOT EXISTS idx_memories_symptom_trgm ON memories USING GIN (error_symptom gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_memories_embedding_hnsw ON memories USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
 
 -- 4. Лог перехватов и событий жизненных хуков
 CREATE TABLE IF NOT EXISTS hook_events (

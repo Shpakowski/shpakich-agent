@@ -48,6 +48,8 @@ from src.core.harness import (
     normalize_stack_tags,
     seed_default_components,
 )
+from src.core.mcp import CoopMCPGateway, CoopMCPToolService
+from src.core.services import EmbeddingClient
 
 logger = logging.getLogger("mcp_coop.core")
 
@@ -100,6 +102,12 @@ def _get_engine(request: Request) -> DecisionEngine:
     db: PostgresDatabase | None = getattr(request.app.state, "db", None)
     redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
     compiler: HarnessCompiler | None = getattr(request.app.state, "compiler", None)
+    embedding_client: EmbeddingClient = getattr(
+        request.app.state,
+        "embedding_client",
+        None,
+    ) or EmbeddingClient(settings)
+    request.app.state.embedding_client = embedding_client
     pool: RuntimeProviderPool = getattr(request.app.state, "provider_pool", None) or RuntimeProviderPool(
         db=db,
         redis=redis_store,
@@ -110,6 +118,7 @@ def _get_engine(request: Request) -> DecisionEngine:
         redis=redis_store,
         provider_pool=pool,
         compiler=compiler,
+        embedding_client=embedding_client,
         max_consecutive_failures=settings.max_consecutive_cmd_failures,
     )
     request.app.state.decision_engine = engine
@@ -189,16 +198,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.compiler = compiler
 
-    provider_pool = RuntimeProviderPool(db=db, redis=redis_store)
+    provider_pool: RuntimeProviderPool = getattr(
+        app.state,
+        "provider_pool",
+        None,
+    ) or RuntimeProviderPool(db=db, redis=redis_store)
+    provider_pool._db = db
+    provider_pool._redis = redis_store
     app.state.provider_pool = provider_pool
+
+    embedding_client: EmbeddingClient = getattr(
+        app.state,
+        "embedding_client",
+        None,
+    ) or EmbeddingClient(settings)
+    app.state.embedding_client = embedding_client
 
     app.state.decision_engine = DecisionEngine(
         db=db,
         redis=redis_store,
         provider_pool=provider_pool,
         compiler=compiler,
+        embedding_client=embedding_client,
         max_consecutive_failures=settings.max_consecutive_cmd_failures,
     )
+
+    mcp_gateway: CoopMCPGateway | None = getattr(app.state, "mcp_gateway", None)
 
     try:
         try:
@@ -213,7 +238,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("Redis is unavailable at startup (%s); running in degraded mode", exc)
 
         await provider_pool.seed_from_env(settings.openai_api_key)
-        yield
+        if mcp_gateway is not None:
+            async with mcp_gateway.run_lifespan():
+                yield
+        else:
+            yield
     finally:
         await redis_store.close()
         await db.close()
@@ -230,6 +259,13 @@ def create_app() -> FastAPI:
         description="MCP-COOP Agentic Factory Core Engine (FastAPI + FastMCP)",
         lifespan=lifespan,
     )
+    application.state.settings = settings
+    application.state.provider_pool = RuntimeProviderPool()
+    application.state.embedding_client = EmbeddingClient(settings)
+    mcp_service = CoopMCPToolService(application)
+    mcp_gateway = CoopMCPGateway(application, mcp_service)
+    application.state.mcp_service = mcp_service
+    application.state.mcp_gateway = mcp_gateway
 
     @application.get("/health", tags=["diagnostics"])
     async def health_check(request: Request) -> dict[str, Any]:
@@ -237,6 +273,11 @@ def create_app() -> FastAPI:
         active_settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
         db: PostgresDatabase | None = getattr(request.app.state, "db", None)
         redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
+        emb_client: EmbeddingClient = getattr(
+            request.app.state,
+            "embedding_client",
+            None,
+        ) or EmbeddingClient(active_settings)
         postgres_connected = await db.check_health() if db is not None else False
         redis_connected = await redis_store.check_health() if redis_store is not None else False
         return {
@@ -247,6 +288,8 @@ def create_app() -> FastAPI:
             "redis_connected": redis_connected,
             "decisions_api_configured": active_settings.decisions_api_configured,
             "embedding_api_configured": active_settings.embedding_api_configured,
+            "embedding_client": emb_client.get_status(),
+            "mcp_endpoint": MCP_HTTP_PATH,
         }
 
     @application.post("/api/projects/register", tags=["projects"])
@@ -637,6 +680,7 @@ def create_app() -> FastAPI:
         await _log_hook_event(db, hook_in, response_dict)
         return response_dict
 
+    mcp_gateway.mount(application)
     return application
 
 

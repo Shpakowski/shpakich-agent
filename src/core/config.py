@@ -12,7 +12,7 @@ from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.core import __version__
-from src.core.enums import AgentType
+from src.core.enums import AgentType, EmbeddingDialect
 
 # Параметры времени жизни (TTL) для оперативной памяти сессий (24 часа),
 # кэша решений/правил LangCache (1 час) и порога детектора зацикливания команд.
@@ -20,6 +20,12 @@ DEFAULT_REDIS_SESSION_TTL_SECONDS: int = 86_400
 DEFAULT_REDIS_CACHE_TTL_SECONDS: int = 3_600
 MIN_REDIS_TTL_SECONDS: int = 60
 DEFAULT_MAX_CONSECUTIVE_CMD_FAILURES: int = 2
+
+# Базовые параметры тонкого HTTP-клиента векторных эмбеддингов (EmbeddingGemma 2 / Gemini / OpenAI)
+DEFAULT_EMBEDDING_API_URL: str = "https://generativelanguage.googleapis.com/v1beta"
+DEFAULT_EMBEDDING_MODEL: str = "models/gemini-embedding-001"
+DEFAULT_EMBEDDING_DIMENSIONS: int = 768
+DEFAULT_EMBEDDING_TIMEOUT_MS: int = 1500
 
 
 class CoreSettings(BaseSettings):
@@ -122,6 +128,50 @@ class CoreSettings(BaseSettings):
         ),
         description="Optional API key for external HTTP vector embeddings (e.g., EmbeddingGemma 2).",
     )
+    embedding_api_url: str = Field(
+        default=DEFAULT_EMBEDDING_API_URL,
+        validation_alias=AliasChoices(
+            "MCP_COOP_EMBEDDING_API_URL",
+            "EMBEDDING_API_URL",
+        ),
+        description="Base URL or endpoint for the external HTTP embedding provider.",
+    )
+    embedding_model: str = Field(
+        default=DEFAULT_EMBEDDING_MODEL,
+        validation_alias=AliasChoices(
+            "MCP_COOP_EMBEDDING_MODEL",
+            "EMBEDDING_MODEL",
+        ),
+        description="Target embedding model identifier (e.g., google/embeddinggemma-300m or models/gemini-embedding-001).",
+    )
+    embedding_dimensions: int = Field(
+        default=DEFAULT_EMBEDDING_DIMENSIONS,
+        ge=64,
+        le=3072,
+        validation_alias=AliasChoices(
+            "MCP_COOP_EMBEDDING_DIMENSIONS",
+            "EMBEDDING_DIMENSIONS",
+        ),
+        description="Target output dimensionality for Matryoshka/MRL vector truncation (default 768 for pgvector).",
+    )
+    embedding_timeout_ms: int = Field(
+        default=DEFAULT_EMBEDDING_TIMEOUT_MS,
+        ge=100,
+        le=15000,
+        validation_alias=AliasChoices(
+            "MCP_COOP_EMBEDDING_TIMEOUT_MS",
+            "EMBEDDING_TIMEOUT_MS",
+        ),
+        description="HTTP request timeout in milliseconds for embedding generation.",
+    )
+    embedding_dialect: EmbeddingDialect = Field(
+        default=EmbeddingDialect.AUTO,
+        validation_alias=AliasChoices(
+            "MCP_COOP_EMBEDDING_DIALECT",
+            "EMBEDDING_DIALECT",
+        ),
+        description="Protocol dialect for the HTTP embedding client (auto, openai_compatible, gemini_native).",
+    )
 
     @property
     def decisions_api_configured(self) -> bool:
@@ -131,7 +181,12 @@ class CoreSettings(BaseSettings):
     @property
     def embedding_api_configured(self) -> bool:
         """Проверяет, доступен ли внешний генератор векторных эмбеддингов для pgvector."""
-        return bool(self.embedding_api_key and self.embedding_api_key.strip())
+        has_key = bool(self.embedding_api_key and self.embedding_api_key.strip())
+        custom_url = self.embedding_api_url.strip()
+        has_custom_endpoint = bool(
+            custom_url and custom_url != DEFAULT_EMBEDDING_API_URL
+        )
+        return has_key or has_custom_endpoint
 
 
 @lru_cache(maxsize=1)

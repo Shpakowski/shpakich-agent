@@ -33,6 +33,7 @@ from src.core.decision.providers import RuntimeProviderPool
 from src.core.enums import (
     DecisionDomain,
     DecisionQuestionType,
+    EmbeddingTaskType,
     FailMode,
     GuardrailAction,
     ScopeType,
@@ -40,12 +41,15 @@ from src.core.enums import (
     VerdictAction,
 )
 from src.core.harness.compiler import HarnessCompiler
+from src.core.services.embeddings import EmbeddingClient, format_pgvector
 
 logger = logging.getLogger("mcp_coop.core.decision.engine")
 
 TIER_1_ID: str = "tier1_local_deterministic"
 TIER_2_ID: str = "tier2_system_one_pool"
 TIER_FALLBACK_ID: str = "tier3_heuristic_fallback"
+SEARCH_MODE_HYBRID_VECTOR: str = "hybrid_vector"
+SEARCH_MODE_LEXICAL_FALLBACK: str = "lexical_fallback"
 
 TIER_1_PRIORITY: int = 10
 TIER_2_PRIORITY: int = 20
@@ -665,11 +669,13 @@ class DecisionEngine:
         redis: RedisSessionStore | None = None,
         provider_pool: RuntimeProviderPool | None = None,
         compiler: HarnessCompiler | None = None,
+        embedding_client: EmbeddingClient | None = None,
         *,
         max_consecutive_failures: int = 2,
     ) -> None:
         self._db: PostgresDatabase | None = db
         self._redis: RedisSessionStore | None = redis
+        self._embedding_client: EmbeddingClient | None = embedding_client
         self._provider_pool: RuntimeProviderPool = provider_pool or RuntimeProviderPool(
             db=db,
             redis=redis,
@@ -698,6 +704,11 @@ class DecisionEngine:
     def provider_pool(self) -> RuntimeProviderPool:
         """Возвращает активный рантайм-пул провайдеров Tier 2."""
         return self._provider_pool
+
+    @property
+    def embedding_client(self) -> EmbeddingClient | None:
+        """Возвращает опциональный HTTP-клиент векторных эмбеддингов."""
+        return self._embedding_client
 
     def register_tier(self, tier: DecisionTier) -> None:
         """Регистрирует или заменяет вычислительный тир в цепочке ответственности с сортировкой по `priority`."""
@@ -797,7 +808,7 @@ class DecisionEngine:
         *,
         limit: int = 3,
     ) -> list[dict[str, Any]]:
-        """Ищет релевантные решения ошибок в таблице `memories` через гибридный поиск (`tsvector + pg_trgm`)."""
+        """Ищет релевантные решения ошибок в `memories` через 3-way гибридный поиск (`pgvector + tsvector + pg_trgm`)."""
         clean_query = error_query.strip()
         if not clean_query or self._db is None or not self._db.is_connected:
             return []
@@ -805,10 +816,73 @@ class DecisionEngine:
         tags = [t.strip().lower() for t in stack_tags if t.strip()] or [
             ScopeType.GLOBAL.value
         ]
+        safe_limit = max(1, limit)
+
+        vec_literal: str | None = None
+        if self._embedding_client is not None:
+            query_vec = await self._embedding_client.embed_text(
+                clean_query[:1000],
+                task_type=EmbeddingTaskType.RETRIEVAL_QUERY,
+            )
+            vec_literal = format_pgvector(query_vec)
+
+        if vec_literal is not None:
+            try:
+                rows = await self._db.pool.fetch(
+                    """
+                    WITH scored AS (
+                        SELECT
+                            id,
+                            title,
+                            error_symptom,
+                            solution,
+                            helpful_count,
+                            (embedding IS NOT NULL) AS has_vec,
+                            CASE
+                                WHEN embedding IS NOT NULL THEN GREATEST(0.0, 1.0 - (embedding <=> $4::vector))
+                                ELSE 0.0
+                            END AS vec_sim,
+                            ts_rank_cd(search_tsv, plainto_tsquery('simple', $1)) AS ts_r,
+                            GREATEST(similarity(error_symptom, $1), similarity(title, $1)) AS trgm_sim
+                        FROM memories
+                        WHERE (scope = $2 OR stack_tags && $3::text[])
+                    )
+                    SELECT
+                        id,
+                        title,
+                        error_symptom,
+                        solution,
+                        CASE
+                            WHEN has_vec THEN (
+                                vec_sim * 0.55
+                                + (ts_r / (ts_r + 1.0)) * 0.25
+                                + trgm_sim * 0.20
+                            )
+                            ELSE (
+                                (ts_r / (ts_r + 1.0)) * 0.60
+                                + trgm_sim * 0.40
+                            )
+                        END AS relevance
+                    FROM scored
+                    WHERE vec_sim > 0.35 OR ts_r > 0.0 OR trgm_sim > 0.15
+                    ORDER BY relevance DESC, helpful_count DESC
+                    LIMIT $5
+                    """,
+                    clean_query[:500],
+                    ScopeType.GLOBAL.value,
+                    tags,
+                    vec_literal,
+                    safe_limit,
+                )
+                return self._format_memory_rows(rows, search_mode=SEARCH_MODE_HYBRID_VECTOR)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("3-way vector memory search failed, falling back to lexical: %s", exc)
+
         try:
             rows = await self._db.pool.fetch(
                 """
                 SELECT
+                    id,
                     title,
                     error_symptom,
                     solution,
@@ -828,20 +902,101 @@ class DecisionEngine:
                 clean_query[:500],
                 ScopeType.GLOBAL.value,
                 tags,
-                max(1, limit),
+                safe_limit,
             )
-            return [
-                {
-                    "title": str(r["title"]),
-                    "error_symptom": str(r["error_symptom"]),
-                    "solution": str(r["solution"]),
-                    "relevance": round(float(r["relevance"] or 0.0), 3),
-                }
-                for r in rows
-            ]
+            return self._format_memory_rows(rows, search_mode=SEARCH_MODE_LEXICAL_FALLBACK)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Hybrid memory search failed: %s", exc)
+            logger.debug("Lexical memory search failed: %s", exc)
             return []
+
+    @staticmethod
+    def _format_memory_rows(
+        rows: Sequence[Mapping[str, Any]],
+        *,
+        search_mode: str,
+    ) -> list[dict[str, Any]]:
+        """Преобразует строки выборки PostgreSQL в унифицированный словарь результатов памяти."""
+        results: list[dict[str, Any]] = []
+        for r in rows:
+            item: dict[str, Any] = {
+                "title": str(r["title"]),
+                "error_symptom": str(r["error_symptom"]),
+                "solution": str(r["solution"]),
+                "relevance": round(float(r["relevance"] or 0.0), 3),
+                "search_mode": search_mode,
+            }
+            if "id" in r and r["id"] is not None:
+                item["id"] = str(r["id"])
+            results.append(item)
+        return results
+
+    async def store_memory(
+        self,
+        *,
+        title: str,
+        error_symptom: str,
+        solution: str,
+        stack_tags: Sequence[str] | None = None,
+        scope: str = ScopeType.GLOBAL.value,
+        source_project_path: str | None = None,
+    ) -> dict[str, Any]:
+        """Индексирует новое решение ошибки в `memories` с автоматической генерацией вектора `EmbeddingGemma 2`."""
+        clean_title = title.strip()
+        clean_symptom = error_symptom.strip()
+        clean_solution = solution.strip()
+        tags = [t.strip().lower() for t in (stack_tags or []) if t.strip()] or [
+            ScopeType.GLOBAL.value
+        ]
+
+        vec_literal: str | None = None
+        if self._embedding_client is not None:
+            doc_vec = await self._embedding_client.embed_text(
+                f"{clean_symptom}\n{clean_solution}",
+                task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT,
+                title=clean_title,
+            )
+            vec_literal = format_pgvector(doc_vec)
+
+        if self._db is None or not self._db.is_connected:
+            return {
+                "id": None,
+                "stored": False,
+                "title": clean_title,
+                "scope": scope,
+                "stack_tags": tags,
+                "embedded": vec_literal is not None,
+            }
+
+        row = await self._db.pool.fetchrow(
+            """
+            INSERT INTO memories (
+                title,
+                error_symptom,
+                solution,
+                scope,
+                stack_tags,
+                embedding,
+                source_project_path
+            )
+            VALUES ($1, $2, $3, $4, $5::text[], $6::vector, $7)
+            RETURNING id, created_at
+            """,
+            clean_title,
+            clean_symptom,
+            clean_solution,
+            scope,
+            tags,
+            vec_literal,
+            source_project_path,
+        )
+        return {
+            "id": str(row["id"]) if row and row.get("id") is not None else None,
+            "stored": True,
+            "title": clean_title,
+            "scope": scope,
+            "stack_tags": tags,
+            "embedded": vec_literal is not None,
+        }
 
 
 __all__ = [

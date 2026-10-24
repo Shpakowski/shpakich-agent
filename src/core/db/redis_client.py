@@ -225,6 +225,19 @@ class RedisSessionStore:
         raw_meta = await cast(Awaitable[dict[str, str]], self.client.hgetall(meta_key))
         return dict(raw_meta)
 
+    async def set_session_meta_field(
+        self,
+        conversation_id: str,
+        field: SessionMetaField,
+        value: str,
+    ) -> None:
+        """Обновляет отдельное поле в оперативных метаданных сессии (`session:{id}:meta`)."""
+        meta_key = self._session_key(conversation_id, RedisKeySegment.META)
+        async with self.client.pipeline(transaction=True) as pipe:
+            pipe.hset(meta_key, field, value)
+            pipe.expire(meta_key, self._session_ttl_seconds)
+            await pipe.execute()
+
     async def record_tool_failure(
         self,
         conversation_id: str,
@@ -403,6 +416,29 @@ class RedisSessionStore:
         cache_key = self._cache_key(RedisKeySegment.RULES, stack_hash)
         serialized = json.dumps(dict(bundle), ensure_ascii=False)
         await self.client.set(cache_key, serialized, ex=self._cache_ttl_seconds)
+
+    async def invalidate_rules_cache(
+        self,
+        stack_tags: Sequence[str] | None = None,
+    ) -> int:
+        """Инвалидирует закэшированные бандлы правил (`cache:rules:*`) после обновления компонентов `Harness²`."""
+        if self._client is None:
+            return 0
+        pattern = self._cache_key(RedisKeySegment.RULES, "*")
+        keys: list[str] = [
+            str(key) async for key in self.client.scan_iter(match=pattern)
+        ]
+        if stack_tags:
+            specific_key = self._cache_key(
+                RedisKeySegment.RULES,
+                compute_stack_hash(stack_tags),
+            )
+            if specific_key not in keys:
+                keys.append(specific_key)
+        if not keys:
+            return 0
+        deleted = await cast(Awaitable[int], self.client.delete(*keys))
+        return int(deleted)
 
     # -------------------------------------------------------------------------
     # 4. Circuit Breaker рантайм-пула провайдеров (Tier 2 Failover State)
