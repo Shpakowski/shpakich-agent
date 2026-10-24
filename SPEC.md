@@ -138,12 +138,13 @@ flowchart TB
      - Внутреннее поле для CLI-моста (`_syncFiles`): передаёт новые/обновлённые файлы `rules/AGENTS.md` и `skills/*/SKILL.md`, которые CLI-мост мгновенно сохраняет в `.agents/plugins/mcp-coop-agentic-factory/` до первого шага агента.
 
 2. **`PreToolUse` (`POST /api/hooks/pre-tool-use`)**:
-   - **Вход:** `conversationId`, `stepIdx`, `toolCall: { name, args }`.
+   - **Вход:** `conversationId`, `stepIdx`, `toolCall: { name, args }`, `artifactDirectoryPath`.
    - **Действие в `DecisionEngine`:**
      - **Tier 1 (Детерминированные Guardrails из Redis/Postgres, <5 мс):**
        - Проверка по правилам `block_command` (например, запрет `rm -rf /`, `git push --force` в защищённые ветки, чтение секретов).
        - Проверка по правилам `rewrite_command` (например, в проекте с тегом `bun` команда `npm install` или `npx` автоматически переписывается через `overwrite`).
        - Проверка в Redis на **анти-зацикливание**: если агент пытается вызвать в точности ту же команду с теми же аргументами, которая уже упала с ошибкой 2 раза подряд в текущей сессии -> возвращается `decision: "deny"` с объяснением причины и требованием сменить подход.
+       - **Контроль артефактов планирования (`implementation_plan.md` Gate):** если вызывается `write_file` или `edit_file` для файла плана (`implementation_plan.md` / `ArtifactMetadata`), проверяется соблюдение стандарта `Learning-First` (отсутствие попытки сгенерировать слишком много файлов за один шаг и наличие обязательного пункта синхронизации `.context/`). При нарушении возвращается `decision: "deny"` с инструкцией перестроить план по Best Practices до показа пользователю.
      - **Tier 2 (OpenAI Decisions API — опционально при наличии `OPENAI_API_KEY`):**
        - Если команда помечена как потенциально рискованная (неоднозначный паттерн), отправляется быстрый запрос в OpenAI Decisions API (`Predicate`: вероятность нарушения правил безопасности `0..1` + `Choice`: `allow | ask | deny`).
    - **Выход (stdout):**
@@ -164,17 +165,21 @@ flowchart TB
    - **Выход (stdout):** `{}`.
 
 4. **`PreInvocation` (`POST /api/hooks/pre-invocation`)**:
-   - **Вход:** `conversationId`, `invocationNum`.
-   - **Действие в ядре (Анти-галлюцинации и динамический RAG по памяти):**
-     - Проверяет Redis: есть ли неразрешённая ошибка с предыдущего шага (`last_error`).
-     - Если ошибка есть: выполняет поиск по таблице `memories` (сначала через векторный поиск `pgvector`, если настроен API `EmbeddingGemma 2`, либо через мгновенный встроенный гибрид `tsvector + pg_trgm` в Postgres).
-     - Если найдено проверенное решение из прошлых проектов (например, из Проекта А) — формирует `ephemeralMessage` с готовой подсказкой и решением.
+   - **Вход:** `conversationId`, `invocationNum`, `transcriptPath`, `workspacePaths`.
+   - **Действие в ядре (Анти-галлюцинации, перехват `/compact` и `/plan`, динамический RAG по памяти):**
+     - **Сценарий А — Восстановление после `/compact` (`Post-Compact Re-Hydration`):**
+       - Анализирует хвост `transcriptPath` (`transcript.jsonl`). Если непосредственно перед текущим шагом обнаружена системная запись `"type": "CHECKPOINT"` (`# Resuming from a compaction`), ядро извлекает сгенерированное `<summary>` сессии для архивации в БД и повторно инжектит в `systemMessage` актуальную карту `.context/index.md` и ключевые инварианты проекта (так как `SessionStart` срабатывает только один раз при старте чата, и при сжатии контекста стартовая карта иначе отрезается).
+     - **Сценарий Б — Инъекция паттернов при `/plan` (`Planning Best Practices Injection`):**
+       - Если последнее сообщение пользователя (`"type": "USER_INPUT"` в `transcript.jsonl`) содержит команду `/plan` или запрос на архитектурное планирование, ядро выбирает из `harness_components` и `memories` проверенные паттерны проектирования под стек проекта и передаёт их через транзиентный `ephemeralMessage` (действует ровно на один шаг генерации плана, не засоряя историю чата).
+     - **Сценарий В — Подсказка решения при ошибке (`Error Recovery RAG`):**
+       - Проверяет Redis: есть ли неразрешённая ошибка с предыдущего шага (`last_error`).
+       - Если ошибка есть: выполняет поиск по таблице `memories` (сначала через векторный поиск `pgvector`, если настроен API `EmbeddingGemma 2`, либо через мгновенный встроенный гибрид `tsvector + pg_trgm` в Postgres) и формирует `ephemeralMessage` с проверенным решением из прошлых проектов.
    - **Выход (stdout):**
      ```json
      {
        "injectSteps": [
          {
-           "ephemeralMessage": "[MCP-COOP Factory Hint]: На предыдущем шаге возникла ошибка ... В глобальной памяти есть проверенное решение: ..."
+           "ephemeralMessage": "[MCP-COOP Factory Hint]: ..."
          }
        ]
      }
@@ -364,6 +369,11 @@ MCP-сервер поднимается внутри контейнера `mcp-c
 2. **`EmbeddingGemma 2` API (`src/core/services/embeddings_api.py`):**
    - Если задан `EMBEDDING_API_KEY` (`GEMINI_API_KEY` / `HF_TOKEN`), модуль запрашивает 768-мерный вектор `EmbeddingGemma 2` (с поддержкой Matryoshka-размерности) по HTTP и сохраняет его в колонку `embedding vector(768)` таблицы `memories`.
    - Если ключ не задан — колонка `embedding` остаётся `NULL`, а поиск автоматически и без задержек выполняется через PostgreSQL `tsvector` + триграммы `pg_trgm`.
+3. **Antigravity Python SDK (`google-antigravity` — опциональный контур фоновых микро-агентов и E2E-тестов):**
+   - Используется как опциональное расширение второго уровня (без жёсткой привязки базового контейнера к внешним ключам):
+     - **Background Context Healer:** по команде `sync` поднимает изолированного микро-агента со скиллом `.context/schema.md` и правом записи только внутри `.context/`, который фоново актуализирует граф по диффу кода без траты контекстного окна основной сессии.
+     - **Read-Only Probe Auditor (`Harness²`):** на шаге `Probe` запускает Read-Only агента (`allow("view_file")`, `deny("edit_file")`, `deny("run_command")`) со строгим выходом `Pydantic v2` для глубокой сверки кандидатов в правила/скилы с архитектурой проекта.
+     - **E2E Verification Suite:** позволяет в `pytest` программно спавнить `Agent(config)` и автоматически тестировать срабатывание наших хуков (`hooks.json`) и MCP-инструментов на реальном движке.
 
 ---
 
