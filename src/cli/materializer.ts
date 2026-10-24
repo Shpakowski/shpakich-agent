@@ -252,24 +252,84 @@ export function loadProjectHarnessConfig(
 }
 
 /**
- * Атомарно сохраняет манифест `.context/harness.json` на диск с обновлением метки `updated_at`.
+ * Очищает устаревший локальный файл `.context/harness.json`, если он остался на диске,
+ * так как единственным источником истины (Single Source of Truth) выступает таблица `projects` в PostgreSQL.
  */
 export function saveProjectHarnessConfig(
   workspaceRoot: string,
-  manifest: ProjectHarnessManifest,
+  _manifest: ProjectHarnessManifest,
 ): void {
-  const manifestPath = resolveSafeWorkspacePath(
-    workspaceRoot,
-    HARNESS_MANIFEST_REL_PATH,
+  try {
+    const manifestPath = resolveSafeWorkspacePath(
+      workspaceRoot,
+      HARNESS_MANIFEST_REL_PATH,
+    );
+    if (fs.existsSync(manifestPath)) {
+      fs.rmSync(manifestPath, { force: true });
+    }
+  } catch {
+    // Безопасно пропускаем, если файл уже отсутствует.
+  }
+}
+
+/**
+ * Гидрирует конфигурацию проекта `ProjectHarnessManifest` данными, полученными из PostgreSQL
+ * через аналитическое ядро Docker (`GET /api/harness/components`).
+ */
+export function hydrateManifestFromCore(
+  baseManifest: ProjectHarnessManifest,
+  coreData: {
+    stack_tags?: readonly string[];
+    agent_type?: string;
+    profile_overrides?: Record<string, unknown>;
+  } | null,
+): ProjectHarnessManifest {
+  if (!coreData) {
+    return baseManifest;
+  }
+
+  const ov = coreData.profile_overrides ?? {};
+  const rawAgent =
+    (typeof coreData.agent_type === "string" && coreData.agent_type.trim().toLowerCase()) ||
+    (typeof ov.agent === "string" && ov.agent.trim().toLowerCase()) ||
+    "";
+  const resolvedAgent: AgentId = isSupportedAgent(rawAgent)
+    ? rawAgent
+    : baseManifest.agent;
+
+  const coreTags =
+    Array.isArray(coreData.stack_tags) && coreData.stack_tags.length > 0
+      ? normalizeUniqueStrings(coreData.stack_tags, true)
+      : baseManifest.stack.detected_tags;
+
+  const excludedTags = normalizeUniqueStrings(ov.excluded_tags, true).filter(
+    (tag) => tag !== GLOBAL_STACK_TAG,
   );
-  const updatedManifest: ProjectHarnessManifest = {
-    ...manifest,
+  const extraTags = normalizeUniqueStrings(ov.extra_tags, true).filter(
+    (tag) => !excludedTags.includes(tag),
+  );
+
+  return {
+    version: HARNESS_MANIFEST_VERSION,
+    agent: resolvedAgent,
+    stack: {
+      detected_tags: coreTags.includes(GLOBAL_STACK_TAG)
+        ? coreTags
+        : [GLOBAL_STACK_TAG, ...coreTags],
+      extra_tags: extraTags,
+      excluded_tags: excludedTags,
+    },
+    overrides: {
+      enabled_components: normalizeUniqueStrings(ov.enabled_components, true),
+      disabled_components: normalizeUniqueStrings(ov.disabled_components, true),
+      disabled_hooks: normalizeHookEvents(ov.disabled_hooks),
+    },
+    managed_files:
+      Array.isArray(ov.managed_files) && ov.managed_files.length > 0
+        ? normalizeUniqueStrings(ov.managed_files, false)
+        : baseManifest.managed_files,
     updated_at: new Date().toISOString(),
   };
-  atomicWriteTextFile(
-    manifestPath,
-    `${JSON.stringify(updatedManifest, null, 2)}\n`,
-  );
 }
 
 /**
@@ -302,17 +362,19 @@ export function resolveEffectiveStackTags(
 }
 
 /**
- * Формирует словарь `profile_overrides` для передачи в `POST /api/projects/register`.
+ * Формирует словарь `profile_overrides` для сохранения в таблице `projects` PostgreSQL (`POST /api/projects/register`).
  */
 export function buildProfileOverridesPayload(
   manifest: ProjectHarnessManifest,
 ): Record<string, unknown> {
   return {
+    agent: manifest.agent,
     extra_tags: manifest.stack.extra_tags,
     excluded_tags: manifest.stack.excluded_tags,
     enabled_components: manifest.overrides.enabled_components,
     disabled_components: manifest.overrides.disabled_components,
     disabled_hooks: manifest.overrides.disabled_hooks,
+    managed_files: manifest.managed_files,
   };
 }
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -736,7 +798,7 @@ export function ensureContextGraphScaffold(
   return true;
 }
 function buildHookCommand(event: HookEventName, agent: AgentId): string {
-  return `bunx ${FACTORY_HOOK_SIGNATURE} hook ${event} --agent ${agent}`;
+  return `"$HOME/.mcp-coop-agentic-factory/bin/run-hook.sh" hook ${event} --agent ${agent}`;
 }
 
 function buildClaudeCodexHooksPayload(agent: AgentId): string {

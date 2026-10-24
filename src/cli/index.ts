@@ -8,7 +8,7 @@
 
 import path from "node:path";
 import process from "node:process";
-import { parseArgs } from "node:util";
+import { parseArgs, styleText } from "node:util";
 import {
   AUTO_AGENT_OPTION,
   GLOBAL_STACK_TAG,
@@ -26,6 +26,7 @@ import {
   patchTier2Provider,
   registerProjectWithCore,
   stopGlobalStackDown,
+  syncGlobalFactoryStackFiles,
   upsertTier2Provider,
   type CatalogComponentItem,
 } from "./docker.ts";
@@ -38,6 +39,7 @@ import {
   buildOfflineFallbackFiles,
   buildProfileOverridesPayload,
   ensureContextGraphScaffold,
+  hydrateManifestFromCore,
   loadProjectHarnessConfig,
   materializeFiles,
   resolveEffectiveStackTags,
@@ -46,7 +48,10 @@ import {
   type ProjectHarnessManifest,
   type RenderedFilePayload,
 } from "./materializer.ts";
+import { intro } from "@clack/prompts";
 import {
+  createPipelineProgress,
+  renderCliBanner,
   renderCliError,
   renderDownCommand,
   renderHarnessCatalogView,
@@ -56,6 +61,7 @@ import {
   renderQuickMutationResult,
   renderStatusCommand,
   renderSyncSummary,
+  renderUpCommand,
   runInitWizard,
 } from "./wizard.ts";
 
@@ -68,6 +74,7 @@ export const SUPPORTED_COMMANDS = [
   "harness",
   "providers",
   "status",
+  "up",
   "down",
   "hook",
 ] as const;
@@ -281,6 +288,7 @@ export async function syncWorkspaceArtifacts(
   persistedInDb: boolean;
   source: string;
 }> {
+  syncGlobalFactoryStackFiles();
   const effectiveTags = resolveEffectiveStackTags(manifest);
   ensureContextGraphScaffold(
     profile.workspacePath,
@@ -352,19 +360,25 @@ async function handleHarnessCommand(
   const subcmd = (ctx.subargs[0] ?? "list").trim().toLowerCase();
   const targetArg = (ctx.subargs[1] ?? "").trim().toLowerCase();
   const profile = inspectWorkspace(process.cwd(), ctx.agent);
-  const manifest = loadProjectHarnessConfig(
+  const baseManifest = loadProjectHarnessConfig(
     profile.workspacePath,
     profile.agent,
     profile.stackTags,
   );
+  const coreCatalog = await fetchHarnessCatalog({
+    workspacePath: profile.workspacePath,
+  });
+  if (!coreCatalog) {
+    throw new Error(
+      'Global Docker stack is offline. Run "mcp-coop-agentic-factory up" to start the Core DB.',
+    );
+  }
+  const manifest = hydrateManifestFromCore(baseManifest, coreCatalog);
+  profile.agent = manifest.agent;
+  profile.stackTags = resolveEffectiveStackTags(manifest);
 
   if (subcmd === "list") {
-    const effectiveTags = resolveEffectiveStackTags(manifest);
-    const catalogResp = await fetchHarnessCatalog({
-      workspacePath: profile.workspacePath,
-      stackTags: effectiveTags,
-    });
-    let items = catalogResp?.components ?? buildOfflineCatalogItems(manifest);
+    let items = coreCatalog.components;
     if (ctx.typeFilter) {
       const wantedType = ctx.typeFilter.trim().toLowerCase();
       items = items.filter((i) => i.component_type.toLowerCase() === wantedType);
@@ -589,11 +603,37 @@ export async function dispatchCommand(ctx: ParsedCliContext): Promise<void> {
       manifest.agent = confirmedProfile.agent;
       manifest.stack.detected_tags = [...confirmedProfile.stackTags];
 
-      const dockerResult = await ensureGlobalStackUp();
+      const pipelineStart = Date.now();
+      const progress = createPipelineProgress();
+      progress.start(
+        "[1/4] Syncing runtime & Docker stack files to ~/.mcp-coop-agentic-factory/...",
+      );
+      const dockerResult = await ensureGlobalStackUp({
+        onProgress: (phaseText: string) => progress.update(phaseText),
+      });
+      progress.update(
+        "[4/4] Compiling Harness² bundle & materializing workspace files...",
+      );
       const { report, persistedInDb } = await syncWorkspaceArtifacts(
         confirmedProfile,
         manifest,
       );
+      const elapsedSec = ((Date.now() - pipelineStart) / 1000).toFixed(1);
+      if (dockerResult.coreHealthy) {
+        progress.stop(
+          styleText(
+            "green",
+            `✔ Global Docker stack & Core API online (${elapsedSec}s)`,
+          ),
+        );
+      } else {
+        progress.stop(
+          styleText(
+            "yellow",
+            `⚠ Docker stack unavailable — initialized in Offline Seed Mode (${elapsedSec}s)`,
+          ),
+        );
+      }
       renderInitSummary({
         profile: confirmedProfile,
         dockerResult,
@@ -608,14 +648,26 @@ export async function dispatchCommand(ctx: ParsedCliContext): Promise<void> {
     }
     case "sync": {
       const profile = inspectWorkspace(process.cwd(), ctx.agent);
-      const manifest = loadProjectHarnessConfig(
+      const baseManifest = loadProjectHarnessConfig(
         profile.workspacePath,
         profile.agent,
         profile.stackTags,
       );
+      const coreCatalog = await fetchHarnessCatalog({
+        workspacePath: profile.workspacePath,
+      });
+      if (!coreCatalog) {
+        throw new Error(
+          'Global Docker stack is offline. Run "mcp-coop-agentic-factory up" to start the Core DB before syncing.',
+        );
+      }
+      const manifest = hydrateManifestFromCore(baseManifest, coreCatalog);
       if (ctx.agent !== AUTO_AGENT_OPTION) {
         manifest.agent = profile.agent;
+      } else {
+        profile.agent = manifest.agent;
       }
+      profile.stackTags = resolveEffectiveStackTags(manifest);
       const { report, source } = await syncWorkspaceArtifacts(
         profile,
         manifest,
@@ -631,20 +683,56 @@ export async function dispatchCommand(ctx: ParsedCliContext): Promise<void> {
       break;
     case "status": {
       const profile = inspectWorkspace(process.cwd(), ctx.agent);
-      const manifest = loadProjectHarnessConfig(
+      const baseManifest = loadProjectHarnessConfig(
         profile.workspacePath,
         profile.agent,
         profile.stackTags,
       );
-      const [health, providers] = await Promise.all([
+      const [health, providers, coreCatalog] = await Promise.all([
         checkCoreHealth(),
         listTier2Providers(),
+        fetchHarnessCatalog({ workspacePath: profile.workspacePath }),
       ]);
-      renderStatusCommand(profile, CLI_VERSION, runtime, {
+      const manifest = hydrateManifestFromCore(baseManifest, coreCatalog);
+      const effectiveProfile: WorkspaceProfile = {
+        ...profile,
+        agent: ctx.agent !== AUTO_AGENT_OPTION ? profile.agent : manifest.agent,
+        stackTags: resolveEffectiveStackTags(manifest),
+      };
+      renderStatusCommand(effectiveProfile, CLI_VERSION, runtime, {
         health,
         providers,
         manifest,
       });
+      break;
+    }
+    case "up": {
+      intro(renderCliBanner(CLI_VERSION, runtime, "Global Stack Startup"));
+      const startedAt = Date.now();
+      const progress = createPipelineProgress();
+      progress.start(
+        "[1/3] Syncing runtime & Docker stack files to ~/.mcp-coop-agentic-factory/...",
+      );
+      const dockerResult = await ensureGlobalStackUp({
+        onProgress: (phaseText: string) => progress.update(phaseText),
+      });
+      const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
+      if (dockerResult.coreHealthy) {
+        progress.stop(
+          styleText(
+            "green",
+            `✔ Global Docker stack & Core API online (${elapsedSec}s)`,
+          ),
+        );
+      } else {
+        progress.stop(
+          styleText(
+            "yellow",
+            `⚠ Failed to bring up global Docker stack (${elapsedSec}s)`,
+          ),
+        );
+      }
+      renderUpCommand(CLI_VERSION, runtime, dockerResult);
       break;
     }
     case "down": {

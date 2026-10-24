@@ -58,7 +58,9 @@ TRUNCATION_NOTICE: str = "\n\n<!-- Rules truncated to fit MAX_RULES_MARKDOWN_BYT
 DEFAULT_LOCALHOST_HOST: str = "127.0.0.1"
 MCP_HTTP_PATH: str = "/mcp"
 DEFAULT_MCP_URL: str = f"http://{DEFAULT_LOCALHOST_HOST}:8787{MCP_HTTP_PATH}"
-DEFAULT_HOOK_CLI_COMMAND_TEMPLATE: str = "bunx mcp-coop-agentic-factory hook {event} --agent {agent}"
+DEFAULT_HOOK_CLI_COMMAND_TEMPLATE: str = (
+    '"$HOME/.mcp-coop-agentic-factory/bin/run-hook.sh" hook {event} --agent {agent}'
+)
 
 CURSOR_HOOKS_SCHEMA_VERSION: int = 1
 OPENCODE_SCHEMA_URL: str = "https://opencode.ai/config.json"

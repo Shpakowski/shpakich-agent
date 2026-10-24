@@ -16,6 +16,7 @@ import {
   note,
   outro,
   select,
+  spinner,
 } from "@clack/prompts";
 import {
   AGENT_CONFIG_HINTS,
@@ -312,6 +313,46 @@ function formatManifestOverridesSummary(
   return `${enabledPart} · ${disabledPart} · ${hooksPart}`;
 }
 
+export interface PipelineProgressController {
+  start: (initialMessage: string) => void;
+  update: (phaseMessage: string) => void;
+  stop: (finalMessage: string) => void;
+}
+
+/**
+ * Создаёт контроллер живого прогресс-спиннера `@clack/prompts` для длительных операций
+ * (`docker compose up -d --build`, ожидание `/health`, компиляция бандла).
+ */
+export function createPipelineProgress(): PipelineProgressController {
+  const isTty = Boolean(process.stdout.isTTY);
+  const s = isTty ? spinner() : null;
+  let started = false;
+
+  return {
+    start(initialMessage: string): void {
+      if (s) {
+        s.start(styleText("cyan", initialMessage));
+        started = true;
+      } else {
+        log.step(styleText("cyan", initialMessage));
+      }
+    },
+    update(phaseMessage: string): void {
+      if (s && started) {
+        s.message(styleText("cyan", phaseMessage));
+      }
+    },
+    stop(finalMessage: string): void {
+      if (s && started) {
+        s.stop(finalMessage);
+        started = false;
+      } else {
+        log.step(finalMessage);
+      }
+    },
+  };
+}
+
 /**
  * Отображает итоговую карточку после выполнения конвейера инициализации (`init`):
  * статус Docker-стека, количество записанных/пропущенных/удалённых файлов и путь к `.context/harness.json`.
@@ -320,16 +361,20 @@ export function renderInitSummary(params: {
   profile: WorkspaceProfile;
   dockerResult: DockerBootstrapResult;
   report: MaterializationReport;
-  manifestPath: string;
+  manifestPath?: string;
   persistedInDb: boolean;
 }): void {
-  const { dockerResult, report, manifestPath, persistedInDb } = params;
+  const { dockerResult, report, persistedInDb } = params;
   const stackBadge = dockerResult.coreHealthy
     ? `${styleText("green", "● online")} ${styleText("dim", `(${dockerResult.stackDir})`)}`
-    : `${styleText("yellow", "○ offline (Fail-Open seed mode)")} ${styleText("dim", `(${dockerResult.errorMessage ?? "Core unreachable"})`)}`;
+    : `${styleText("yellow", "○ offline (Fail-Open seed mode)")}`;
   const dbBadge = persistedInDb
-    ? styleText("green", "● registered in PostgreSQL 18")
-    : styleText("yellow", "○ local manifest only (Core offline)");
+    ? styleText("green", "● registered in PostgreSQL 18 (projects table)")
+    : styleText("yellow", "○ offline fallback (Core unreachable)");
+  const launcherBadge = styleText(
+    "cyan",
+    `${dockerResult.stackDir}/bin/run-hook.sh`,
+  );
   const filesSummary = [
     styleText("green", `${report.written.length} written`),
     styleText("dim", `${report.skipped.length} unchanged`),
@@ -338,15 +383,24 @@ export function renderInitSummary(params: {
       : styleText("dim", "0 pruned"),
   ].join(styleText("dim", " · "));
 
-  note(
-    [
-      `${styleText("dim", "Docker Stack  ")}  ${stackBadge}`,
-      `${styleText("dim", "Project DB    ")}  ${dbBadge}`,
-      `${styleText("dim", "Manifest      ")}  ${styleText("cyan", manifestPath)}`,
-      `${styleText("dim", "Materialized  ")}  ${filesSummary}`,
-    ].join("\n"),
-    "Initialization Pipeline Summary",
-  );
+  const summaryLines: string[] = [
+    `${styleText("dim", "Docker Stack  ")}  ${stackBadge}`,
+    `${styleText("dim", "Project Store ")}  ${dbBadge}`,
+    `${styleText("dim", "Hook Launcher ")}  ${launcherBadge}`,
+    `${styleText("dim", "Materialized  ")}  ${filesSummary}`,
+  ];
+
+  if (!dockerResult.coreHealthy && dockerResult.errorMessage) {
+    const cleanReason = dockerResult.errorMessage
+      .replace(/\r?\n/g, " ")
+      .slice(0, 96);
+    summaryLines.push(
+      `${styleText("dim", "Diagnostics   ")}  ${styleText("yellow", cleanReason)}`,
+      `${styleText("dim", "Logs Command  ")}  ${styleText("dim", `docker compose -f "${dockerResult.composeFilePath}" logs`)}`,
+    );
+  }
+
+  note(summaryLines.join("\n"), "Initialization Pipeline Summary");
 
   outro(
     styleText(
@@ -383,7 +437,7 @@ export function renderSyncSummary(params: {
       `${styleText("dim", "Effective Tags")}  ${formatStackTagsGrid(effectiveTags)}`,
       `${styleText("dim", "Materialized  ")}  ${filesSummary}`,
     ].join("\n"),
-    `Synchronized Workspace (${HARNESS_MANIFEST_REL_PATH})`,
+    "Synchronized Workspace (PostgreSQL 18 Core)",
   );
 
   outro(
@@ -500,6 +554,54 @@ export function renderSyncCommand(
 }
 
 /**
+ * Отображает панель запуска глобального Docker Compose стека при вызове команды `up`.
+ */
+export function renderUpCommand(
+  version: string,
+  runtime: string,
+  dockerResult: DockerBootstrapResult,
+): void {
+  const stackBadge = dockerResult.coreHealthy
+    ? `${styleText("green", "● online")} ${styleText("dim", `(${dockerResult.stackDir})`)}`
+    : `${styleText("red", "✖ failed to start")}`;
+  const pgBadge = dockerResult.health.postgres_connected
+    ? styleText("green", "● online")
+    : styleText("yellow", "○ unreachable");
+  const redisBadge = dockerResult.health.redis_connected
+    ? styleText("green", "● online")
+    : styleText("yellow", "○ unreachable");
+
+  const lines = [
+    `${styleText("dim", "Docker Stack  ")}  ${stackBadge}`,
+    `${styleText("dim", "PostgreSQL 18 ")}  ${pgBadge}`,
+    `${styleText("dim", "Redis 7 Store ")}  ${redisBadge}`,
+  ];
+  if (!dockerResult.coreHealthy && dockerResult.errorMessage) {
+    lines.push(
+      `${styleText("dim", "Diagnostics   ")}  ${styleText("yellow", dockerResult.errorMessage.slice(0, 96))}`,
+    );
+  }
+
+  note(lines.join("\n"), "Global Factory Stack Startup");
+
+  if (dockerResult.coreHealthy) {
+    outro(
+      styleText(
+        "green",
+        "✔ Global Docker Compose stack is up and healthy. Run `mcp-coop-agentic-factory status` or `sync`.",
+      ),
+    );
+  } else {
+    outro(
+      styleText(
+        "yellow",
+        "⚠ Global Docker Compose stack could not reach healthy state. Ensure Docker Desktop is running.",
+      ),
+    );
+  }
+}
+
+/**
  * Отображает панель остановки глобального Docker Compose стека при вызове команды `down`.
  */
 export function renderDownCommand(
@@ -596,7 +698,7 @@ export function renderHarnessCatalogView(params: {
       `${styleText("dim", "Lifecycle Hooks")}  ${hookBadges}`,
       `${styleText("dim", "Effective Stack")}  ${formatStackTagsGrid(resolveEffectiveStackTags(manifest))}`,
     ].join("\n"),
-    `Project Harness Profile (${HARNESS_MANIFEST_REL_PATH})`,
+    "Project Harness Profile (PostgreSQL 18 Core)",
   );
 
   outro(
@@ -687,13 +789,14 @@ export function renderHelpScreen(
     `${styleText(["bold", "cyan"], `$ ${cliName} <command> [subcommand] [options]`)}`,
     "",
     `${styleText(["bold", "white"], "Commands:")}`,
-    `  ${styleText(["bold", "green"], "init     ")}  Interactive TUI wizard for Docker stack, .context/harness.json & agent hooks`,
-    `  ${styleText(["bold", "cyan"], "sync     ")}  Recompile & sync workspace rules/skills/hooks and prune disabled artifacts`,
+    `  ${styleText(["bold", "green"], "init     ")}  Interactive TUI wizard for Docker stack, project DB registration & agent hooks`,
+    `  ${styleText(["bold", "cyan"], "sync     ")}  Recompile & sync workspace rules/skills/hooks from Core PostgreSQL DB`,
     `  ${styleText(["bold", "cyan"], "harness  ")}  Manage rules, skills, hooks & tags (list, enable, disable, hook-enable,`,
     `             ${styleText("dim", "hook-disable, tag-add, tag-exclude)")}`,
     `  ${styleText(["bold", "cyan"], "providers")}  Manage Tier 2 Decision API providers (list, add, enable, disable,`,
     `             ${styleText("dim", "priority, remove, reset)")}`,
-    `  ${styleText(["bold", "cyan"], "status   ")}  Inspect workspace profile, .context/harness.json, Docker & Tier 2 health`,
+    `  ${styleText(["bold", "cyan"], "status   ")}  Inspect workspace profile, PostgreSQL 18 Core, Docker & Tier 2 health`,
+    `  ${styleText(["bold", "green"], "up       ")}  Start global ~/.mcp-coop-agentic-factory/ Docker Compose stack`,
     `  ${styleText(["bold", "yellow"], "down     ")}  Gracefully stop global ~/.mcp-coop-agentic-factory/ stack`,
     `  ${styleText("dim", "hook     ")}  Lifecycle hook bridge (session-start, pre-tool-use, post-tool-use, pre-invocation, stop)`,
     "",

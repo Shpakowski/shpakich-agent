@@ -5,7 +5,7 @@
  * методы для взаимодействия с REST API аналитического ядра (`127.0.0.1:8787`).
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -22,12 +22,15 @@ export const REGISTER_PROJECT_ENDPOINT = "/api/projects/register" as const;
 export const PROVIDERS_ENDPOINT = "/api/providers" as const;
 export const HARNESS_COMPONENTS_ENDPOINT = "/api/harness/components" as const;
 export const HOOKS_BASE_ENDPOINT = "/api/hooks" as const;
+export const HOOK_LAUNCHER_REL_PATH = "bin/run-hook.sh" as const;
 
 const DEFAULT_HEALTH_TIMEOUT_MS = 1500 as const;
 const FAST_HEALTH_PROBE_TIMEOUT_MS = 1200 as const;
-const DEFAULT_WAIT_HEALTH_TIMEOUT_MS = 8000 as const;
-const HEALTH_POLL_INTERVAL_MS = 500 as const;
-const DOCKER_COMPOSE_TIMEOUT_MS = 120_000 as const;
+const DEFAULT_WAIT_HEALTH_TIMEOUT_MS = 10_000 as const;
+const HEALTH_POLL_INTERVAL_MS = 600 as const;
+const DOCKER_COMPOSE_TIMEOUT_MS = 180_000 as const;
+const DOCKER_PROGRESS_TICK_MS = 1000 as const;
+const MAX_ERROR_SUMMARY_LENGTH = 140 as const;
 const DEFAULT_REGISTER_TIMEOUT_MS = 4000 as const;
 const DEFAULT_API_TIMEOUT_MS = 3000 as const;
 
@@ -35,10 +38,16 @@ const DOCKER_BINARY = "docker" as const;
 const COMPOSE_REL_PATH = "docker/docker-compose.yml" as const;
 const DOCKERFILE_REL_PATH = "docker/Dockerfile" as const;
 const PYPROJECT_REL_PATH = "pyproject.toml" as const;
+const README_REL_PATH = "README.md" as const;
+const DOCKERIGNORE_REL_PATH = ".dockerignore" as const;
+const PACKAGE_JSON_REL_PATH = "package.json" as const;
 const CORE_SRC_REL_PATH = "src/core" as const;
+const DIST_REL_PATH = "dist" as const;
+const NODE_MODULES_REL_PATH = "node_modules" as const;
 const ENV_FILE_NAME = ".env" as const;
 const ENV_EXAMPLE_FILE_NAME = ".env.example" as const;
 const PYCACHE_DIR_NAME = "__pycache__" as const;
+const EXECUTABLE_FILE_MODE = 0o755 as const;
 
 const DEFAULT_ENV_TEMPLATE = [
   "# MCP-COOP Agentic Factory Global Stack Environment",
@@ -130,20 +139,80 @@ export function resolveCliPackageRoot(): string {
 }
 
 /**
- * Синхронизирует `pyproject.toml`, `docker/*` и `src/core/` из пакета в `~/.mcp-coop-agentic-factory/`.
- * Это позволяет Docker Compose собирать и запускать ядро из постоянной домашней директории пользователя,
- * даже если CLI был вызван через временный кэш `bunx` или `npx`.
+ * Генерирует универсальный POSIX-лаунчер `~/.mcp-coop-agentic-factory/bin/run-hook.sh`.
+ * Скрипт автоматически находит `bun` или `node` в стандартных путях macOS/Linux (даже при вызове
+ * из неинтерактивного `/bin/sh` в GUI IDE), а при полном отсутствии рантаймов выводит понятную
+ * инструкцию со ссылками на официальные сайты установки.
  */
-export function syncGlobalFactoryStackFiles(): { stackDir: string; composeFilePath: string } {
+function buildHookLauncherScript(fallbackPackageDistEntry: string): string {
+  const escapedFallback = fallbackPackageDistEntry.replace(/"/g, '\\"');
+  return [
+    "#!/bin/sh",
+    "# Auto-generated universal hook launcher for MCP-COOP Agentic Factory.",
+    'export PATH="$HOME/.bun/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"',
+    'if [ -d "$HOME/.nvm/versions/node" ]; then',
+    '  LATEST_NVM_NODE="$(ls -1d "$HOME/.nvm/versions/node/"* 2>/dev/null | tail -n 1)"',
+    '  if [ -n "$LATEST_NVM_NODE" ] && [ -d "$LATEST_NVM_NODE/bin" ]; then',
+    '    export PATH="$LATEST_NVM_NODE/bin:$PATH"',
+    "  fi",
+    "fi",
+    "",
+    'FACTORY_HOME="${MCP_COOP_FACTORY_HOME:-$HOME/.mcp-coop-agentic-factory}"',
+    'CLI_ENTRY="$FACTORY_HOME/dist/index.js"',
+    'if [ ! -f "$CLI_ENTRY" ]; then',
+    `  CLI_ENTRY="${escapedFallback}"`,
+    "fi",
+    "",
+    'if [ "$1" = "hook" ]; then',
+    "  shift",
+    "fi",
+    "",
+    'if command -v bun >/dev/null 2>&1 && [ -f "$CLI_ENTRY" ]; then',
+    '  exec bun "$CLI_ENTRY" hook "$@"',
+    'elif command -v node >/dev/null 2>&1 && [ -f "$CLI_ENTRY" ]; then',
+    '  exec node "$CLI_ENTRY" hook "$@"',
+    "elif command -v bunx >/dev/null 2>&1; then",
+    '  exec bunx mcp-coop-agentic-factory hook "$@"',
+    "elif command -v npx >/dev/null 2>&1; then",
+    '  exec npx mcp-coop-agentic-factory hook "$@"',
+    "else",
+    '  echo "[MCP-COOP Factory] Error: Neither Bun nor Node.js runtime was found on this machine." >&2',
+    '  echo "Please install one of the supported JavaScript runtimes:" >&2',
+    '  echo "  • Bun (recommended): https://bun.sh  (curl -fsSL https://bun.sh/install | bash)" >&2',
+    '  echo "  • Node.js (>= 20):   https://nodejs.org" >&2',
+    "  exit 1",
+    "fi",
+    "",
+  ].join("\n");
+}
+
+/**
+ * Синхронизирует `pyproject.toml`, `README.md`, `.dockerignore`, `docker/*`, `src/core/`,
+ * скомпилированный `dist/` и лаунчер `bin/run-hook.sh` в `~/.mcp-coop-agentic-factory/`.
+ */
+export function syncGlobalFactoryStackFiles(): {
+  stackDir: string;
+  composeFilePath: string;
+  launcherPath: string;
+} {
   const stackDir = getGlobalFactoryDir();
   const packageRoot = resolveCliPackageRoot();
   const composeFilePath = path.join(stackDir, COMPOSE_REL_PATH);
+  const launcherPath = path.join(stackDir, HOOK_LAUNCHER_REL_PATH);
 
   fs.mkdirSync(path.join(stackDir, "docker"), { recursive: true });
   fs.mkdirSync(path.join(stackDir, "src"), { recursive: true });
+  fs.mkdirSync(path.join(stackDir, "bin"), { recursive: true });
 
   if (path.resolve(packageRoot) !== path.resolve(stackDir)) {
-    const singleFiles = [PYPROJECT_REL_PATH, DOCKERFILE_REL_PATH, COMPOSE_REL_PATH] as const;
+    const singleFiles = [
+      PYPROJECT_REL_PATH,
+      README_REL_PATH,
+      DOCKERIGNORE_REL_PATH,
+      PACKAGE_JSON_REL_PATH,
+      DOCKERFILE_REL_PATH,
+      COMPOSE_REL_PATH,
+    ] as const;
     for (const relPath of singleFiles) {
       const srcFile = path.join(packageRoot, relPath);
       const destFile = path.join(stackDir, relPath);
@@ -162,6 +231,33 @@ export function syncGlobalFactoryStackFiles(): { stackDir: string; composeFilePa
         filter: (sourcePath: string) => path.basename(sourcePath) !== PYCACHE_DIR_NAME,
       });
     }
+
+    const srcDistDir = path.join(packageRoot, DIST_REL_PATH);
+    const destDistDir = path.join(stackDir, DIST_REL_PATH);
+    if (fs.existsSync(srcDistDir)) {
+      fs.cpSync(srcDistDir, destDistDir, {
+        recursive: true,
+        force: true,
+      });
+    }
+
+    const srcNodeModules = path.join(packageRoot, NODE_MODULES_REL_PATH);
+    const destNodeModules = path.join(stackDir, NODE_MODULES_REL_PATH);
+    if (fs.existsSync(srcNodeModules) && !fs.existsSync(destNodeModules)) {
+      try {
+        fs.symlinkSync(srcNodeModules, destNodeModules, "dir");
+      } catch {
+        // Игнорируем ошибку симлинка на файловых системах без поддержки символьных ссылок.
+      }
+    }
+  }
+
+  const fallbackDistEntry = path.join(packageRoot, DIST_REL_PATH, "index.js");
+  fs.writeFileSync(launcherPath, buildHookLauncherScript(fallbackDistEntry), "utf-8");
+  try {
+    fs.chmodSync(launcherPath, EXECUTABLE_FILE_MODE);
+  } catch {
+    // На платформах без POSIX-прав доступа chmod безопасно пропускается.
   }
 
   const destEnvPath = path.join(stackDir, ENV_FILE_NAME);
@@ -174,7 +270,7 @@ export function syncGlobalFactoryStackFiles(): { stackDir: string; composeFilePa
     }
   }
 
-  return { stackDir, composeFilePath };
+  return { stackDir, composeFilePath, launcherPath };
 }
 
 function createUnreachableHealthStatus(status = "unreachable"): CoreHealthStatus {
@@ -226,16 +322,180 @@ function sleepMs(ms: number): Promise<void> {
 }
 
 /**
+ * Извлекает короткую читаемую фазу прогресса из строки вывода `docker compose` / BuildKit
+ * для живого обновления спиннера `@clack/prompts`.
+ */
+export function extractDockerProgressPhase(rawLine: string): string | null {
+  const cleaned = rawLine.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").trim();
+  if (!cleaned || cleaned.startsWith("---") || /^\d+\s*\|/.test(cleaned)) {
+    return null;
+  }
+
+  const stepMatch = /^#\d+\s+\[([^\]]+)\]\s*(.*)$/.exec(cleaned);
+  if (stepMatch) {
+    const stage = stepMatch[1]?.trim() ?? "";
+    const detail = stepMatch[2]?.trim() ?? "";
+    const combined = detail ? `${stage}: ${detail}` : stage;
+    return combined.length > 72 ? `${combined.slice(0, 69)}...` : combined;
+  }
+
+  if (
+    /^(Pulling|Building|Creating|Starting|Waiting|Container|Network|Volume|Image)\b/i.test(
+      cleaned,
+    )
+  ) {
+    return cleaned.length > 72 ? `${cleaned.slice(0, 69)}...` : cleaned;
+  }
+
+  return null;
+}
+
+/**
+ * Очищает многострочный стектрейс ошибки Docker BuildKit / Compose до компактной однострочной сводки,
+ * чтобы сообщение об ошибке никогда не разрывало рамку карточки `@clack/prompts`.
+ */
+export function formatDockerErrorSummary(rawError: string): string {
+  const lines = rawError
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(
+      (line) =>
+        line.length > 0 &&
+        !line.startsWith("---") &&
+        !line.startsWith("View build details:") &&
+        !/^\d+\s*\|/.test(line) &&
+        !/^>>>\s*\d+\s*\|/.test(line),
+    );
+
+  const priorityLine =
+    lines.find((line) => /failed to solve:|error:|cannot connect|daemon/i.test(line)) ??
+    lines[lines.length - 1] ??
+    "Docker daemon is unavailable or compose command failed";
+
+  const compact = priorityLine.replace(/\s+/g, " ").trim();
+  if (compact.length <= MAX_ERROR_SUMMARY_LENGTH) {
+    return compact;
+  }
+  return `${compact.slice(0, MAX_ERROR_SUMMARY_LENGTH - 3)}...`;
+}
+
+async function runDockerComposeUpAsync(
+  composeArgs: string[],
+  stackDir: string,
+  onProgress?: (phaseText: string) => void,
+): Promise<{ ok: boolean; errorSummary?: string }> {
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    let currentPhase = "Starting Docker Compose stack...";
+    const outputTail: string[] = [];
+    let settled = false;
+
+    const emitProgress = (): void => {
+      if (!onProgress) {
+        return;
+      }
+      const elapsedSec = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+      onProgress(`[2/4] Docker Compose: ${currentPhase} (${elapsedSec}s)`);
+    };
+
+    emitProgress();
+    const tickTimer = setInterval(emitProgress, DOCKER_PROGRESS_TICK_MS);
+
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(DOCKER_BINARY, composeArgs, {
+        cwd: stackDir,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (err: unknown) {
+      clearInterval(tickTimer);
+      const msg = err instanceof Error ? err.message : String(err);
+      resolve({ ok: false, errorSummary: formatDockerErrorSummary(msg) });
+      return;
+    }
+
+    const timeoutTimer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        clearInterval(tickTimer);
+        child.kill("SIGTERM");
+        resolve({
+          ok: false,
+          errorSummary: `Docker Compose timed out after ${Math.round(DOCKER_COMPOSE_TIMEOUT_MS / 1000)}s`,
+        });
+      }
+    }, DOCKER_COMPOSE_TIMEOUT_MS);
+
+    const handleChunk = (chunk: Buffer | string): void => {
+      const text = Buffer.isBuffer(chunk) ? chunk.toString("utf-8") : String(chunk);
+      for (const rawLine of text.split(/\r?\n/)) {
+        const trimmed = rawLine.trim();
+        if (!trimmed) {
+          continue;
+        }
+        outputTail.push(trimmed);
+        if (outputTail.length > 40) {
+          outputTail.shift();
+        }
+        const phase = extractDockerProgressPhase(trimmed);
+        if (phase) {
+          currentPhase = phase;
+          emitProgress();
+        }
+      }
+    };
+
+    child.stdout?.on("data", handleChunk);
+    child.stderr?.on("data", handleChunk);
+
+    child.once("error", (err: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearInterval(tickTimer);
+      clearTimeout(timeoutTimer);
+      resolve({ ok: false, errorSummary: formatDockerErrorSummary(err.message) });
+    });
+
+    child.once("close", (code: number | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearInterval(tickTimer);
+      clearTimeout(timeoutTimer);
+      if (code === 0) {
+        resolve({ ok: true });
+      } else {
+        resolve({
+          ok: false,
+          errorSummary: formatDockerErrorSummary(outputTail.join("\n")),
+        });
+      }
+    });
+  });
+}
+
+/**
  * Гарантирует готовность глобального Docker-стека: синхронизирует файлы в `~/.mcp-coop-agentic-factory/`,
- * проверяет текущее здоровье ядра и при необходимости запускает `docker compose up -d`.
+ * проверяет текущее здоровье ядра и при необходимости асинхронно запускает `docker compose up -d --build`
+ * с живой трансляцией статуса в колбэк `onProgress`.
  */
 export async function ensureGlobalStackUp(options?: {
   skipDockerBuild?: boolean;
   waitTimeoutMs?: number;
+  onProgress?: (phaseText: string) => void;
 }): Promise<DockerBootstrapResult> {
+  options?.onProgress?.(
+    "[1/4] Syncing runtime & Docker stack files to ~/.mcp-coop-agentic-factory/...",
+  );
   const { stackDir, composeFilePath } = syncGlobalFactoryStackFiles();
+
   const initialHealth = await checkCoreHealth(FAST_HEALTH_PROBE_TIMEOUT_MS);
   if (initialHealth.reachable && initialHealth.status === "ok") {
+    options?.onProgress?.("[3/4] Core API is already online and healthy.");
     return {
       stackDir,
       composeFilePath,
@@ -261,34 +521,38 @@ export async function ensureGlobalStackUp(options?: {
     composeArgs.push("--build");
   }
 
-  const proc = spawnSync(DOCKER_BINARY, composeArgs, {
-    cwd: stackDir,
-    encoding: "utf-8",
-    timeout: DOCKER_COMPOSE_TIMEOUT_MS,
-  });
+  const composeRun = await runDockerComposeUpAsync(
+    composeArgs,
+    stackDir,
+    options?.onProgress,
+  );
 
-  if (proc.error || proc.status !== 0) {
-    const errText =
-      proc.error?.message ||
-      proc.stderr?.trim() ||
-      proc.stdout?.trim() ||
-      "Docker daemon is unavailable or compose command failed";
+  if (!composeRun.ok) {
     return {
       stackDir,
       composeFilePath,
       startedContainers: false,
       coreHealthy: false,
       health: initialHealth,
-      errorMessage: errText,
+      errorMessage: composeRun.errorSummary,
     };
   }
 
   const waitTimeoutMs = options?.waitTimeoutMs ?? DEFAULT_WAIT_HEALTH_TIMEOUT_MS;
+  const maxAttempts = Math.max(1, Math.ceil(waitTimeoutMs / HEALTH_POLL_INTERVAL_MS));
   const deadline = Date.now() + waitTimeoutMs;
+  let attempt = 1;
+  options?.onProgress?.(
+    `[3/4] Waiting for FastAPI + FastMCP Core readiness (/health) — attempt ${attempt}/${maxAttempts}...`,
+  );
   let latestHealth = await checkCoreHealth(FAST_HEALTH_PROBE_TIMEOUT_MS);
 
   while (!latestHealth.reachable && Date.now() < deadline) {
     await sleepMs(HEALTH_POLL_INTERVAL_MS);
+    attempt += 1;
+    options?.onProgress?.(
+      `[3/4] Waiting for FastAPI + FastMCP Core readiness (/health) — attempt ${Math.min(attempt, maxAttempts)}/${maxAttempts}...`,
+    );
     latestHealth = await checkCoreHealth(FAST_HEALTH_PROBE_TIMEOUT_MS);
   }
 
@@ -379,6 +643,8 @@ export async function fetchHarnessCatalog(
 ): Promise<{
   count: number;
   stack_tags: string[];
+  agent_type?: string;
+  profile_overrides: Record<string, unknown>;
   components: CatalogComponentItem[];
 } | null> {
   try {
@@ -397,9 +663,21 @@ export async function fetchHarnessCatalog(
       return null;
     }
     const data = (await response.json()) as Record<string, unknown>;
+    const rawOverrides =
+      typeof data.profile_overrides === "object" &&
+      data.profile_overrides !== null &&
+      !Array.isArray(data.profile_overrides)
+        ? (data.profile_overrides as Record<string, unknown>)
+        : {};
+    const resolvedAgent =
+      (typeof data.agent_type === "string" && data.agent_type) ||
+      (typeof rawOverrides.agent === "string" && rawOverrides.agent) ||
+      undefined;
     return {
       count: typeof data.count === "number" ? data.count : 0,
       stack_tags: Array.isArray(data.stack_tags) ? (data.stack_tags as string[]) : [],
+      agent_type: resolvedAgent,
+      profile_overrides: rawOverrides,
       components: Array.isArray(data.components)
         ? (data.components as CatalogComponentItem[])
         : [],

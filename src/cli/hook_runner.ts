@@ -359,6 +359,10 @@ export function buildDialectAllowResponse(
   agent: AgentId,
   systemMessage?: string,
 ): Record<string, unknown> {
+  if (event === "post-tool-use") {
+    return {};
+  }
+
   if (event === "pre-tool-use") {
     if (agent === "claude-code" || agent === "codex") {
       return {
@@ -374,36 +378,40 @@ export function buildDialectAllowResponse(
     return { decision: "allow" };
   }
 
-  if (event === "session-start" && systemMessage && systemMessage.trim().length > 0) {
-    if (agent === "antigravity") {
-      return {
-        decision: "allow",
-        hookSpecificOutput: {
+  if (event === "session-start" || event === "pre-invocation") {
+    if (systemMessage && systemMessage.trim().length > 0) {
+      if (agent === "antigravity") {
+        return {
           injectSteps: [
             {
-              role: "system",
-              content: systemMessage,
-              isEphemeral: false,
+              systemMessage: {
+                systemMessage,
+              },
             },
           ],
-        },
-      };
+        };
+      }
+      if (agent === "claude-code" || agent === "codex") {
+        return {
+          hookSpecificOutput: {
+            hookEventName:
+              event === "session-start" ? "SessionStart" : "UserPromptSubmit",
+            additionalContext: systemMessage,
+          },
+        };
+      }
+      if (agent === "cursor") {
+        return { additional_context: systemMessage };
+      }
+      return { systemMessage };
     }
-    if (agent === "claude-code" || agent === "codex") {
-      return {
-        hookSpecificOutput: {
-          hookEventName: "SessionStart",
-          additionalContext: systemMessage,
-        },
-      };
-    }
-    if (agent === "cursor") {
-      return { additional_context: systemMessage };
-    }
-    return { decision: "allow", systemMessage };
+    return {};
   }
 
-  return { decision: "allow" };
+  if (agent === "antigravity") {
+    return { decision: "allow" };
+  }
+  return {};
 }
 /**
  * Формирует диалект-специфичный блокирующий ответ на событие `stop`, принуждающий агента
