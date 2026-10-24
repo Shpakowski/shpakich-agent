@@ -1,9 +1,9 @@
 """Единый реестр доменных перечислений ядра фабрики (Layer 2: Domain Enums).
 
 Определяет типы агентов, эволюционирующих компонентов Harness², областей видимости (scope),
-событий жизненных хуков и пространств ключей Redis. Валидация выполняется на уровне
-Python/Pydantic, что позволяет сохранять в PostgreSQL гибкий тип TEXT без миграций ALTER TYPE
-при добавлении новых агентов или типов компонентов.
+событий жизненных хуков, пространств ключей Redis и сущностей Контекстного Графа (`.context/`).
+Валидация выполняется на уровне Python/Pydantic, что позволяет сохранять в PostgreSQL гибкий тип TEXT
+без миграций ALTER TYPE при добавлении новых агентов или типов компонентов.
 """
 
 from __future__ import annotations
@@ -92,10 +92,47 @@ class RedisFlag(StrEnum):
     TRUE = "1"
 
 
+class ContextEntityClass(StrEnum):
+    """Канонические классы архитектурных вершин в локальном графе знаний `.context/`."""
+
+    MODULE = "Module"
+    CONTRACT = "Contract"
+    DECISION = "Decision"
+
+
+class ContextEntityStatus(StrEnum):
+    """Статусы жизненного цикла узла в графе `.context/entities/`."""
+
+    ACTIVE = "Active"
+    DRAFT = "Draft"
+    DEPRECATED = "Deprecated"
+
+
+class ContextRelationType(StrEnum):
+    """Типы направленных связей (рёбер `nx.DiGraph`) между узлами Контекстного Графа."""
+
+    DEPENDS_ON = "depends_on"
+    IMPLEMENTS = "implements"
+    GOVERNED_BY = "governed_by"
+    REFERENCES = "references"
+
+
+class ContextEntityFolder(StrEnum):
+    """Подкаталоги внутри `.context/entities/`, соответствующие классам узлов."""
+
+    MODULES = "modules"
+    CONTRACTS = "contracts"
+    DECISIONS = "decisions"
+
+
 __all__ = [
     "AgentType",
     "ComponentStatus",
     "ComponentType",
+    "ContextEntityClass",
+    "ContextEntityFolder",
+    "ContextEntityStatus",
+    "ContextRelationType",
     "HookEventType",
     "RedisFlag",
     "RedisKeySegment",
