@@ -14,6 +14,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from src.core import __version__
 from src.core.enums import AgentType
 
+# Параметры времени жизни (TTL) для оперативной памяти сессий (24 часа),
+# кэша решений/правил LangCache (1 час) и порога детектора зацикливания команд.
+DEFAULT_REDIS_SESSION_TTL_SECONDS: int = 86_400
+DEFAULT_REDIS_CACHE_TTL_SECONDS: int = 3_600
+MIN_REDIS_TTL_SECONDS: int = 60
+DEFAULT_MAX_CONSECUTIVE_CMD_FAILURES: int = 2
+
 
 class CoreSettings(BaseSettings):
     """Централизованная конфигурация ядра фабрики, синхронизированная с docker-compose.yml.
@@ -68,6 +75,33 @@ class CoreSettings(BaseSettings):
         default="redis://mcp-coop-agentic-factory-redis:6379/0",
         validation_alias=AliasChoices("MCP_COOP_REDIS_URL", "REDIS_URL"),
         description="Redis connection URL for event queues, pub/sub, and ephemeral session state.",
+    )
+    redis_session_ttl_seconds: int = Field(
+        default=DEFAULT_REDIS_SESSION_TTL_SECONDS,
+        ge=MIN_REDIS_TTL_SECONDS,
+        validation_alias=AliasChoices(
+            "MCP_COOP_REDIS_SESSION_TTL_SECONDS",
+            "REDIS_SESSION_TTL_SECONDS",
+        ),
+        description="Time-to-live in seconds for ephemeral session keys in Redis Working Memory.",
+    )
+    redis_cache_ttl_seconds: int = Field(
+        default=DEFAULT_REDIS_CACHE_TTL_SECONDS,
+        ge=MIN_REDIS_TTL_SECONDS,
+        validation_alias=AliasChoices(
+            "MCP_COOP_REDIS_CACHE_TTL_SECONDS",
+            "REDIS_CACHE_TTL_SECONDS",
+        ),
+        description="Time-to-live in seconds for cached hook decisions and rule bundles in Redis LangCache.",
+    )
+    max_consecutive_cmd_failures: int = Field(
+        default=DEFAULT_MAX_CONSECUTIVE_CMD_FAILURES,
+        ge=1,
+        validation_alias=AliasChoices(
+            "MCP_COOP_MAX_CONSECUTIVE_CMD_FAILURES",
+            "MAX_CONSECUTIVE_CMD_FAILURES",
+        ),
+        description="Threshold of identical failed tool executions before triggering anti-loop blockage.",
     )
 
     # Опциональные ключи внешних тонких HTTP-клиентов.

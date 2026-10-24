@@ -18,8 +18,6 @@ logger = logging.getLogger("mcp_coop.core.db.postgres")
 # Идемпотентная DDL-схема хранилища по спецификации Раздела 4.1 SPEC.md.
 # Выполняется внутри единой транзакции на старте ядра, что гарантирует атомарное
 # развёртывание расширений (vector, pg_trgm), таблиц и GIN-индексов без внешних миграторов.
-# Дефолтные значения областей видимости и статусов подставляются из единого реестра StrEnum (DRY),
-# а колонка agent_type не содержит вендор-хардкода в SQL и заполняется на уровне приложения.
 SCHEMA_DDL: str = f"""
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;

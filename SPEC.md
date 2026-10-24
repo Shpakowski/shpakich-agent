@@ -329,10 +329,12 @@ CREATE TABLE hook_events (
 );
 ```
 
-### 4.2. Ключи Redis (TTL = 24 часа)
+### 4.2. Ключи Redis (Сессии: TTL = 24 часа, LangCache: TTL = 1 час)
 * `session:{conversationId}:meta` (Hash) — `workspace_path`, `resolved_error` (`0|1`), `reflection_prompted` (`0|1`).
 * `session:{conversationId}:last_error` (JSON) — `{ tool_name, command, error_text, step_idx }`.
-* `session:{conversationId}:cmd_fails:{cmd_hash}` (Int) — счётчик последовательных падений идентичной команды для блокировки зацикливания.
+* `session:{conversationId}:promotion` (JSON, паттерн Iris Short-to-Long Promotion) — `{ tool_name, failed_command, error_text, recovery_command, step_idx }`.
+* `session:{conversationId}:cmd_fails` (Hash `cmd_hash -> count`) — счётчики последовательных падений команд для блокировки зацикливания.
+* `cache:decision:{cmd_hash}` и `cache:rules:{stack_hash}` (JSON, паттерн Iris LangCache Lite) — кэш вердиктов `DecisionEngine` и скомпилированных правил.
 
 ---
 

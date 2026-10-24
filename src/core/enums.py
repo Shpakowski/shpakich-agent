@@ -1,9 +1,9 @@
 """Единый реестр доменных перечислений ядра фабрики (Layer 2: Domain Enums).
 
-Реализует принципы DRY и KISS: все допустимые типы агентов, компонентов Harness²,
-областей видимости (scope) и событий жизненных хуков определяются в одном месте через StrEnum.
-Это позволяет строго валидировать входные данные на уровне Python/Pydantic, сохраняя в PostgreSQL
-гибкий тип TEXT без жёсткого вендор-лок-ина и сложных миграций ALTER TYPE.
+Определяет типы агентов, эволюционирующих компонентов Harness², областей видимости (scope),
+событий жизненных хуков и пространств ключей Redis. Валидация выполняется на уровне
+Python/Pydantic, что позволяет сохранять в PostgreSQL гибкий тип TEXT без миграций ALTER TYPE
+при добавлении новых агентов или типов компонентов.
 """
 
 from __future__ import annotations
@@ -59,10 +59,47 @@ class HookEventType(StrEnum):
     STOP = "stop"
 
 
+class RedisNamespace(StrEnum):
+    """Корневые пространства имён ключей Redis (Short-Term Working Memory vs LangCache Lite)."""
+
+    SESSION = "session"
+    CACHE = "cache"
+
+
+class RedisKeySegment(StrEnum):
+    """Функциональные сегменты ключей Redis для разделения метаданных сессии, ошибок и кэша."""
+
+    META = "meta"
+    LAST_ERROR = "last_error"
+    PROMOTION = "promotion"
+    CMD_FAILS = "cmd_fails"
+    DECISION = "decision"
+    RULES = "rules"
+
+
+class SessionMetaField(StrEnum):
+    """Имена полей в Redis Hash (`session:{id}:meta`), хранящем оперативный контекст диалога."""
+
+    WORKSPACE_PATH = "workspace_path"
+    RESOLVED_ERROR = "resolved_error"
+    REFLECTION_PROMPTED = "reflection_prompted"
+
+
+class RedisFlag(StrEnum):
+    """Строковые булевы флаги для атомарного хранения состояний внутри Redis Hash."""
+
+    FALSE = "0"
+    TRUE = "1"
+
+
 __all__ = [
     "AgentType",
     "ComponentStatus",
     "ComponentType",
     "HookEventType",
+    "RedisFlag",
+    "RedisKeySegment",
+    "RedisNamespace",
     "ScopeType",
+    "SessionMetaField",
 ]
