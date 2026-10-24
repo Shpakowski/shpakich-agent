@@ -238,6 +238,21 @@ class RedisSessionStore:
             pipe.expire(meta_key, self._session_ttl_seconds)
             await pipe.execute()
 
+    async def update_session_meta(
+        self,
+        conversation_id: str,
+        updates: Mapping[str, str],
+    ) -> None:
+        """Атомарно обновляет набор полей метаданных сессии (`session:{id}:meta`) за 1 сетевой RTT."""
+        if not updates:
+            return
+        meta_key = self._session_key(conversation_id, RedisKeySegment.META)
+        normalized: dict[str, str] = {str(k): str(v) for k, v in updates.items()}
+        async with self.client.pipeline(transaction=True) as pipe:
+            pipe.hset(meta_key, mapping=normalized)
+            pipe.expire(meta_key, self._session_ttl_seconds)
+            await pipe.execute()
+
     async def record_tool_failure(
         self,
         conversation_id: str,

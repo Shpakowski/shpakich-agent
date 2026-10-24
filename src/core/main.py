@@ -46,6 +46,7 @@ from src.core.harness import (
     DEFAULT_LOCALHOST_HOST,
     MCP_HTTP_PATH,
     HarnessCompiler,
+    HookScriptDispatcher,
     ProjectHarnessOverrides,
     normalize_stack_tags,
     resolve_effective_stack_tags,
@@ -145,6 +146,34 @@ def _get_engine(request: Request) -> DecisionEngine:
     )
     request.app.state.decision_engine = engine
     return engine
+
+
+def _get_script_dispatcher(request: Request) -> HookScriptDispatcher:
+    """Возвращает или лениво создаёт экземпляр `HookScriptDispatcher` в `request.app.state`."""
+    dispatcher: HookScriptDispatcher | None = getattr(
+        request.app.state,
+        "script_dispatcher",
+        None,
+    )
+    if dispatcher is not None:
+        return dispatcher
+
+    settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
+    db: PostgresDatabase | None = getattr(request.app.state, "db", None)
+    redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
+    embedding_client: EmbeddingClient = getattr(
+        request.app.state,
+        "embedding_client",
+        None,
+    ) or EmbeddingClient(settings)
+    request.app.state.embedding_client = embedding_client
+    dispatcher = HookScriptDispatcher(
+        db=db,
+        redis=redis_store,
+        embedding_client=embedding_client,
+    )
+    request.app.state.script_dispatcher = dispatcher
+    return dispatcher
 
 
 async def _resolve_project_context(
@@ -300,6 +329,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         compiler=compiler,
         embedding_client=embedding_client,
         max_consecutive_failures=settings.max_consecutive_cmd_failures,
+    )
+    app.state.script_dispatcher = HookScriptDispatcher(
+        db=db,
+        redis=redis_store,
+        embedding_client=embedding_client,
     )
 
     mcp_gateway: CoopMCPGateway | None = getattr(app.state, "mcp_gateway", None)
@@ -586,10 +620,29 @@ def create_app() -> FastAPI:
         raw_payload: dict[str, Any],
         request: Request,
     ) -> dict[str, Any]:
-        """Обрабатывает старт сессии: инициализирует метаданные в Redis и инжектирует карту `.context/index.md`."""
+        """Обрабатывает старт сессии: инициализирует метаданные в Redis и запускает скрипты `session-start`."""
+        if not raw_payload.get("context_index_md"):
+            ws_candidate = str(
+                raw_payload.get("workspace_path")
+                or (raw_payload.get("workspacePaths") or [""])[0]
+                if isinstance(raw_payload.get("workspacePaths"), list)
+                else raw_payload.get("workspace_path") or ""
+            ).strip()
+            if ws_candidate:
+                idx_path = Path(ws_candidate) / ".context" / "index.md"
+                if idx_path.is_file():
+                    try:
+                        raw_payload = {
+                            **raw_payload,
+                            "context_index_md": idx_path.read_text(encoding="utf-8").strip(),
+                        }
+                    except OSError:
+                        pass
+
         hook_in = normalize_hook_payload(HookEventType.SESSION_START, raw_payload)
         db: PostgresDatabase | None = getattr(request.app.state, "db", None)
         redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
+        dispatcher = _get_script_dispatcher(request)
         stack_tags, profile_overrides = await _resolve_project_context(
             db,
             hook_in.workspace_path,
@@ -605,18 +658,19 @@ def create_app() -> FastAPI:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Redis session init failed: %s", exc)
 
-        sys_msg = (
-            f"[MCP-COOP Factory]: Active stack tags={list(stack_tags)}. "
-            "Follow Learning-First iterative workflow and keep .context/ graph synchronized."
+        sys_parts: list[str] = [
+            (
+                f"[MCP-COOP Factory]: Active stack tags={list(stack_tags)}. "
+                "Follow Learning-First iterative workflow and keep .context/ graph synchronized."
+            )
+        ]
+        script_res = await dispatcher.execute_hook_scripts(
+            hook_in,
+            stack_tags,
+            profile_overrides,
         )
-        if hook_in.workspace_path:
-            idx_path = Path(hook_in.workspace_path) / ".context" / "index.md"
-            if idx_path.is_file():
-                try:
-                    idx_text = idx_path.read_text(encoding="utf-8").strip()
-                    sys_msg = f"{sys_msg}\n\n[Active Context Graph (.context/index.md)]:\n{idx_text}"
-                except OSError:
-                    pass
+        sys_parts.extend(script_res.system_messages)
+        sys_msg = "\n\n".join(sys_parts)
 
         active_settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
         compiler: HarnessCompiler = getattr(request.app.state, "compiler", None) or HarnessCompiler(
@@ -646,10 +700,11 @@ def create_app() -> FastAPI:
         raw_payload: dict[str, Any],
         request: Request,
     ) -> dict[str, Any]:
-        """Перехватывает вызов инструмента: проверяет `PLAN_VALIDATION` для планов или `TOOL_SAFETY` для команд."""
+        """Перехватывает вызов инструмента: проверяет `DecisionEngine` и скрипты `pre-tool-use` из БД."""
         hook_in = normalize_hook_payload(HookEventType.PRE_TOOL_USE, raw_payload)
         db: PostgresDatabase | None = getattr(request.app.state, "db", None)
         engine = _get_engine(request)
+        dispatcher = _get_script_dispatcher(request)
         stack_tags, profile_overrides = await _resolve_project_context(
             db,
             hook_in.workspace_path,
@@ -696,6 +751,20 @@ def create_app() -> FastAPI:
             )
 
         resolution = await engine.evaluate(dec_req)
+        script_res = await dispatcher.execute_hook_scripts(
+            hook_in,
+            stack_tags,
+            profile_overrides,
+        )
+        if script_res.action != VerdictAction.ALLOW and resolution.action == VerdictAction.ALLOW:
+            resolution = resolution.model_copy(
+                update={
+                    "action": script_res.action,
+                    "reason": script_res.reason or resolution.reason,
+                    "overwrite_args": script_res.overwrite_args or resolution.overwrite_args,
+                    "decided_by_tier": "hook_script_dispatcher",
+                }
+            )
         response_dict = format_hook_response(
             HookEventType.PRE_TOOL_USE,
             hook_in.dialect,
@@ -709,10 +778,16 @@ def create_app() -> FastAPI:
         raw_payload: dict[str, Any],
         request: Request,
     ) -> dict[str, Any]:
-        """Фиксирует ошибку инструмента в Redis или отмечает устранение сбоя (`MemoryPromotionCandidate`)."""
+        """Фиксирует ошибку инструмента в Redis и исполняет скрипты `post-tool-use` (трекинг файлов и др.)."""
         hook_in = normalize_hook_payload(HookEventType.POST_TOOL_USE, raw_payload)
         db: PostgresDatabase | None = getattr(request.app.state, "db", None)
         redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
+        dispatcher = _get_script_dispatcher(request)
+        stack_tags, profile_overrides = await _resolve_project_context(
+            db,
+            hook_in.workspace_path,
+            raw_payload,
+        )
 
         cmd = ""
         for key in COMMAND_ARG_KEYS:
@@ -721,7 +796,7 @@ def create_app() -> FastAPI:
                 cmd = val.strip()
                 break
 
-        eph_msg: str | None = None
+        eph_parts: list[str] = []
         if redis_store is not None and redis_store.is_connected:
             try:
                 if hook_in.error:
@@ -734,7 +809,7 @@ def create_app() -> FastAPI:
                             step_idx=hook_in.step_idx,
                         ),
                     )
-                    eph_msg = (
+                    eph_parts.append(
                         f"[MCP-COOP Working Memory]: Recorded tool failure #{fail_count} "
                         f"for '{hook_in.tool_name}'. Inspect the root cause before retrying."
                     )
@@ -744,12 +819,20 @@ def create_app() -> FastAPI:
                         recovery_command=cmd or hook_in.tool_name,
                     )
                     if candidate is not None:
-                        eph_msg = (
+                        eph_parts.append(
                             "[MCP-COOP Memory Promotion]: Previous tool failure was resolved! "
                             "Before finishing, record the root cause and fix into long-term memory."
                         )
             except Exception as exc:  # noqa: BLE001
                 logger.debug("PostToolUse Redis tracking failed: %s", exc)
+
+        script_res = await dispatcher.execute_hook_scripts(
+            hook_in,
+            stack_tags,
+            profile_overrides,
+        )
+        eph_parts.extend(script_res.ephemeral_messages)
+        eph_msg = "\n\n".join(eph_parts) if eph_parts else None
 
         response_dict = format_hook_response(
             HookEventType.POST_TOOL_USE,
@@ -764,32 +847,39 @@ def create_app() -> FastAPI:
         raw_payload: dict[str, Any],
         request: Request,
     ) -> dict[str, Any]:
-        """Анализирует контекст перед вызовом LLM: ре-гидратация после `/compact`, `/plan` и RAG по ошибкам."""
+        """Анализирует контекст перед вызовом LLM: ре-гидратация после `/compact`, `/plan`, RAG и скрипты `pre-invocation`."""
         hook_in = normalize_hook_payload(HookEventType.PRE_INVOCATION, raw_payload)
         db: PostgresDatabase | None = getattr(request.app.state, "db", None)
         redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
         engine = _get_engine(request)
-        stack_tags = await _resolve_project_stack_tags(db, hook_in.workspace_path, raw_payload)
+        dispatcher = _get_script_dispatcher(request)
+        stack_tags, profile_overrides = await _resolve_project_context(
+            db,
+            hook_in.workspace_path,
+            raw_payload,
+        )
 
         is_post_compact, tail_prompt = inspect_transcript_tail(hook_in.transcript_path)
         active_prompt = hook_in.prompt or tail_prompt
         hints: list[str] = []
-        sys_msg: str | None = None
+        sys_parts: list[str] = []
 
         if is_post_compact:
             rehydrated_msg = (
                 "[Post-Compaction Re-Hydration]: Context was compacted. Re-verify `.context/index.md` "
                 "and active session state before editing project files."
             )
-            if hook_in.workspace_path:
+            idx_text = str(raw_payload.get("context_index_md") or "").strip()
+            if not idx_text and hook_in.workspace_path:
                 idx_path = Path(hook_in.workspace_path) / ".context" / "index.md"
                 if idx_path.is_file():
                     try:
                         idx_text = idx_path.read_text(encoding="utf-8").strip()
-                        rehydrated_msg = f"{rehydrated_msg}\n\n[Active Context Graph (.context/index.md)]:\n{idx_text}"
                     except OSError:
                         pass
-            sys_msg = rehydrated_msg
+            if idx_text:
+                rehydrated_msg = f"{rehydrated_msg}\n\n[Active Context Graph (.context/index.md)]:\n{idx_text}"
+            sys_parts.append(rehydrated_msg)
 
         if "/plan" in active_prompt.lower():
             hints.append(
@@ -814,6 +904,15 @@ def create_app() -> FastAPI:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("PreInvocation error lookup failed: %s", exc)
 
+        script_res = await dispatcher.execute_hook_scripts(
+            hook_in,
+            stack_tags,
+            profile_overrides,
+        )
+        sys_parts.extend(script_res.system_messages)
+        hints.extend(script_res.ephemeral_messages)
+
+        sys_msg = "\n\n".join(sys_parts) if sys_parts else None
         eph_msg = "\n\n".join(hints) if hints else None
         response_dict = format_hook_response(
             HookEventType.PRE_INVOCATION,
@@ -829,10 +928,16 @@ def create_app() -> FastAPI:
         raw_payload: dict[str, Any],
         request: Request,
     ) -> dict[str, Any]:
-        """Перехватывает завершение хода: предлагает сохранить решённую ошибку в `Harness²` (не более 1 раза)."""
+        """Перехватывает завершение хода: исполняет скрипты `stop` (`enforce-context-sync` и др.) и рефлексию `Harness²`."""
         hook_in = normalize_hook_payload(HookEventType.STOP, raw_payload)
         db: PostgresDatabase | None = getattr(request.app.state, "db", None)
         redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
+        dispatcher = _get_script_dispatcher(request)
+        stack_tags, profile_overrides = await _resolve_project_context(
+            db,
+            hook_in.workspace_path,
+            raw_payload,
+        )
 
         resolution = DecisionResolution(
             domain=DecisionDomain.HARNESS_PROBE,
@@ -840,7 +945,19 @@ def create_app() -> FastAPI:
             decided_by_tier="stop_gate",
         )
 
-        if not hook_in.stop_hook_active and redis_store is not None and redis_store.is_connected:
+        script_res = await dispatcher.execute_hook_scripts(
+            hook_in,
+            stack_tags,
+            profile_overrides,
+        )
+        if script_res.action != VerdictAction.ALLOW:
+            resolution = DecisionResolution(
+                domain=DecisionDomain.HARNESS_PROBE,
+                action=script_res.action,
+                decided_by_tier="hook_script_dispatcher",
+                reason=script_res.reason,
+            )
+        elif not hook_in.stop_hook_active and redis_store is not None and redis_store.is_connected:
             try:
                 meta = await redis_store.get_session_meta(hook_in.conversation_id)
                 resolved_flag = meta.get(SessionMetaField.RESOLVED_ERROR.value) == RedisFlag.TRUE.value

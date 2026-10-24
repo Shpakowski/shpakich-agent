@@ -18,7 +18,9 @@ from src.core.enums import (
     ComponentStatus,
     ComponentType,
     GuardrailAction,
+    HookEventType,
     ScopeType,
+    ScriptExecutionMode,
 )
 
 if TYPE_CHECKING:
@@ -28,7 +30,174 @@ logger = logging.getLogger("mcp_coop.core.harness.seed")
 
 DEFAULT_COMPONENT_SCORE: float = 1.0
 DEFAULT_COMPONENT_VERSION: int = 1
+DEFAULT_SCRIPT_PRIORITY: int = 10
+DEFAULT_SCRIPT_TIMEOUT_MS: int = 500
 BUN_STACK_TAG: str = "bun"
+
+INJECT_CONTEXT_MAP_SCRIPT_CODE: str = '''import json
+import sys
+
+def main() -> None:
+    raw = sys.stdin.read().strip()
+    payload = json.loads(raw) if raw else {}
+    index_md = str(payload.get("context_index_md") or "").strip()
+    if not index_md:
+        print(json.dumps({}))
+        return
+    msg = (
+        "[MCP-COOP Context Graph]: Active project context graph map (`.context/index.md`).\\n"
+        "Use links from this map for targeted node reading and always update the graph "
+        "after modifying project files:\\n\\n"
+        f"{index_md}"
+    )
+    print(json.dumps({"system_message": msg}, ensure_ascii=False))
+
+if __name__ == "__main__":
+    main()
+'''
+
+TRACK_FILE_CHANGES_SCRIPT_CODE: str = '''import json
+import os
+import sys
+
+FILE_MUTATION_TOOLS = {
+    "write_file",
+    "edit_file",
+    "write",
+    "edit",
+    "multiedit",
+    "replace_file_content",
+    "multi_replace_file_content",
+}
+TRACKED_EXTENSIONS = {
+    ".py", ".ts", ".tsx", ".js", ".jsx", ".rs", ".go", ".sol", ".sql", ".sh", ".yml", ".yaml", ".toml"
+}
+
+def main() -> None:
+    raw = sys.stdin.read().strip()
+    payload = json.loads(raw) if raw else {}
+    if payload.get("error"):
+        print(json.dumps({}))
+        return
+
+    tool_name = str(payload.get("tool_name") or "").strip().lower()
+    if tool_name not in FILE_MUTATION_TOOLS:
+        print(json.dumps({}))
+        return
+
+    tool_args = payload.get("tool_args") or {}
+    raw_path = str(
+        tool_args.get("Path")
+        or tool_args.get("path")
+        or tool_args.get("file_path")
+        or tool_args.get("TargetFile")
+        or ""
+    ).strip()
+    workspace_path = str(payload.get("workspace_path") or "").strip()
+    if not raw_path or not workspace_path:
+        print(json.dumps({}))
+        return
+
+    abs_ws = os.path.abspath(workspace_path)
+    abs_target = os.path.abspath(os.path.join(abs_ws, raw_path))
+    rel_path = os.path.relpath(abs_target, abs_ws).replace("\\\\", "/")
+    if rel_path.startswith(".."):
+        print(json.dumps({}))
+        return
+
+    if rel_path == ".context" or rel_path.startswith(".context/"):
+        print(json.dumps({
+            "state_updates": {
+                "context_updated": "1",
+                "reminder_sent": "0",
+            }
+        }))
+        return
+
+    _, ext = os.path.splitext(rel_path.lower())
+    if ext in TRACKED_EXTENSIONS:
+        session_state = payload.get("session_state") or {}
+        existing_raw = str(session_state.get("modified_files") or "").strip()
+        files = [f for f in existing_raw.split(",") if f]
+        if rel_path not in files:
+            files.append(rel_path)
+        print(json.dumps({
+            "state_updates": {
+                "code_modified": "1",
+                "context_updated": "0",
+                "modified_files": ",".join(files[:10]),
+            }
+        }))
+        return
+
+    print(json.dumps({}))
+
+if __name__ == "__main__":
+    main()
+'''
+
+ENFORCE_CONTEXT_SYNC_SCRIPT_CODE: str = '''import json
+import sys
+
+BYPASS_REASONS = {
+    "USER_CANCELED",
+    "ERROR",
+    "MAX_INVOCATIONS",
+    "MAX_FORCED_INVOCATIONS",
+    "MAX_TOKEN_BUDGET_EXCEEDED",
+}
+
+def main() -> None:
+    raw = sys.stdin.read().strip()
+    payload = json.loads(raw) if raw else {}
+    raw_payload = payload.get("raw_payload") or {}
+    termination_reason = str(raw_payload.get("terminationReason") or "")
+    if (
+        payload.get("stop_hook_active")
+        or payload.get("error")
+        or termination_reason in BYPASS_REASONS
+    ):
+        print(json.dumps({"action": "allow"}))
+        return
+
+    state = payload.get("session_state") or {}
+    code_modified = str(state.get("code_modified") or "0") == "1"
+    context_updated = str(state.get("context_updated") or "0") == "1"
+    reminder_sent = str(state.get("reminder_sent") or "0") == "1"
+    modified_raw = str(state.get("modified_files") or "").strip()
+    files_list = ", ".join(f"`{f}`" for f in modified_raw.split(",") if f) or "project files"
+
+    if code_modified and not context_updated and not reminder_sent:
+        reason = (
+            f"[MCP-COOP Context Gate]: Project files were modified in this turn ({files_list}), "
+            "but the context graph in `.context/` (`index.md` or `.context/entities/`) "
+            "was not synchronized. Please update `.context/` and append an entry to `AI Traces` "
+            "before finishing. Always reply to the user in the language they use in chat."
+        )
+        print(json.dumps({
+            "action": "continue",
+            "reason": reason,
+            "state_updates": {"reminder_sent": "1"},
+        }, ensure_ascii=False))
+        return
+
+    if context_updated or reminder_sent:
+        print(json.dumps({
+            "action": "allow",
+            "state_updates": {
+                "code_modified": "0",
+                "context_updated": "0",
+                "reminder_sent": "0",
+                "modified_files": "",
+            },
+        }))
+        return
+
+    print(json.dumps({"action": "allow"}))
+
+if __name__ == "__main__":
+    main()
+'''
 
 # Регулярные выражения для перехвата вызовов терминальных инструментов во всех 5 агентах
 SHELL_TOOL_MATCHER: str = "run_command|Bash|shell|exec_command"
@@ -225,8 +394,62 @@ DEFAULT_HARNESS_SEEDS: tuple[HarnessComponentSeed, ...] = (
             "2. Update the affected `.context/entities/<folder>/<id>.md` file and record a "
             "dated entry in `## Логи контекста (AI Traces)`.\n"
             "3. Update `.context/index.md` (`updated_at` and node summary if files changed) so "
-            "the `Stop` hook (`enforce_context_sync.py`) passes cleanly."
+            "the `Stop` hook (`enforce-context-sync`) passes cleanly."
         ),
+    ),
+    HarnessComponentSeed(
+        slug="inject-context-map",
+        component_type=ComponentType.SCRIPT,
+        scope=ScopeType.GLOBAL,
+        stack_tags=(ScopeType.GLOBAL.value,),
+        title="Context Graph Map Injector (SessionStart Hook Script)",
+        description=(
+            "Injects the project's active .context/index.md knowledge graph map into the "
+            "agent's system context at SessionStart."
+        ),
+        content=INJECT_CONTEXT_MAP_SCRIPT_CODE,
+        metadata={
+            "hook_events": [HookEventType.SESSION_START.value],
+            "execution_mode": ScriptExecutionMode.ALWAYS.value,
+            "priority": DEFAULT_SCRIPT_PRIORITY,
+            "timeout_ms": DEFAULT_SCRIPT_TIMEOUT_MS,
+        },
+    ),
+    HarnessComponentSeed(
+        slug="track-file-changes",
+        component_type=ComponentType.SCRIPT,
+        scope=ScopeType.GLOBAL,
+        stack_tags=(ScopeType.GLOBAL.value,),
+        title="Workspace Code & Context Graph Mutation Tracker (PostToolUse Hook Script)",
+        description=(
+            "Tracks file edits on PostToolUse and records code_modified and context_updated "
+            "flags in Redis session state for Context Graph enforcement."
+        ),
+        content=TRACK_FILE_CHANGES_SCRIPT_CODE,
+        metadata={
+            "hook_events": [HookEventType.POST_TOOL_USE.value],
+            "execution_mode": ScriptExecutionMode.ALWAYS.value,
+            "priority": DEFAULT_SCRIPT_PRIORITY,
+            "timeout_ms": DEFAULT_SCRIPT_TIMEOUT_MS,
+        },
+    ),
+    HarnessComponentSeed(
+        slug="enforce-context-sync",
+        component_type=ComponentType.SCRIPT,
+        scope=ScopeType.GLOBAL,
+        stack_tags=(ScopeType.GLOBAL.value,),
+        title="Context Graph Synchronization Gate (Stop Hook Script)",
+        description=(
+            "Enforces atomic .context/ graph synchronization on Stop when project source "
+            "files were modified during the turn."
+        ),
+        content=ENFORCE_CONTEXT_SYNC_SCRIPT_CODE,
+        metadata={
+            "hook_events": [HookEventType.STOP.value],
+            "execution_mode": ScriptExecutionMode.ALWAYS.value,
+            "priority": DEFAULT_SCRIPT_PRIORITY,
+            "timeout_ms": DEFAULT_SCRIPT_TIMEOUT_MS,
+        },
     ),
 )
 

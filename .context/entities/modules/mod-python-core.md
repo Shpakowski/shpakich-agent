@@ -21,6 +21,7 @@ files:
   - src/core/harness/seed.py
   - src/core/harness/profiles.py
   - src/core/harness/compiler.py
+  - src/core/harness/script_runner.py
   - src/core/decision/__init__.py
   - src/core/decision/models.py
   - src/core/decision/providers.py
@@ -79,5 +80,8 @@ governed_by: []
 - 2026-10-24: Завершена Итерация 7.2 (Локальный MCP-шлюз `CoopMCPGateway` и сервис 8 инструментов `CoopMCPToolService` в `src/core/mcp/`, справедливое ранжирование оффлайн-записей в `search_memories`, интеграция `EmbeddingClient` и `/mcp` в `src/core/main.py`), пройдены проверки `pyright`, `ruff`, валидация графа `.context/` и сквозной тест всех 8 инструментов (`ALL_8_MCP_TOOLS_AND_HTTP_GATEWAY_PASSED`).
 - 2026-10-24: Реализована Итерация 8.1 (Пер-проектные оверрайды `ProjectHarnessOverrides` в `src/core/harness/compiler.py`, колонка `profile_overrides` в `projects`, учёт отключённых барьеров в `LocalDeterministicTier._evaluate_tool_safety` и REST API каталога компонентов `GET/PATCH /api/harness/components` в `src/core/main.py`), пройдены проверки `pyright` и `ruff`.
 - 2026-10-24: Обновлён шаблон вызова хуков `DEFAULT_HOOK_CLI_COMMAND_TEMPLATE` в `src/core/harness/compiler.py` на универсальный рантайм-лончер `~/.mcp-coop-agentic-factory/bin/run-hook.sh` и синхронизирована гидратация конфигурации проекта из таблицы `projects` PostgreSQL.
+- 2026-10-24: Завершена реализация декаплированной шины жизненных хуков и динамического диспетчера скриптов `HookScriptDispatcher` (`src/core/harness/script_runner.py`): в таблицу `harness_components` добавлены `embedding vector(768)` и `search_tsv`, 3 базовых скрипта (`inject-context-map`, `track-file-changes`, `enforce-context-sync`) зарегистрированы как компоненты `ComponentType.SCRIPT` в PostgreSQL, состояние сессии перенесено в Redis (`update_session_meta`), а отбор скриптов на хуках выполняется через двухступенчатую воронку (`always` + семантический Top-K `pgvector` / `tsvector`).
+
+
 
 

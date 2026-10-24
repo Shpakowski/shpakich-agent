@@ -46,6 +46,10 @@ CREATE TABLE IF NOT EXISTS harness_components (
     description TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL,
     metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+    embedding vector(768),
+    search_tsv tsvector GENERATED ALWAYS AS (
+        to_tsvector('simple', coalesce(slug, '') || ' ' || coalesce(title, '') || ' ' || coalesce(description, ''))
+    ) STORED,
     status TEXT NOT NULL DEFAULT '{ComponentStatus.COMPOSED}',
     score REAL NOT NULL DEFAULT 1.0,
     usage_count INT NOT NULL DEFAULT 0,
@@ -54,6 +58,14 @@ CREATE TABLE IF NOT EXISTS harness_components (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE harness_components ADD COLUMN IF NOT EXISTS embedding vector(768);
+ALTER TABLE harness_components ADD COLUMN IF NOT EXISTS search_tsv tsvector GENERATED ALWAYS AS (
+    to_tsvector('simple', coalesce(slug, '') || ' ' || coalesce(title, '') || ' ' || coalesce(description, ''))
+) STORED;
+
+CREATE INDEX IF NOT EXISTS idx_components_tsv ON harness_components USING GIN (search_tsv);
+CREATE INDEX IF NOT EXISTS idx_components_desc_trgm ON harness_components USING GIN (description gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_components_embedding_hnsw ON harness_components USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
 
 -- 3. Сквозная база опыта и решений ошибок (Memory компонент из Harness²)
 CREATE TABLE IF NOT EXISTS memories (

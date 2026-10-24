@@ -24,6 +24,7 @@ from src.core.enums import (
     ContextEntityClass,
     ContextEntityStatus,
     DecisionDomain,
+    EmbeddingTaskType,
     RedisFlag,
     ScopeType,
     SessionMetaField,
@@ -36,7 +37,7 @@ from src.core.graph.context_graph import (
     ContextGraphManager,
 )
 from src.core.harness.compiler import HarnessCompiler, normalize_stack_tags
-from src.core.services.embeddings import EmbeddingClient
+from src.core.services.embeddings import EmbeddingClient, format_pgvector
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -62,10 +63,11 @@ INSERT INTO harness_components (
     status,
     score,
     source_project_path,
+    embedding,
     version,
     updated_at
 )
-VALUES ($1, $2, $3, $4::text[], $5, $6, $7, $8::jsonb, $9, $10, $11, 1, NOW())
+VALUES ($1, $2, $3, $4::text[], $5, $6, $7, $8::jsonb, $9, $10, $11, $12::vector, 1, NOW())
 ON CONFLICT (slug) DO UPDATE SET
     component_type = EXCLUDED.component_type,
     scope = EXCLUDED.scope,
@@ -77,6 +79,7 @@ ON CONFLICT (slug) DO UPDATE SET
     status = EXCLUDED.status,
     score = EXCLUDED.score,
     source_project_path = EXCLUDED.source_project_path,
+    embedding = COALESCE(EXCLUDED.embedding, harness_components.embedding),
     version = harness_components.version + 1,
     updated_at = NOW()
 RETURNING id, version
@@ -265,6 +268,14 @@ class CoopMCPToolService:
         persisted = False
 
         if approved and self._db is not None and self._db.is_connected:
+            doc_text = f"{clean_title}\n{clean_description}"
+            vec = await self._embedding_client.embed_text(
+                doc_text,
+                task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT,
+                title=clean_title,
+            )
+            vec_literal = format_pgvector(vec)
+
             row = await self._db.pool.fetchrow(
                 UPSERT_HARNESS_COMPONENT_SQL,
                 clean_slug,
@@ -278,6 +289,7 @@ class CoopMCPToolService:
                 status,
                 score,
                 source_project_path,
+                vec_literal,
             )
             if row is not None:
                 component_id = str(row["id"]) if row.get("id") is not None else None

@@ -97,6 +97,16 @@ class SessionMetaField(StrEnum):
     RESOLVED_ERROR = "resolved_error"
     REFLECTION_PROMPTED = "reflection_prompted"
     CONTEXT_UPDATED = "context_updated"
+    CODE_MODIFIED = "code_modified"
+    REMINDER_SENT = "reminder_sent"
+    MODIFIED_FILES = "modified_files"
+
+
+class ScriptExecutionMode(StrEnum):
+    """Режимы запуска скриптов `ComponentType.SCRIPT` в шине жизненных хуков."""
+
+    ALWAYS = "always"
+    SEMANTIC = "semantic"
 
 
 class RedisFlag(StrEnum):
@@ -299,6 +309,7 @@ __all__ = [
     "RedisNamespace",
     "RulesFormat",
     "ScopeType",
+    "ScriptExecutionMode",
     "SessionMetaField",
     "TierStepStatus",
     "VerdictAction",
