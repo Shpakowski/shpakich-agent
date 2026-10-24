@@ -240,21 +240,50 @@ def filter_seed_components(
     компоненты (`scope == ScopeType.DOMAIN`), у которых хотя бы один тег из `stack_tags`
     совпадает с нормализованными тегами рабочего пространства.
     """
+    return resolve_seed_components_with_overrides(stack_tags or ())
+
+
+def resolve_seed_components_with_overrides(
+    stack_tags: Sequence[str],
+    enabled_components: Sequence[str] = (),
+    disabled_components: Sequence[str] = (),
+) -> list[HarnessComponentSeed]:
+    """Выбирает стартовые компоненты с учётом стековых тегов и пер-проектных списков включения/исключения.
+
+    Правила фильтрации:
+    1. Любой компонент из `disabled_components` безусловно исключается.
+    2. Компонент из `enabled_components` принудительно включается даже без совпадения `stack_tags`.
+    3. Остальные компоненты со статусом `COMPOSED` включаются, если их `scope == GLOBAL`
+       или пересечение `comp.stack_tags` и `stack_tags` непусто.
+    """
     normalized_tags: set[str] = {
         tag.strip().lower()
-        for tag in (stack_tags or ())
+        for tag in stack_tags
         if tag and tag.strip()
     }
     normalized_tags.add(ScopeType.GLOBAL.value)
+    enabled_set: set[str] = {
+        slug.strip().lower()
+        for slug in enabled_components
+        if slug and slug.strip()
+    }
+    disabled_set: set[str] = {
+        slug.strip().lower()
+        for slug in disabled_components
+        if slug and slug.strip()
+    }
 
     matched: list[HarnessComponentSeed] = []
-    for seed in DEFAULT_HARNESS_SEEDS:
-        if seed.scope == ScopeType.GLOBAL:
-            matched.append(seed)
+    for comp in DEFAULT_HARNESS_SEEDS:
+        comp_slug = comp.slug.strip().lower()
+        if comp_slug in disabled_set:
             continue
-        seed_tags = {tag.strip().lower() for tag in seed.stack_tags if tag}
-        if seed_tags & normalized_tags:
-            matched.append(seed)
+        comp_tags = {tag.strip().lower() for tag in comp.stack_tags if tag}
+        is_composed_match = comp.status == ComponentStatus.COMPOSED and (
+            comp.scope == ScopeType.GLOBAL or bool(comp_tags & normalized_tags)
+        )
+        if comp_slug in enabled_set or is_composed_match:
+            matched.append(comp)
     return matched
 
 
@@ -309,5 +338,6 @@ __all__ = [
     "SHELL_TOOL_MATCHER",
     "HarnessComponentSeed",
     "filter_seed_components",
+    "resolve_seed_components_with_overrides",
     "seed_default_components",
 ]

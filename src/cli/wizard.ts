@@ -1,8 +1,8 @@
 /**
  * Слой 1 (Host CLI Injector): интерактивный TUI-визард и дизайн-система терминального вывода CLI.
- * Реализует единый визуальный стиль команд (`init`, `status`, `sync`, `down`, `--help`) на базе `@clack/prompts`
- * и встроенного ANSI-форматтера `node:util.styleText`. Поддерживает стрелочную навигацию (`select`),
- * чекбоксы технологических тегов (`multiselect`) и автоматический переход в безблокирующий режим при `--yes` или отсутствии TTY.
+ * Реализует единый визуальный стиль команд (`init`, `sync`, `harness`, `providers`, `status`, `down`, `--help`)
+ * на базе `@clack/prompts` и встроенного ANSI-форматтера `node:util.styleText`. Поддерживает стрелочную навигацию
+ * (`select`), чекбоксы технологических тегов (`multiselect`) и автоматический переход в безблокирующий режим при `--yes` или отсутствии TTY.
  */
 
 import process from "node:process";
@@ -28,6 +28,19 @@ import {
   type AgentId,
   type WorkspaceProfile,
 } from "./detector.ts";
+import type {
+  CatalogComponentItem,
+  CoreHealthStatus,
+  DockerBootstrapResult,
+  ProviderStatusItem,
+} from "./docker.ts";
+import {
+  ALL_HOOK_EVENTS,
+  HARNESS_MANIFEST_REL_PATH,
+  resolveEffectiveStackTags,
+  type MaterializationReport,
+  type ProjectHarnessManifest,
+} from "./materializer.ts";
 
 export interface InitWizardOptions {
   yes?: boolean;
@@ -35,16 +48,28 @@ export interface InitWizardOptions {
   runtime?: string;
 }
 
-const DEFAULT_CLI_VERSION = "0.1.0";
-const DEFAULT_RUNTIME_LABEL = "node";
-const DEFAULT_LOOPBACK_HOST = "127.0.0.1";
-const DEFAULT_CORE_HOST_PORT = 8787;
-const DEFAULT_POSTGRES_HOST_PORT = 54329;
-const DEFAULT_REDIS_HOST_PORT = 63799;
-const STACK_TAGS_PER_ROW = 6;
+const DEFAULT_CLI_VERSION = "0.1.0" as const;
+const DEFAULT_RUNTIME_LABEL = "node" as const;
+const DEFAULT_LOOPBACK_HOST = "127.0.0.1" as const;
+const DEFAULT_CORE_HOST_PORT = 8787 as const;
+const DEFAULT_POSTGRES_HOST_PORT = 54329 as const;
+const DEFAULT_REDIS_HOST_PORT = 63799 as const;
+const STACK_TAGS_PER_ROW = 6 as const;
 const CARD_VALUE_INDENT = " ".repeat(16);
 
-const WIZARD_CANCEL_MESSAGE = "Initialization cancelled by user.";
+const WIZARD_CANCEL_MESSAGE = "Initialization cancelled by user." as const;
+const INIT_LOCKED_OUTRO_MESSAGE =
+  "✔ Configuration locked — starting factory initialization pipeline..." as const;
+
+const EFFECTIVE_STATE_ACTIVE_AUTO = "active_auto" as const;
+const EFFECTIVE_STATE_ACTIVE_FORCED = "active_forced" as const;
+const EFFECTIVE_STATE_DISABLED_PROJECT = "disabled_project" as const;
+const EFFECTIVE_STATE_DISABLED_GLOBAL = "disabled_global" as const;
+const EFFECTIVE_STATE_UNMATCHED_STACK = "unmatched_stack" as const;
+
+const PROVIDER_STATUS_HEALTHY = "healthy" as const;
+const PROVIDER_STATUS_COOLDOWN = "cooldown" as const;
+const PROVIDER_STATUS_DISABLED = "disabled" as const;
 
 /**
  * Формирует фирменный заголовок шапки CLI с контрастным пилюльным бейджем, версией, рантаймом и названием операции.
@@ -174,12 +199,7 @@ export async function runInitWizard(
       formatWorkspaceCard(initialProfile),
       "Auto-Confirmed Workspace Profile (--yes / non-TTY)",
     );
-    outro(
-      styleText(
-        "green",
-        "✔ Ready — starting factory initialization pipeline (Docker stack & plugin generation stub)...",
-      ),
-    );
+    log.step(styleText("green", INIT_LOCKED_OUTRO_MESSAGE));
     return initialProfile;
   }
 
@@ -264,24 +284,130 @@ export async function runInitWizard(
   };
 
   note(formatWorkspaceCard(finalProfile), "Confirmed Configuration");
-  outro(
-    styleText(
-      "green",
-      "✔ Configuration locked — starting factory initialization pipeline (Docker stack & plugin generation stub)...",
-    ),
-  );
+  log.step(styleText("green", INIT_LOCKED_OUTRO_MESSAGE));
 
   return finalProfile;
 }
 
+function formatManifestOverridesSummary(
+  manifest: ProjectHarnessManifest,
+): string {
+  const enabledCount = manifest.overrides.enabled_components.length;
+  const disabledCount = manifest.overrides.disabled_components.length;
+  const disabledHooksCount = manifest.overrides.disabled_hooks.length;
+
+  const enabledPart =
+    enabledCount > 0
+      ? styleText("green", `+${enabledCount} forced`)
+      : styleText("dim", "+0 forced");
+  const disabledPart =
+    disabledCount > 0
+      ? styleText("yellow", `-${disabledCount} muted`)
+      : styleText("dim", "-0 muted");
+  const hooksPart =
+    disabledHooksCount > 0
+      ? styleText("yellow", `-${disabledHooksCount} hooks`)
+      : styleText("green", "all 5 hooks active");
+
+  return `${enabledPart} · ${disabledPart} · ${hooksPart}`;
+}
+
+/**
+ * Отображает итоговую карточку после выполнения конвейера инициализации (`init`):
+ * статус Docker-стека, количество записанных/пропущенных/удалённых файлов и путь к `.context/harness.json`.
+ */
+export function renderInitSummary(params: {
+  profile: WorkspaceProfile;
+  dockerResult: DockerBootstrapResult;
+  report: MaterializationReport;
+  manifestPath: string;
+  persistedInDb: boolean;
+}): void {
+  const { dockerResult, report, manifestPath, persistedInDb } = params;
+  const stackBadge = dockerResult.coreHealthy
+    ? `${styleText("green", "● online")} ${styleText("dim", `(${dockerResult.stackDir})`)}`
+    : `${styleText("yellow", "○ offline (Fail-Open seed mode)")} ${styleText("dim", `(${dockerResult.errorMessage ?? "Core unreachable"})`)}`;
+  const dbBadge = persistedInDb
+    ? styleText("green", "● registered in PostgreSQL 18")
+    : styleText("yellow", "○ local manifest only (Core offline)");
+  const filesSummary = [
+    styleText("green", `${report.written.length} written`),
+    styleText("dim", `${report.skipped.length} unchanged`),
+    report.pruned.length > 0
+      ? styleText("yellow", `${report.pruned.length} pruned`)
+      : styleText("dim", "0 pruned"),
+  ].join(styleText("dim", " · "));
+
+  note(
+    [
+      `${styleText("dim", "Docker Stack  ")}  ${stackBadge}`,
+      `${styleText("dim", "Project DB    ")}  ${dbBadge}`,
+      `${styleText("dim", "Manifest      ")}  ${styleText("cyan", manifestPath)}`,
+      `${styleText("dim", "Materialized  ")}  ${filesSummary}`,
+    ].join("\n"),
+    "Initialization Pipeline Summary",
+  );
+
+  outro(
+    styleText(
+      "green",
+      "✔ Workspace initialized. Run `mcp-coop-agentic-factory harness list` to inspect rules & skills.",
+    ),
+  );
+}
+
+/**
+ * Отображает сводную панель после перекомпиляции и синхронизации артефактов проекта (`sync`).
+ */
+export function renderSyncSummary(params: {
+  profile: WorkspaceProfile;
+  manifest: ProjectHarnessManifest;
+  report: MaterializationReport;
+  source: string;
+}): void {
+  const { profile, manifest, report, source } = params;
+  const effectiveTags = resolveEffectiveStackTags(manifest);
+  const filesSummary = [
+    styleText("green", `${report.written.length} written`),
+    styleText("dim", `${report.skipped.length} unchanged`),
+    report.pruned.length > 0
+      ? styleText("yellow", `${report.pruned.length} pruned`)
+      : styleText("dim", "0 pruned"),
+  ].join(styleText("dim", " · "));
+
+  note(
+    [
+      `${styleText("dim", "Target Agent  ")}  ${styleText(["bold", "cyan"], AGENT_DISPLAY_NAMES[profile.agent])}`,
+      `${styleText("dim", "Bundle Source ")}  ${styleText("white", source)}`,
+      `${styleText("dim", "Overrides     ")}  ${formatManifestOverridesSummary(manifest)}`,
+      `${styleText("dim", "Effective Tags")}  ${formatStackTagsGrid(effectiveTags)}`,
+      `${styleText("dim", "Materialized  ")}  ${filesSummary}`,
+    ].join("\n"),
+    `Synchronized Workspace (${HARNESS_MANIFEST_REL_PATH})`,
+  );
+
+  outro(
+    styleText(
+      "green",
+      "✔ Workspace rules, skills, and hooks synchronized with Harness² compiler.",
+    ),
+  );
+}
+
 /**
  * Отображает диагностическую панель команды `status`: профиль рабочей директории,
- * актуальность `.context/index.md` и состояние сервисов глобального Docker-стека.
+ * актуальность `.context/index.md`, состояние сервисов глобального Docker-стека,
+ * число активных провайдеров Tier 2 и оверрайды `.context/harness.json`.
  */
 export function renderStatusCommand(
   profile: WorkspaceProfile,
   version: string,
   runtime: string,
+  liveStatus?: {
+    health: CoreHealthStatus;
+    providers: ProviderStatusItem[] | null;
+    manifest: ProjectHarnessManifest;
+  },
 ): void {
   intro(renderCliBanner(version, runtime, "System & Workspace Status"));
 
@@ -290,18 +416,50 @@ export function renderStatusCommand(
   const labelCore = styleText("dim", "Core Engine   ");
   const labelPg = styleText("dim", "PostgreSQL 18 ");
   const labelRedis = styleText("dim", "Redis 7 Store ");
-  const labelHooks = styleText("dim", "Context Hooks ");
+  const labelTier2 = styleText("dim", "Tier 2 Pool   ");
+  const labelHooks = styleText("dim", "Harness² Sync ");
 
-  const hooksStatus = profile.hasContextGraph
-    ? `${styleText("green", "● active")} ${styleText("dim", "(SessionStart, PostToolUse, Stop)")}`
-    : `${styleText("yellow", "○ not installed")} ${styleText("dim", "(run init to inject)")}`;
+  const health = liveStatus?.health;
+  const coreBadge = health
+    ? health.reachable
+      ? styleText("green", "● online")
+      : styleText("yellow", `○ offline (${health.status})`)
+    : styleText("cyan", "◆ standby");
+  const pgBadge = health
+    ? health.postgres_connected
+      ? styleText("green", "● online")
+      : styleText("yellow", "○ offline")
+    : styleText("cyan", "◆ standby");
+  const redisBadge = health
+    ? health.redis_connected
+      ? styleText("green", "● online")
+      : styleText("yellow", "○ offline")
+    : styleText("cyan", "◆ standby");
+
+  const providers = liveStatus?.providers ?? null;
+  const activeProvidersCount = providers
+    ? providers.filter((p) => p.enabled && p.health_status === PROVIDER_STATUS_HEALTHY).length
+    : 0;
+  const tier2Badge =
+    providers !== null
+      ? activeProvidersCount > 0
+        ? `${styleText("green", `● ${activeProvidersCount} active`)} ${styleText("dim", `(${providers.length} registered)`)}`
+        : `${styleText("yellow", "○ 0 active")} ${styleText("dim", "(Tier 1 deterministic fallback)")}`
+      : `${styleText("dim", "○ offline")} ${styleText("dim", "(Tier 1 deterministic fallback)")}`;
+
+  const manifestSummary = liveStatus?.manifest
+    ? formatManifestOverridesSummary(liveStatus.manifest)
+    : profile.hasContextGraph
+      ? `${styleText("green", "● active")} ${styleText("dim", "(SessionStart, PreToolUse, PostToolUse, PreInvocation, Stop)")}`
+      : `${styleText("yellow", "○ not installed")} ${styleText("dim", "(run init to inject)")}`;
 
   note(
     [
-      `${labelCore}  ${styleText("cyan", "◆ standby")} ${styleText("dim", `(FastAPI + FastMCP @ ${DEFAULT_LOOPBACK_HOST}:${DEFAULT_CORE_HOST_PORT})`)}`,
-      `${labelPg}  ${styleText("cyan", "◆ standby")} ${styleText("dim", `(pgvector:pg18 @ ${DEFAULT_LOOPBACK_HOST}:${DEFAULT_POSTGRES_HOST_PORT})`)}`,
-      `${labelRedis}  ${styleText("cyan", "◆ standby")} ${styleText("dim", `(redis:7-alpine @ ${DEFAULT_LOOPBACK_HOST}:${DEFAULT_REDIS_HOST_PORT})`)}`,
-      `${labelHooks}  ${hooksStatus}`,
+      `${labelCore}  ${coreBadge} ${styleText("dim", `(FastAPI + FastMCP @ ${DEFAULT_LOOPBACK_HOST}:${DEFAULT_CORE_HOST_PORT})`)}`,
+      `${labelPg}  ${pgBadge} ${styleText("dim", `(pgvector:pg18 @ ${DEFAULT_LOOPBACK_HOST}:${DEFAULT_POSTGRES_HOST_PORT})`)}`,
+      `${labelRedis}  ${redisBadge} ${styleText("dim", `(redis:7-alpine @ ${DEFAULT_LOOPBACK_HOST}:${DEFAULT_REDIS_HOST_PORT})`)}`,
+      `${labelTier2}  ${tier2Badge}`,
+      `${labelHooks}  ${manifestSummary}`,
     ].join("\n"),
     "Global Factory Stack (~/.mcp-coop-agentic-factory)",
   );
@@ -309,7 +467,7 @@ export function renderStatusCommand(
   outro(
     styleText(
       "dim",
-      "Tip: Run `mcp-coop-agentic-factory init` to reconfigure agent or stack tags.",
+      "Tip: Run `mcp-coop-agentic-factory init` or `harness list` to manage workspace rules.",
     ),
   );
 }
@@ -344,19 +502,171 @@ export function renderSyncCommand(
 /**
  * Отображает панель остановки глобального Docker Compose стека при вызове команды `down`.
  */
-export function renderDownCommand(version: string, runtime: string): void {
+export function renderDownCommand(
+  version: string,
+  runtime: string,
+  result?: {
+    stopped: boolean;
+    composeFilePath: string;
+    errorMessage?: string;
+  },
+): void {
   intro(renderCliBanner(version, runtime, "Global Stack Shutdown"));
 
-  log.step(
-    styleText(
-      "yellow",
-      "Stopping containers in ~/.mcp-coop-agentic-factory/docker-compose.yml...",
-    ),
-  );
+  const targetPath =
+    result?.composeFilePath ?? "~/.mcp-coop-agentic-factory/docker/docker-compose.yml";
+  log.step(styleText("yellow", `Stopping containers in ${targetPath}...`));
+
+  if (result && !result.stopped) {
+    log.warn(
+      styleText(
+        "yellow",
+        `Stack stop reported warning: ${result.errorMessage ?? "Docker Compose stack was not running"}`,
+      ),
+    );
+    outro(styleText("yellow", "○ Global stack was already stopped or unavailable."));
+    return;
+  }
 
   outro(
     styleText("green", "✔ Global Docker Compose stack gracefully stopped."),
   );
+}
+
+function formatCatalogStateBadge(state: string): string {
+  switch (state) {
+    case EFFECTIVE_STATE_ACTIVE_AUTO:
+      return styleText("green", "● auto");
+    case EFFECTIVE_STATE_ACTIVE_FORCED:
+      return styleText(["bold", "cyan"], "● +forced");
+    case EFFECTIVE_STATE_DISABLED_PROJECT:
+      return styleText("yellow", "○ -muted (project)");
+    case EFFECTIVE_STATE_DISABLED_GLOBAL:
+      return styleText("red", "○ -disabled (global)");
+    case EFFECTIVE_STATE_UNMATCHED_STACK:
+    default:
+      return styleText("dim", "· other stack");
+  }
+}
+
+/**
+ * Отображает панель каталога компонентов `Harness²` (`harness list`) с визуальными бейджами
+ * эффективного состояния (`● auto`, `● +forced`, `○ -muted (project)`, `○ -disabled (global)`, `· other stack`)
+ * и списком активных/отключённых хуков жизненного цикла.
+ */
+export function renderHarnessCatalogView(params: {
+  version: string;
+  runtime: string;
+  items: CatalogComponentItem[];
+  manifest: ProjectHarnessManifest;
+  showAll: boolean;
+}): void {
+  const { version, runtime, items, manifest, showAll } = params;
+  intro(renderCliBanner(version, runtime, "Harness² Component Catalog"));
+
+  const visibleItems = showAll
+    ? items
+    : items.filter((item) => item.effective_state !== EFFECTIVE_STATE_UNMATCHED_STACK);
+
+  const rows =
+    visibleItems.length > 0
+      ? visibleItems.map((item) => {
+          const badge = formatCatalogStateBadge(item.effective_state);
+          const slugStr = styleText(["bold", "white"], item.slug.padEnd(28));
+          const typeStr = styleText("cyan", `[${item.component_type}]`.padEnd(16));
+          const tagsStr = styleText("dim", `(${item.stack_tags.join(",")})`);
+          return `${badge.padEnd(28)} ${slugStr} ${typeStr} ${tagsStr}`;
+        })
+      : [styleText("dim", "No matching components found for current filter.")];
+
+  note(
+    rows.join("\n"),
+    `Components (${visibleItems.length}/${items.length} shown · agent: ${manifest.agent})`,
+  );
+
+  const disabledHooksSet = new Set<string>(manifest.overrides.disabled_hooks);
+  const hookBadges = ALL_HOOK_EVENTS.map((ev) =>
+    disabledHooksSet.has(ev)
+      ? styleText("yellow", `○ -${ev}`)
+      : styleText("green", `● ${ev}`),
+  ).join(styleText("dim", "  "));
+
+  note(
+    [
+      `${styleText("dim", "Lifecycle Hooks")}  ${hookBadges}`,
+      `${styleText("dim", "Effective Stack")}  ${formatStackTagsGrid(resolveEffectiveStackTags(manifest))}`,
+    ].join("\n"),
+    `Project Harness Profile (${HARNESS_MANIFEST_REL_PATH})`,
+  );
+
+  outro(
+    styleText(
+      "dim",
+      "Use `harness enable|disable <slug>` or `harness hook-enable|hook-disable <event>` to customize.",
+    ),
+  );
+}
+
+/**
+ * Отображает панель пула провайдеров второго контура (`providers list`) с приоритетами,
+ * диалектами, моделями и статусом Circuit Breaker (`healthy` / `cooldown` / `disabled`).
+ */
+export function renderProvidersView(params: {
+  version: string;
+  runtime: string;
+  providers: ProviderStatusItem[];
+}): void {
+  const { version, runtime, providers } = params;
+  intro(renderCliBanner(version, runtime, "Tier 2 Decision Providers"));
+
+  if (providers.length === 0) {
+    note(
+      styleText(
+        "dim",
+        "No Tier 2 providers registered. DecisionEngine runs in Tier 1 deterministic fallback mode.",
+      ),
+      "Runtime Provider Pool (0 providers)",
+    );
+  } else {
+    const lines = providers.map((prov) => {
+      const statusBadge =
+        !prov.enabled || prov.health_status === PROVIDER_STATUS_DISABLED
+          ? styleText("dim", "○ disabled")
+          : prov.health_status === PROVIDER_STATUS_COOLDOWN
+            ? styleText(
+                "yellow",
+                `◐ cooldown (${prov.cooldown_remaining_seconds}s)`,
+              )
+            : styleText("green", "● healthy");
+      const prio = styleText("cyan", `[#${prov.priority}]`.padEnd(7));
+      const name = styleText(["bold", "white"], prov.name.padEnd(18));
+      const dialectModel = styleText(
+        "dim",
+        `${prov.dialect} · ${prov.model} (${prov.base_url})`,
+      );
+      return `${prio} ${name} ${statusBadge.padEnd(22)} ${dialectModel}`;
+    });
+    note(lines.join("\n"), `Runtime Provider Pool (${providers.length} configured)`);
+  }
+
+  outro(
+    styleText(
+      "dim",
+      "Use `providers add <name> --dialect ... --url ... --model ... --key ...` to register a provider.",
+    ),
+  );
+}
+/**
+ * Отображает компактное подтверждение операции модификации (`providers add/enable/disable/priority/remove/reset`, `harness --global`).
+ */
+export function renderQuickMutationResult(
+  version: string,
+  runtime: string,
+  actionTitle: string,
+  message: string,
+): void {
+  intro(renderCliBanner(version, runtime, actionTitle));
+  outro(styleText("green", `✔ ${message}`));
 }
 
 /**
@@ -374,21 +684,33 @@ export function renderHelpScreen(
   );
 
   const usageBlock = [
-    `${styleText(["bold", "cyan"], `$ ${cliName} <command> [options]`)}`,
+    `${styleText(["bold", "cyan"], `$ ${cliName} <command> [subcommand] [options]`)}`,
     "",
     `${styleText(["bold", "white"], "Commands:")}`,
-    `  ${styleText(["bold", "green"], "init  ")}    Interactive TUI wizard for Docker stack & workspace hooks`,
-    `  ${styleText(["bold", "cyan"], "status")}    Inspect workspace profile, .context/ & Docker health`,
-    `  ${styleText(["bold", "cyan"], "sync  ")}    Sync workspace rules & context graph with factory seed`,
-    `  ${styleText(["bold", "yellow"], "down  ")}    Gracefully stop global ~/.mcp-coop-agentic-factory/`,
-    `  ${styleText("dim", "hook  ")}    Run lifecycle hook (SessionStart, PostToolUse, Stop)`,
+    `  ${styleText(["bold", "green"], "init     ")}  Interactive TUI wizard for Docker stack, .context/harness.json & agent hooks`,
+    `  ${styleText(["bold", "cyan"], "sync     ")}  Recompile & sync workspace rules/skills/hooks and prune disabled artifacts`,
+    `  ${styleText(["bold", "cyan"], "harness  ")}  Manage rules, skills, hooks & tags (list, enable, disable, hook-enable,`,
+    `             ${styleText("dim", "hook-disable, tag-add, tag-exclude)")}`,
+    `  ${styleText(["bold", "cyan"], "providers")}  Manage Tier 2 Decision API providers (list, add, enable, disable,`,
+    `             ${styleText("dim", "priority, remove, reset)")}`,
+    `  ${styleText(["bold", "cyan"], "status   ")}  Inspect workspace profile, .context/harness.json, Docker & Tier 2 health`,
+    `  ${styleText(["bold", "yellow"], "down     ")}  Gracefully stop global ~/.mcp-coop-agentic-factory/ stack`,
+    `  ${styleText("dim", "hook     ")}  Lifecycle hook bridge (session-start, pre-tool-use, post-tool-use, pre-invocation, stop)`,
     "",
     `${styleText(["bold", "white"], "Options:")}`,
-    `  ${styleText("cyan", "-a, --agent <id>")}  Target agent [default: "${AUTO_AGENT_OPTION}"]`,
-    `                    ${styleText("dim", `(${supportedAgentsList})`)}`,
-    `  ${styleText("cyan", "-y, --yes       ")}  Skip interactive prompts and use detected defaults`,
-    `  ${styleText("cyan", "-h, --help      ")}  Show this help screen and exit`,
-    `  ${styleText("cyan", "-v, --version   ")}  Show CLI version and active runtime`,
+    `  ${styleText("cyan", "-a, --agent <id>   ")}  Target agent [default: "${AUTO_AGENT_OPTION}"] (${supportedAgentsList})`,
+    `  ${styleText("cyan", "-y, --yes          ")}  Skip interactive prompts and use detected defaults`,
+    `  ${styleText("cyan", "-g, --global       ")}  Toggle component globally in PostgreSQL (for harness enable/disable)`,
+    `  ${styleText("cyan", "--all              ")}  Include unmatched stack components in harness list`,
+    `  ${styleText("cyan", "-t, --type <type>  ")}  Filter component type in harness list (system_prompt, guardrail, tool_guidance, skill)`,
+    `  ${styleText("cyan", "--tag <tag>        ")}  Filter stack tag in harness list`,
+    `  ${styleText("cyan", "--dialect <id>     ")}  Provider dialect for providers add [default: "openai_decisions"]`,
+    `  ${styleText("cyan", "--url <url>        ")}  Base URL for providers add`,
+    `  ${styleText("cyan", "--model <name>     ")}  Model name for providers add`,
+    `  ${styleText("cyan", "--key <api_key>    ")}  API key for providers add`,
+    `  ${styleText("cyan", "--priority <num>   ")}  Priority number for providers add / priority`,
+    `  ${styleText("cyan", "-h, --help         ")}  Show this help screen and exit`,
+    `  ${styleText("cyan", "-v, --version      ")}  Show CLI version and active runtime`,
   ].join("\n");
 
   note(usageBlock, "Usage & Commands");

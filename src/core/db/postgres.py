@@ -29,9 +29,11 @@ CREATE TABLE IF NOT EXISTS projects (
     name TEXT NOT NULL,
     agent_type TEXT NOT NULL,
     stack_tags TEXT[] NOT NULL DEFAULT ARRAY['{ScopeType.GLOBAL}'],
+    profile_overrides JSONB NOT NULL DEFAULT '{{}}'::jsonb,
     last_synced_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS profile_overrides JSONB NOT NULL DEFAULT '{{}}'::jsonb;
 
 -- 2. Компоненты харнеса (Harness²: System Prompt, Guardrails, Skills, Tool Guidance, Scripts, Subagents)
 CREATE TABLE IF NOT EXISTS harness_components (

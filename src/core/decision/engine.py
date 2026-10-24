@@ -305,6 +305,11 @@ class LocalDeterministicTier:
         if not cmd and isinstance(request.payload.get("command"), str):
             cmd = str(request.payload["command"]).strip()
 
+        raw_overrides = request.payload.get("profile_overrides")
+        profile_overrides: Mapping[str, Any] | None = (
+            raw_overrides if isinstance(raw_overrides, Mapping) and raw_overrides else None
+        )
+
         if cmd and self._redis is not None and self._redis.is_connected:
             try:
                 fail_count = await self._redis.get_command_failure_count(
@@ -326,32 +331,37 @@ class LocalDeterministicTier:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Redis anti-loop check failed: %s", exc)
 
-            try:
-                cached = await self._redis.get_cached_decision(tool_name, cmd)
-                if cached is not None and "action" in cached:
-                    return TierStepResult(
-                        status=TierStepStatus.TERMINAL,
-                        tier_id=self.tier_id,
-                        action=VerdictAction(str(cached["action"])),
-                        reason=str(cached.get("reason", "Loaded from Redis LangCache.")),
-                        overwrite_args=cached.get("overwrite_args"),
-                    )
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Redis LangCache lookup failed: %s", exc)
+            if profile_overrides is None:
+                try:
+                    cached = await self._redis.get_cached_decision(tool_name, cmd)
+                    if cached is not None and "action" in cached:
+                        return TierStepResult(
+                            status=TierStepStatus.TERMINAL,
+                            tier_id=self.tier_id,
+                            action=VerdictAction(str(cached["action"])),
+                            reason=str(cached.get("reason", "Loaded from Redis LangCache.")),
+                            overwrite_args=cached.get("overwrite_args"),
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Redis LangCache lookup failed: %s", exc)
 
         if cmd:
-            bundle = await self._compiler.build_canonical_bundle(request.stack_tags)
+            bundle = await self._compiler.build_canonical_bundle(
+                request.stack_tags,
+                profile_overrides=profile_overrides,
+            )
             for rule in bundle.guardrails:
                 if not re.search(rule.pattern, cmd):
                     continue
 
                 if rule.action == GuardrailAction.DENY:
                     reason = f"[{rule.slug}] {rule.description or rule.title}"
-                    await self._cache_tool_decision(
-                        tool_name,
-                        cmd,
-                        {"action": VerdictAction.DENY.value, "reason": reason},
-                    )
+                    if profile_overrides is None:
+                        await self._cache_tool_decision(
+                            tool_name,
+                            cmd,
+                            {"action": VerdictAction.DENY.value, "reason": reason},
+                        )
                     return TierStepResult(
                         status=TierStepStatus.TERMINAL,
                         tier_id=self.tier_id,
@@ -363,15 +373,16 @@ class LocalDeterministicTier:
                     rewritten_cmd = re.sub(rule.pattern, rule.replacement, cmd)
                     overwrite_args = {**tool_args, cmd_arg_key: rewritten_cmd}
                     reason = f"[{rule.slug}] Rewrote command: '{cmd}' -> '{rewritten_cmd}'"
-                    await self._cache_tool_decision(
-                        tool_name,
-                        cmd,
-                        {
-                            "action": VerdictAction.OVERWRITE.value,
-                            "reason": reason,
-                            "overwrite_args": overwrite_args,
-                        },
-                    )
+                    if profile_overrides is None:
+                        await self._cache_tool_decision(
+                            tool_name,
+                            cmd,
+                            {
+                                "action": VerdictAction.OVERWRITE.value,
+                                "reason": reason,
+                                "overwrite_args": overwrite_args,
+                            },
+                        )
                     return TierStepResult(
                         status=TierStepStatus.TERMINAL,
                         tier_id=self.tier_id,

@@ -34,6 +34,7 @@ from src.core.decision import (
 )
 from src.core.enums import (
     AgentType,
+    ComponentStatus,
     DecisionDomain,
     HookEventType,
     RedisFlag,
@@ -45,7 +46,9 @@ from src.core.harness import (
     DEFAULT_LOCALHOST_HOST,
     MCP_HTTP_PATH,
     HarnessCompiler,
+    ProjectHarnessOverrides,
     normalize_stack_tags,
+    resolve_effective_stack_tags,
     seed_default_components,
 )
 from src.core.mcp import CoopMCPGateway, CoopMCPToolService
@@ -53,15 +56,27 @@ from src.core.services import EmbeddingClient
 
 logger = logging.getLogger("mcp_coop.core")
 
+HARNESS_CONFIG_REL_PATH: str = ".context/harness.json"
+
 UPSERT_PROJECT_SQL: str = """
-INSERT INTO projects (workspace_path, name, agent_type, stack_tags, last_synced_at)
-VALUES ($1, $2, $3, $4, NOW())
+INSERT INTO projects (workspace_path, name, agent_type, stack_tags, profile_overrides, last_synced_at)
+VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
 ON CONFLICT (workspace_path) DO UPDATE SET
     name = EXCLUDED.name,
     agent_type = EXCLUDED.agent_type,
     stack_tags = EXCLUDED.stack_tags,
+    profile_overrides = EXCLUDED.profile_overrides,
     last_synced_at = NOW()
 RETURNING id
+"""
+
+UPDATE_COMPONENT_STATUS_SQL: str = """
+UPDATE harness_components
+SET status = $2,
+    version = version + 1,
+    updated_at = NOW()
+WHERE slug = $1
+RETURNING slug, component_type, scope, stack_tags, title, status, score, version
 """
 
 
@@ -73,6 +88,13 @@ class ProjectRegistrationRequest(BaseModel):
     agent_type: AgentType = AgentType.ANTIGRAVITY
     stack_tags: list[str] = Field(default_factory=lambda: [ScopeType.GLOBAL.value])
     profile_overrides: dict[str, Any] | None = None
+
+
+class ComponentPatchRequest(BaseModel):
+    """Запрос на переключение глобального статуса компонента `Harness²` в каталоге."""
+
+    status: ComponentStatus | None = None
+    enabled: bool | None = None
 
 
 class ProviderPatchRequest(BaseModel):
@@ -125,28 +147,85 @@ def _get_engine(request: Request) -> DecisionEngine:
     return engine
 
 
+async def _resolve_project_context(
+    db: PostgresDatabase | None,
+    workspace_path: str,
+    raw_payload: dict[str, Any],
+) -> tuple[tuple[str, ...], dict[str, Any]]:
+    """Разрешает эффективные теги стека и пер-проектные оверрайды из пэйлоада, БД или `.context/harness.json`."""
+    explicit_tags = raw_payload.get("stack_tags") or raw_payload.get("stackTags")
+    explicit_overrides = (
+        raw_payload.get("profile_overrides")
+        if "profile_overrides" in raw_payload
+        else raw_payload.get("profileOverrides")
+    )
+
+    resolved_tags: tuple[str, ...] | None = (
+        normalize_stack_tags([str(t) for t in explicit_tags])
+        if isinstance(explicit_tags, list) and explicit_tags
+        else None
+    )
+    resolved_overrides: dict[str, Any] | None = (
+        dict(explicit_overrides)
+        if isinstance(explicit_overrides, dict)
+        else None
+    )
+
+    if (
+        (resolved_tags is None or resolved_overrides is None)
+        and workspace_path
+        and db is not None
+        and db.is_connected
+    ):
+        try:
+            row = await db.pool.fetchrow(
+                "SELECT stack_tags, profile_overrides FROM projects WHERE workspace_path = $1",
+                workspace_path,
+            )
+            if row is not None:
+                if resolved_tags is None and row["stack_tags"]:
+                    resolved_tags = normalize_stack_tags(list(row["stack_tags"]))
+                if resolved_overrides is None and row["profile_overrides"] is not None:
+                    raw_ov = row["profile_overrides"]
+                    parsed_ov = (
+                        json.loads(raw_ov)
+                        if isinstance(raw_ov, str)
+                        else dict(raw_ov)
+                    )
+                    if isinstance(parsed_ov, dict) and parsed_ov:
+                        resolved_overrides = parsed_ov
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Project context lookup failed for %s: %s", workspace_path, exc)
+
+    if not resolved_overrides and workspace_path:
+        harness_cfg_path = Path(workspace_path) / HARNESS_CONFIG_REL_PATH
+        if harness_cfg_path.is_file():
+            try:
+                disk_data = json.loads(harness_cfg_path.read_text(encoding="utf-8"))
+                if isinstance(disk_data, dict):
+                    resolved_overrides = disk_data
+            except (OSError, json.JSONDecodeError):
+                pass
+
+    final_overrides: dict[str, Any] = resolved_overrides or {}
+    base_tags: tuple[str, ...] = resolved_tags or (ScopeType.GLOBAL.value,)
+    if final_overrides:
+        effective_tags = resolve_effective_stack_tags(
+            base_tags,
+            ProjectHarnessOverrides.from_mapping(final_overrides),
+        )
+        return effective_tags, final_overrides
+    return base_tags, final_overrides
+
+
 async def _resolve_project_stack_tags(
     db: PostgresDatabase | None,
     workspace_path: str,
     raw_payload: dict[str, Any],
 ) -> tuple[str, ...]:
-    """Определяет стековые теги проекта из пэйлоада хука или таблицы `projects` PostgreSQL."""
-    explicit_tags = raw_payload.get("stack_tags") or raw_payload.get("stackTags")
-    if isinstance(explicit_tags, list) and explicit_tags:
-        return normalize_stack_tags([str(t) for t in explicit_tags])
-
-    if workspace_path and db is not None and db.is_connected:
-        try:
-            row = await db.pool.fetchrow(
-                "SELECT stack_tags FROM projects WHERE workspace_path = $1",
-                workspace_path,
-            )
-            if row and row["stack_tags"]:
-                return normalize_stack_tags(list(row["stack_tags"]))
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Project stack lookup failed for %s: %s", workspace_path, exc)
-
-    return (ScopeType.GLOBAL.value,)
+    """Определяет эффективные стековые теги проекта из пэйлоада хука или таблицы `projects` PostgreSQL."""
+    stack_tags, _ = await _resolve_project_context(db, workspace_path, raw_payload)
+    return stack_tags
 
 
 async def _log_hook_event(
@@ -320,6 +399,7 @@ def create_app() -> FastAPI:
                         payload.project_name,
                         payload.agent_type.value,
                         list(normalized_tags),
+                        json.dumps(payload.profile_overrides or {}, ensure_ascii=False),
                     )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Failed to upsert project %s into PostgreSQL: %s", payload.workspace_path, exc)
@@ -335,6 +415,103 @@ def create_app() -> FastAPI:
             "project_id": str(project_id) if project_id is not None else None,
             "persisted_in_db": project_id is not None,
             "artifact": artifact.model_dump(mode="json"),
+        }
+
+    @application.get("/api/harness/components", tags=["harness"])
+    async def list_harness_components(
+        request: Request,
+        workspace_path: str = "",
+        stack_tags: str = "",
+    ) -> dict[str, Any]:
+        """Возвращает каталог всех компонентов `Harness²` с вычисленным статусом для стека/проекта."""
+        active_settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
+        db: PostgresDatabase | None = getattr(request.app.state, "db", None)
+        redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
+        compiler: HarnessCompiler = getattr(request.app.state, "compiler", None) or HarnessCompiler(
+            db=db,
+            redis=redis_store,
+            mcp_url=_build_local_mcp_url(active_settings),
+            plugin_version=active_settings.version,
+        )
+
+        explicit_tags = [tag.strip() for tag in stack_tags.split(",") if tag.strip()]
+        raw_lookup: dict[str, Any] = {"stack_tags": explicit_tags} if explicit_tags else {}
+        resolved_tags, profile_overrides = await _resolve_project_context(
+            db,
+            workspace_path.strip(),
+            raw_lookup,
+        )
+        items = await compiler.list_catalog_components(
+            resolved_tags,
+            profile_overrides=profile_overrides,
+        )
+        return {
+            "status": "ok",
+            "count": len(items),
+            "stack_tags": list(resolved_tags),
+            "profile_overrides": profile_overrides,
+            "components": items,
+        }
+
+    @application.patch("/api/harness/components/{slug}", tags=["harness"])
+    async def patch_harness_component(
+        slug: str,
+        payload: ComponentPatchRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        """Обновляет глобальный статус компонента `Harness²` в PostgreSQL и сбрасывает кэш правил в Redis."""
+        if payload.status is not None:
+            target_status = payload.status
+        elif payload.enabled is True:
+            target_status = ComponentStatus.COMPOSED
+        elif payload.enabled is False:
+            target_status = ComponentStatus.DISABLED
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Either 'status' or 'enabled' must be provided",
+            )
+
+        db: PostgresDatabase | None = getattr(request.app.state, "db", None)
+        redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
+        if db is None or not db.is_connected:
+            raise HTTPException(
+                status_code=503,
+                detail="PostgreSQL is not connected; global catalog cannot be modified offline",
+            )
+
+        clean_slug = slug.strip()
+        async with db.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                UPDATE_COMPONENT_STATUS_SQL,
+                clean_slug,
+                target_status.value,
+            )
+
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Harness component '{clean_slug}' not found",
+            )
+
+        if redis_store is not None and redis_store.is_connected:
+            try:
+                await redis_store.invalidate_rules_cache()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Failed to invalidate Redis rules cache: %s", exc)
+
+        return {
+            "status": "ok",
+            "component": {
+                "slug": str(row["slug"]),
+                "component_type": str(row["component_type"]),
+                "scope": str(row["scope"]),
+                "stack_tags": list(row["stack_tags"] or []),
+                "title": str(row["title"]),
+                "status": str(row["status"]),
+                "score": float(row["score"]),
+                "version": int(row["version"]),
+            },
         }
 
     @application.get("/api/providers", tags=["providers"])
@@ -413,7 +590,11 @@ def create_app() -> FastAPI:
         hook_in = normalize_hook_payload(HookEventType.SESSION_START, raw_payload)
         db: PostgresDatabase | None = getattr(request.app.state, "db", None)
         redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
-        stack_tags = await _resolve_project_stack_tags(db, hook_in.workspace_path, raw_payload)
+        stack_tags, profile_overrides = await _resolve_project_context(
+            db,
+            hook_in.workspace_path,
+            raw_payload,
+        )
 
         if redis_store is not None and redis_store.is_connected:
             try:
@@ -447,6 +628,7 @@ def create_app() -> FastAPI:
         artifact = await compiler.compile_for_project(
             agent_type=hook_in.agent_type,
             stack_tags=stack_tags,
+            profile_overrides=profile_overrides,
         )
         sync_files = [f.model_dump(mode="json") for f in artifact.files]
 
@@ -468,7 +650,11 @@ def create_app() -> FastAPI:
         hook_in = normalize_hook_payload(HookEventType.PRE_TOOL_USE, raw_payload)
         db: PostgresDatabase | None = getattr(request.app.state, "db", None)
         engine = _get_engine(request)
-        stack_tags = await _resolve_project_stack_tags(db, hook_in.workspace_path, raw_payload)
+        stack_tags, profile_overrides = await _resolve_project_context(
+            db,
+            hook_in.workspace_path,
+            raw_payload,
+        )
 
         target_path = str(
             hook_in.tool_args.get("Path")
@@ -505,6 +691,7 @@ def create_app() -> FastAPI:
                 payload={
                     "tool_name": hook_in.tool_name,
                     "tool_args": hook_in.tool_args,
+                    "profile_overrides": profile_overrides,
                 },
             )
 

@@ -48,6 +48,17 @@ class ComponentStatus(StrEnum):
     PROBING = "probing"
     COMPOSED = "composed"
     REJECTED = "rejected"
+    DISABLED = "disabled"
+
+
+class ComponentEffectiveState(StrEnum):
+    """Результирующее состояние компонента каталога `Harness²` с учётом стека и локальных оверрайдов проекта."""
+
+    ACTIVE_FORCED = "active_forced"
+    DISABLED_PROJECT = "disabled_project"
+    DISABLED_GLOBAL = "disabled_global"
+    ACTIVE_AUTO = "active_auto"
+    UNMATCHED_STACK = "unmatched_stack"
 
 
 class HookEventType(StrEnum):
@@ -263,6 +274,7 @@ class MCPToolName(StrEnum):
 
 __all__ = [
     "AgentType",
+    "ComponentEffectiveState",
     "ComponentStatus",
     "ComponentType",
     "ContextEntityClass",

@@ -18,10 +18,13 @@ from src.core.harness.compiler import (
     CompiledGuardrail,
     CompiledSkillArtifact,
     HarnessCompiler,
+    ProjectHarnessOverrides,
     RenderedFile,
     RenderedHarnessArtifact,
+    compute_bundle_cache_tags,
     enforce_markdown_byte_budget,
     normalize_stack_tags,
+    resolve_effective_stack_tags,
 )
 from src.core.harness.profiles import (
     AGENT_PROFILES,
@@ -39,6 +42,7 @@ from src.core.harness.seed import (
     DEFAULT_HARNESS_SEEDS,
     HarnessComponentSeed,
     filter_seed_components,
+    resolve_seed_components_with_overrides,
     seed_default_components,
 )
 
@@ -62,14 +66,18 @@ __all__ = [
     "HooksTargetSpec",
     "McpTargetSpec",
     "PluginManifestSpec",
+    "ProjectHarnessOverrides",
     "RenderedFile",
     "RenderedHarnessArtifact",
     "RulesTargetSpec",
     "SkillsTargetSpec",
+    "compute_bundle_cache_tags",
     "enforce_markdown_byte_budget",
     "filter_seed_components",
     "get_agent_profile",
     "list_agent_profiles",
     "normalize_stack_tags",
+    "resolve_effective_stack_tags",
+    "resolve_seed_components_with_overrides",
     "seed_default_components",
 ]
