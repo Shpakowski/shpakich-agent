@@ -155,9 +155,8 @@ class PostgresDatabase:
 
     async def init_schema(self) -> None:
         """Атомарно создаёт расширения pgvector/pg_trgm, таблицы и индексы внутри транзакции."""
-        async with self.pool.acquire() as conn:
-            async with conn.transaction():
-                await conn.execute(SCHEMA_DDL)
+        async with self.pool.acquire() as conn, conn.transaction():
+            await conn.execute(SCHEMA_DDL)
 
     async def check_health(self) -> bool:
         """Выполняет быстрый легковесный пинг БД (`SELECT 1`) для эндпоинта /health."""
@@ -166,7 +165,7 @@ class PostgresDatabase:
         try:
             val = await self._pool.fetchval("SELECT 1")
             return bool(val == 1)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.debug("PostgreSQL health check failed: %s", exc)
             return False
 

@@ -17,14 +17,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Mapping, Sequence
 import hashlib
 import json
 import logging
+from collections.abc import Awaitable, Mapping, Sequence
 from typing import Any, cast
 
-from pydantic import BaseModel, ConfigDict, Field
 import redis.asyncio as aioredis
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.config import (
     DEFAULT_REDIS_CACHE_TTL_SECONDS,
@@ -168,7 +168,7 @@ class RedisSessionStore:
         try:
             pong = await cast(Awaitable[bool], self._client.ping())
             return bool(pong)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.debug("Redis health check failed: %s", exc)
             return False
 
@@ -384,8 +384,8 @@ class RedisSessionStore:
 
 __all__ = [
     "HASH_DIGEST_LENGTH",
-    "MemoryPromotionCandidate",
     "REDIS_KEY_SEPARATOR",
+    "MemoryPromotionCandidate",
     "RedisSessionStore",
     "SessionLastError",
     "compute_command_hash",
