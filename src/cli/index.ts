@@ -1,12 +1,22 @@
 #!/usr/bin/env node
 /**
  * Слой 1 (Host CLI Injector): точка входа CLI-оркестратора `mcp-coop-agentic-factory`.
- * Отвечает за парсинг аргументов командной строки без внешних зависимостей (Zero-Dependency)
- * и маршрутизацию команд (`init`, `sync`, `status`, `down`, `hook`) между Bun (`bunx`) и Node.js (`npx`).
+ * Отвечает за парсинг аргументов командной строки, инспекцию профиля рабочей папки (`detector.ts`),
+ * запуск интерактивного TUI-визарда и стилизованных панелей (`wizard.ts`) и маршрутизацию команд
+ * (`init`, `sync`, `status`, `down`, `hook`) между Bun (`bunx`) и Node.js (`npx`).
  */
 
 import process from "node:process";
 import { parseArgs } from "node:util";
+import { AUTO_AGENT_OPTION, inspectWorkspace } from "./detector.ts";
+import {
+  renderCliError,
+  renderDownCommand,
+  renderHelpScreen,
+  renderStatusCommand,
+  renderSyncCommand,
+  runInitWizard,
+} from "./wizard.ts";
 
 const CLI_NAME = "mcp-coop-agentic-factory";
 const CLI_VERSION = "0.1.0";
@@ -18,6 +28,7 @@ interface ParsedCliContext {
   command?: CliCommand;
   subargs: string[];
   agent: string;
+  yes: boolean;
   help: boolean;
   version: boolean;
 }
@@ -36,36 +47,9 @@ function detectRuntime(): string {
 }
 
 /**
- * Выводит справочное руководство по командам и флагам CLI в стандартный поток вывода.
- */
-function printHelp(): void {
-  const helpText = `
-${CLI_NAME} v${CLI_VERSION}
-Lightweight dual-runtime (Bun & Node.js) CLI injector for MCP-COOP Agentic Factory.
-
-Usage:
-  ${CLI_NAME} <command> [options]
-
-Commands:
-  init      Initialize ~/.mcp-coop-agentic-factory/ global stack and inject workspace hooks (.context/, AGENTS.md)
-  sync      Synchronize local workspace rules and context graph with the factory seed
-  status    Check health status of global Docker containers and local context hooks
-  down      Gracefully stop the global ~/.mcp-coop-agentic-factory/ Docker Compose stack
-  hook      Execute an internal lifecycle hook handler (SessionStart, PostToolUse, Stop)
-
-Options:
-  -a, --agent <name>  Target AI coding agent (auto, antigravity, claude-code, cursor, codex, opencode) [default: "auto"]
-  -h, --help          Show this help message and exit
-  -v, --version       Show CLI version and runtime info
-`.trim();
-
-  process.stdout.write(`${helpText}\n`);
-}
-
-/**
  * Разбирает аргументы командной строки через встроенный `node:util.parseArgs`.
  * Выбран `parseArgs` из стандартной библиотеки Node.js, так как он нативно поддерживается
- * и в Node.js (>=20), и в Bun (>=1.1), обеспечивая нулевой размер зависимостей пакета.
+ * и в Node.js (>=20), и в Bun (>=1.1).
  */
 function parseCliArgs(rawArgs: string[]): ParsedCliContext {
   const { values, positionals } = parseArgs({
@@ -81,10 +65,15 @@ function parseCliArgs(rawArgs: string[]): ParsedCliContext {
         short: "v",
         default: false,
       },
+      yes: {
+        type: "boolean",
+        short: "y",
+        default: false,
+      },
       agent: {
         type: "string",
         short: "a",
-        default: "auto",
+        default: AUTO_AGENT_OPTION,
       },
     },
     allowPositionals: true,
@@ -97,7 +86,8 @@ function parseCliArgs(rawArgs: string[]): ParsedCliContext {
     return {
       command: undefined,
       subargs: [],
-      agent: values.agent ?? "auto",
+      agent: values.agent ?? AUTO_AGENT_OPTION,
+      yes: Boolean(values.yes),
       help: Boolean(values.help),
       version: Boolean(values.version),
     };
@@ -112,7 +102,8 @@ function parseCliArgs(rawArgs: string[]): ParsedCliContext {
   return {
     command: rawCommand as CliCommand,
     subargs,
-    agent: values.agent ?? "auto",
+    agent: values.agent ?? AUTO_AGENT_OPTION,
+    yes: Boolean(values.yes),
     help: Boolean(values.help),
     version: Boolean(values.version),
   };
@@ -120,32 +111,38 @@ function parseCliArgs(rawArgs: string[]): ParsedCliContext {
 
 /**
  * Диспетчер команд верхнего уровня.
- * На текущем этапе (Step 1.2) реализует каркас маршрутизации; конкретные обработчики
- * каждого модуля подключаются по мере итеративной разработки следующих узлов плана.
+ * Пользовательские команды (`init`, `status`, `sync`, `down`) рендерятся через единую TUI дизайн-систему
+ * `@clack/prompts`, тогда как техническая команда `hook` сохраняет чистый поток вывода для JSON-контракта IDE.
  */
 async function dispatchCommand(ctx: ParsedCliContext): Promise<void> {
   const runtime = detectRuntime();
 
   switch (ctx.command) {
-    case "init":
-      process.stdout.write(
-        `[${CLI_NAME}] Initializing workspace (agent="${ctx.agent}", runtime="${runtime}")...\n`,
-      );
+    case "init": {
+      const profile = inspectWorkspace(process.cwd(), ctx.agent);
+      const confirmedProfile = await runInitWizard(profile, {
+        yes: ctx.yes,
+        version: CLI_VERSION,
+        runtime,
+      });
+      if (!confirmedProfile) {
+        process.exitCode = 1;
+        return;
+      }
       break;
-    case "sync":
-      process.stdout.write(
-        `[${CLI_NAME}] Synchronizing context graph and rules (agent="${ctx.agent}", runtime="${runtime}")...\n`,
-      );
+    }
+    case "sync": {
+      const profile = inspectWorkspace(process.cwd(), ctx.agent);
+      renderSyncCommand(profile, CLI_VERSION, runtime);
       break;
-    case "status":
-      process.stdout.write(
-        `[${CLI_NAME}] Checking factory stack and context status (runtime="${runtime}")...\n`,
-      );
+    }
+    case "status": {
+      const profile = inspectWorkspace(process.cwd(), ctx.agent);
+      renderStatusCommand(profile, CLI_VERSION, runtime);
       break;
+    }
     case "down":
-      process.stdout.write(
-        `[${CLI_NAME}] Stopping global ~/.mcp-coop-agentic-factory/ Docker stack (runtime="${runtime}")...\n`,
-      );
+      renderDownCommand(CLI_VERSION, runtime);
       break;
     case "hook": {
       const hookEvent = ctx.subargs[0] ?? "unknown";
@@ -155,7 +152,7 @@ async function dispatchCommand(ctx: ParsedCliContext): Promise<void> {
       break;
     }
     default:
-      printHelp();
+      renderHelpScreen(CLI_NAME, CLI_VERSION, runtime);
       break;
   }
 }
@@ -165,27 +162,26 @@ async function dispatchCommand(ctx: ParsedCliContext): Promise<void> {
  * и возвращает корректные POSIX-коды возврата (`0` — успех, `1` — ошибка вызова).
  */
 async function main(): Promise<void> {
+  const runtime = detectRuntime();
   try {
     const ctx = parseCliArgs(process.argv.slice(2));
 
     if (ctx.version) {
-      process.stdout.write(`${CLI_NAME} v${CLI_VERSION} (${detectRuntime()})\n`);
+      process.stdout.write(`${CLI_NAME} v${CLI_VERSION} (${runtime})\n`);
       return;
     }
 
     if (ctx.help || !ctx.command) {
-      printHelp();
+      renderHelpScreen(CLI_NAME, CLI_VERSION, runtime);
       return;
     }
 
     await dispatchCommand(ctx);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`[${CLI_NAME}] Error: ${message}\n`);
-    process.stderr.write(`Run "${CLI_NAME} --help" for usage information.\n`);
+    renderCliError(message, CLI_NAME, CLI_VERSION, runtime);
     process.exitCode = 1;
   }
 }
 
 void main();
-

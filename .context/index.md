@@ -23,7 +23,7 @@ updated_at: "2026-10-24"
 ## 1. Архитектурные модули (`.context/entities/modules/`)
 
 * **[[mod-context-hooks]]** ([`entities/modules/mod-context-hooks.md`](./entities/modules/mod-context-hooks.md)) — Локальные Python-хуки контроля и авто-инъекции графа `.context/` (`inject_context_map.py`, `track_file_changes.py`, `enforce_context_sync.py`).
-* **[[mod-bun-cli]]** ([`entities/modules/mod-bun-cli.md`](./entities/modules/mod-bun-cli.md)) — Каркас кросс-рантаймового CLI-инжектора (`bunx` + `npx`, сборка через `tsc`): `package.json`, `tsconfig.json`, `src/cli/index.ts`.
+* **[[mod-bun-cli]]** ([`entities/modules/mod-bun-cli.md`](./entities/modules/mod-bun-cli.md)) — Кросс-рантаймовый CLI-инжектор, детектор стека/агента и TUI дизайн-система на `@clack/prompts` + `styleText` (`bunx` + `npx`, сборка через `tsc`): `package.json`, `package-lock.json`, `tsconfig.json`, `src/cli/index.ts`, `src/cli/detector.ts`, `src/cli/wizard.ts`.
 * **[[mod-python-core]]** ([`entities/modules/mod-python-core.md`](./entities/modules/mod-python-core.md)) — Каркас глобального Python 3.12 ядра и слои хранения PostgreSQL + Redis (`FastAPI` + `lifespan` + `CoreSettings` + `StrEnum` + `PostgresDatabase` + `RedisSessionStore`): `pyproject.toml`, `src/core/enums.py`, `src/core/config.py`, `src/core/main.py`, `src/core/db/__init__.py`, `src/core/db/postgres.py`, `src/core/db/redis_client.py`.
 * **[[mod-docker-stack]]** ([`entities/modules/mod-docker-stack.md`](./entities/modules/mod-docker-stack.md)) — Инфраструктурный Docker Compose стек (`mcp-coop-agentic-factory-core`, `pgvector:pg18`, `redis:7-alpine`) и правила исключений: `.gitignore`, `.dockerignore`, `docker/Dockerfile`, `docker/docker-compose.yml`.
 

@@ -25,5 +25,8 @@
     "node": ">=20.0.0",
     "bun": ">=1.1.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@clack/prompts": "^1.8.1"
+  }
 }
