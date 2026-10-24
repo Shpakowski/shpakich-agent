@@ -12,6 +12,7 @@ from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.core import __version__
+from src.core.enums import AgentType
 
 
 class CoreSettings(BaseSettings):
@@ -50,6 +51,11 @@ class CoreSettings(BaseSettings):
         le=65535,
         validation_alias=AliasChoices("MCP_COOP_PORT", "PORT"),
         description="HTTP port exposed by FastAPI and FastMCP gateway.",
+    )
+    default_agent: AgentType = Field(
+        default=AgentType.ANTIGRAVITY,
+        validation_alias=AliasChoices("MCP_COOP_DEFAULT_AGENT", "DEFAULT_AGENT"),
+        description="Default target AI coding agent when not explicitly specified by the client.",
     )
 
     # Строки подключения к инфраструктуре хранения (имена хостов соответствуют сервисам в docker-compose.yml)

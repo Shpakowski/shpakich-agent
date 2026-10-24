@@ -2,7 +2,7 @@
 # Слой 2 (Глобальное Docker-ядро): Оркестрация контейнеров (docker-compose.yml)
 # Разворачивает изолированный стек из 3 сервисов:
 # 1. mcp-coop-agentic-factory-core     — ASGI-сервер (FastAPI + FastMCP + DecisionEngine + Harness²)
-# 2. mcp-coop-agentic-factory-postgres — PostgreSQL 16 + pgvector + pg_trgm (память и компоненты)
+# 2. mcp-coop-agentic-factory-postgres — PostgreSQL 18 + pgvector + pg_trgm (память и компоненты)
 # 3. mcp-coop-agentic-factory-redis    — Redis 7 Alpine (оперативный кэш сессий и анти-зацикливание)
 # ==============================================================================
 
@@ -23,7 +23,7 @@ services:
     ports:
       # КРИТИЧНО ДЛЯ БЕЗОПАСНОСТИ: биндим порт строго на loopback-интерфейс (127.0.0.1),
       # чтобы локальный шлюз хуков и MCP-сервер не были доступны из внешней локальной сети
-      - "127.0.0.1:8787:8787"
+      - "127.0.0.1:${PORT:-8787}:8787"
     environment:
       # Строки подключения к PostgreSQL и Redis внутри изолированной bridge-сети Docker
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://mcp_coop:mcp_coop_secret@mcp-coop-agentic-factory-postgres:5432/mcp_coop_agentic_factory}
@@ -57,10 +57,10 @@ services:
       - mcp-coop-agentic-factory-net
 
   # ----------------------------------------------------------------------------
-  # 2. Персистентное хранилище знаний, компонентов Harness² и векторов (pgvector)
+  # 2. Персистентное хранилище знаний, компонентов Harness² и векторов (PostgreSQL 18 + pgvector)
   # ----------------------------------------------------------------------------
   mcp-coop-agentic-factory-postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg18
     container_name: mcp-coop-agentic-factory-postgres
     restart: unless-stopped
     environment:
@@ -68,11 +68,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcp_coop_secret}
       POSTGRES_DB: ${POSTGRES_DB:-mcp_coop_agentic_factory}
     ports:
-      # Привязка к 127.0.0.1 позволяет безопасно подключаться к БД с хоста для отладки/инспекции
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      # Привязка к 127.0.0.1 и сдвинутому по умолчанию хост-порту 54329 защищает от конфликтов
+      # с локальными БД других проектов на хосте, сохраняя стандартный внутренний порт 5432 в сети mcp-coop-agentic-factory-net
+      - "127.0.0.1:${POSTGRES_PORT:-54329}:5432"
     volumes:
-      # Именованный том сохраняет таблицы проектов, скилов и векторной памяти при пересборке контейнеров
-      - mcp_coop_agentic_factory_pgdata:/var/lib/postgresql/data
+      # В официальном образе PostgreSQL 18+ структура каталога данных изменилась (/var/lib/postgresql/18/docker),
+      # поэтому именной том монтируется в родительскую директорию /var/lib/postgresql
+      - mcp_coop_agentic_factory_pgdata:/var/lib/postgresql
     healthcheck:
       # Нативная утилита pg_isready проверяет, что сервер PostgreSQL завершил инициализацию WAL и принимает запросы
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-mcp_coop} -d $${POSTGRES_DB:-mcp_coop_agentic_factory}"]
@@ -94,7 +96,9 @@ services:
     # сохранялись даже при перезапуске контейнера или Docker Desktop
     command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
     ports:
-      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+      # Используем сдвинутый по умолчанию хост-порт 63799 на 127.0.0.1 для защиты от конфликта
+      # со стандартным портом 6379 локальных инстансов Redis на хост-машине разработчика
+      - "127.0.0.1:${REDIS_PORT:-63799}:6379"
     volumes:
       - mcp_coop_agentic_factory_redisdata:/data
     healthcheck:

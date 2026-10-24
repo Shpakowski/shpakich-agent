@@ -116,7 +116,7 @@ flowchart TB
 | Контейнер | Образ | Назначение и ресурсы |
 | :--- | :--- | :--- |
 | **`mcp-coop-agentic-factory-core`** | `python:3.12-slim` | Единый асинхронный ASGI-сервер (`FastAPI` + `FastMCP` + `uvicorn`) на порту `8787`. Без локального PyTorch/CUDA — потребление RAM **~50–70 МБ**. |
-| **`mcp-coop-agentic-factory-postgres`** | `pgvector/pgvector:pg16` | Персистентное хранилище проектов, 8 компонентов `Harness²`, логов перехвата, полнотекстового индекса (`tsvector` + `pg_trgm`) и векторов (`vector(768)`). |
+| **`mcp-coop-agentic-factory-postgres`** | `pgvector/pgvector:pg18` | Персистентное хранилище проектов, 8 компонентов `Harness²`, логов перехвата, полнотекстового индекса (`tsvector` + `pg_trgm`) и векторов (`vector(768)`). |
 | **`mcp-coop-agentic-factory-redis`** | `redis:7-alpine` | Оперативная память активных сессий (`conversationId`), счётчики зацикливания команд, кэш скомпилированных правил для суб-миллисекундного ответа в хуках. |
 
 ---
@@ -270,7 +270,7 @@ CREATE TABLE projects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_path TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
-    agent_type TEXT NOT NULL DEFAULT 'antigravity',
+    agent_type TEXT NOT NULL, -- Значение из AgentType (StrEnum)
     stack_tags TEXT[] NOT NULL DEFAULT ARRAY['global'],
     last_synced_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
