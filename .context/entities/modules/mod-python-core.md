@@ -21,6 +21,11 @@ files:
   - src/core/harness/seed.py
   - src/core/harness/profiles.py
   - src/core/harness/compiler.py
+  - src/core/decision/__init__.py
+  - src/core/decision/models.py
+  - src/core/decision/providers.py
+  - src/core/decision/engine.py
+  - src/core/decision/hook_dialects.py
 depends_on: []
 implements: []
 governed_by: []
@@ -47,7 +52,8 @@ governed_by: []
 8. **`src/core/harness/seed.py`**: неизменяемая модель `HarnessComponentSeed`, эталонный реестр из 5 стартовых компонентов `DEFAULT_HARNESS_SEEDS` (`core-engineering-mentor`, `block-destructive-commands`, `rewrite-npm-to-bun`, `context-graph-discipline`, `context-graph-steward`), чистая функция фильтрации `filter_seed_components(stack_tags)` для оффлайн-фолбэка и идемпотентный загрузчик `seed_default_components(db)` (`INSERT ... ON CONFLICT (slug) DO NOTHING`).
 9. **`src/core/harness/profiles.py`**: декларативные целевые профили `AgentTargetProfile` (`PluginManifestSpec`, `RulesTargetSpec`, `SkillsTargetSpec`, `McpTargetSpec`, `HooksTargetSpec`), реестр `AGENT_PROFILES` для всех 5 агентов (`antigravity`, `claude-code`, `cursor`, `codex`, `opencode`) и функции `get_agent_profile(agent_type, overrides)` + `list_agent_profiles()`.
 10. **`src/core/harness/compiler.py` и `src/core/harness/__init__.py`**: двухфазный компилятор `HarnessCompiler` (`build_canonical_bundle`, `render_for_agent`, `compile_for_project`), неизменяемые модели `CanonicalHarnessBundle`, `CompiledGuardrail`, `CompiledSkillArtifact`, `RenderedFile`, `RenderedHarnessArtifact`, контроль лимита `MAX_RULES_MARKDOWN_BYTES = 24_000` (`enforce_markdown_byte_budget`), кэширование канонических бандлов в Redis LangCache (`cache:rules:{stack_hash}`) и фолбэк на `DEFAULT_HARNESS_SEEDS`.
-11. **`src/core/main.py`**: фабрика `create_app()` и ASGI-приложение FastAPI с контекстным менеджером `@asynccontextmanager async def lifespan(app: FastAPI)` (инициализация `PostgresDatabase` + `seed_default_components(db)`, `RedisSessionStore` и `HarnessCompiler` в `app.state` с поддержкой Graceful Degradation), диагностическим эндпоинтом `GET /health` и эндпоинтом регистрации и компиляции проектов `POST /api/projects/register` (`ProjectRegistrationRequest`).
+11. **`src/core/main.py`**: фабрика `create_app()` и ASGI-приложение FastAPI с контекстным менеджером `@asynccontextmanager async def lifespan(app: FastAPI)` (инициализация `PostgresDatabase` + `seed_default_components(db)`, `RedisSessionStore`, `HarnessCompiler`, `RuntimeProviderPool` и `DecisionEngine` в `app.state` с поддержкой Graceful Degradation), диагностическим эндпоинтом `GET /health`, регистрацией проектов `POST /api/projects/register`, REST API управления провайдерами Tier 2 (`/api/providers`), прямым эндпоинтом `POST /api/decisions/evaluate` и 5 эндпоинтами жизненных хуков (`/api/hooks/*`).
+12. **`src/core/decision/__init__.py`, `src/core/decision/models.py`, `src/core/decision/providers.py`, `src/core/decision/engine.py` и `src/core/decision/hook_dialects.py`**: полный пакет двухкоординатного `DecisionEngine` (`DecisionTier`, `DomainEvaluationSpec`, `LocalDeterministicTier`, `SystemOneDecisionTier`, `RuntimeProviderPool` с поддержкой `OPENAI_DECISIONS`, `JEV_CLEF`, `OPENAI_CHAT_SCHEMA`) и адаптеров диалектов жизненных хуков (`CanonicalHookInput`, `normalize_hook_payload`, `inspect_transcript_tail`, `format_hook_response`).
 
 ## Логи контекста (AI Traces)
 - 2026-10-24: Создан базовый скелет Python 3.12 Core (`pyproject.toml`, `src/core/__init__.py`, `src/core/config.py`, `src/core/main.py`) в строгом соответствии с PEP 621, паттерном FastAPI `lifespan` и языковым стандартом `AGENTS.md` (код на английском, архитектурные комментарии и докстринги на русском).
@@ -59,4 +65,7 @@ governed_by: []
 - 2026-10-24: Реализована Итерация 5.1 (Доменные перечисления адаптеров в `src/core/enums.py` и идемпотентный Seed базовых компонентов `Harness²` в `src/core/harness/seed.py`), пройдены проверки `pyright` и `ruff`.
 - 2026-10-24: Реализована Итерация 5.2 (Декларативные целевые профили 5 агентов в `src/core/harness/profiles.py`: `AgentTargetProfile`, `AGENT_PROFILES`, `get_agent_profile` с глубоким слиянием `overrides`), пройдены проверки `pyright` и `ruff`.
 - 2026-10-24: Завершена Итерация 5.3 (Компилятор `HarnessCompiler` в `src/core/harness/compiler.py`, пакетный экспорт `src/core/harness/__init__.py`, авто-сидирование в `lifespan` и эндпоинт `POST /api/projects/register` в `src/core/main.py`), пройдены проверки `pyright`, `ruff`, валидация графа `.context/` и интеграционный тест компиляции по всем 5 агентам.
+- 2026-10-24: Реализована Итерация 6.1 (Доменные перечисления `DecisionEngine`, таблица `decision_providers` в PostgreSQL, Circuit Breaker `ProviderCircuitState` в Redis, модели `src/core/decision/models.py` и рантайм-пул провайдеров `RuntimeProviderPool` в `src/core/decision/providers.py`), пройдены проверки `pyright` и `ruff`.
+- 2026-10-24: Реализована Итерация 6.2 (Мульти-тировый `DecisionEngine` в `src/core/decision/engine.py`: протокол `DecisionTier`, `DomainEvaluationSpec` для 5 доменов, `LocalDeterministicTier`, `SystemOneDecisionTier` и гибридный поиск опыта `search_memories`), пройдены проверки `pyright` и `ruff`.
+- 2026-10-24: Завершена Итерация 6.3 (`src/core/decision/hook_dialects.py`, `src/core/decision/__init__.py`, эндпоинты `/api/providers`, `/api/decisions/evaluate` и `/api/hooks/*` в `src/core/main.py` с поддержкой `injectSteps`, `overwrite`, `_syncFiles` и ре-гидратации `.context/index.md` после `/compact`), пройдены проверки `pyright`, `ruff`, валидация графа `.context/` и сквозной интеграционный тест каскада провайдеров и хуков (`ALL_ITERATION_6_TESTS_PASSED`).
 

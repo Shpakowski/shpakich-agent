@@ -1,10 +1,10 @@
 """Единый реестр доменных перечислений ядра фабрики (Layer 2: Domain Enums).
 
 Определяет типы агентов, эволюционирующих компонентов Harness², областей видимости (scope),
-событий жизненных хуков, пространств ключей Redis, сущностей Контекстного Графа (`.context/`)
-и целевых форматов компилятора адаптеров (`HarnessCompiler`).
+событий жизненных хуков, пространств ключей Redis, сущностей Контекстного Графа (`.context/`),
+целевых форматов компилятора адаптеров (`HarnessCompiler`) и мульти-тирового конвейера `DecisionEngine`.
 Валидация выполняется на уровне Python/Pydantic, что позволяет сохранять в PostgreSQL гибкий тип TEXT
-без миграций ALTER TYPE при добавлении новых агентов или типов компонентов.
+без миграций ALTER TYPE при добавлении новых агентов, доменов оценки или типов компонентов.
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ class RedisNamespace(StrEnum):
 
 
 class RedisKeySegment(StrEnum):
-    """Функциональные сегменты ключей Redis для разделения метаданных сессии, ошибок и кэша."""
+    """Функциональные сегменты ключей Redis для разделения метаданных сессии, ошибок, кэша и Circuit Breaker."""
 
     META = "meta"
     LAST_ERROR = "last_error"
@@ -76,6 +76,7 @@ class RedisKeySegment(StrEnum):
     CMD_FAILS = "cmd_fails"
     DECISION = "decision"
     RULES = "rules"
+    PROVIDER_CB = "provider_cb"
 
 
 class SessionMetaField(StrEnum):
@@ -167,6 +168,70 @@ class RulesFormat(StrEnum):
     CLAUDE_SCOPED_MD = "claude_scoped_md"
 
 
+class DecisionDomain(StrEnum):
+    """Функциональные домены оценки в двухкоординатной архитектуре `DecisionEngine`."""
+
+    TOOL_SAFETY = "tool_safety"
+    PLAN_VALIDATION = "plan_validation"
+    SUBAGENT_ROUTING = "subagent_routing"
+    CONTEXT_PRUNING = "context_pruning"
+    HARNESS_PROBE = "harness_probe"
+
+
+class DecisionQuestionType(StrEnum):
+    """Канонические типы структурированных микро-вопросов для оценки во втором контуре (System-1 / Tier 2)."""
+
+    PREDICATE = "predicate"
+    CHOICE = "choice"
+    SCORE = "score"
+
+
+class DecisionProviderDialect(StrEnum):
+    """Протокольные диалекты HTTP-провайдеров второго контура принятия решений (Tier 2 Pool)."""
+
+    OPENAI_DECISIONS = "openai_decisions"
+    JEV_CLEF = "jev_clef"
+    OPENAI_CHAT_SCHEMA = "openai_chat_schema"
+
+
+class ProviderHealthStatus(StrEnum):
+    """Оперативные статусы доступности провайдера Tier 2 в рантайм-пуле и Redis Circuit Breaker."""
+
+    HEALTHY = "healthy"
+    RATE_LIMITED = "rate_limited"
+    QUOTA_EXHAUSTED = "quota_exhausted"
+    AUTH_ERROR = "auth_error"
+    UPSTREAM_ERROR = "upstream_error"
+    DISABLED = "disabled"
+
+
+class TierStepStatus(StrEnum):
+    """Статусы завершения шага отдельного тира в цепочке ответственности `DecisionEngine`."""
+
+    TERMINAL = "terminal"
+    ESCALATE = "escalate"
+    ABSTAIN = "abstain"
+
+
+class VerdictAction(StrEnum):
+    """Канонические действия итогового вердикта `DecisionEngine`, маппируемые в диалекты хуков."""
+
+    ALLOW = "allow"
+    DENY = "deny"
+    ASK = "ask"
+    FORCE_ASK = "force_ask"
+    OVERWRITE = "overwrite"
+    CONTINUE = "continue"
+
+
+class FailMode(StrEnum):
+    """Политика деградации при исчерпании квоты или недоступности всех провайдеров Tier 2."""
+
+    FAIL_OPEN_ALLOW = "fail_open_allow"
+    FAIL_CLOSED_ASK = "fail_closed_ask"
+    FAIL_CLOSED_DENY = "fail_closed_deny"
+
+
 __all__ = [
     "AgentType",
     "ComponentStatus",
@@ -175,15 +240,22 @@ __all__ = [
     "ContextEntityFolder",
     "ContextEntityStatus",
     "ContextRelationType",
+    "DecisionDomain",
+    "DecisionProviderDialect",
+    "DecisionQuestionType",
+    "FailMode",
     "FileWriteStrategy",
     "GuardrailAction",
     "HookDialect",
     "HookEventType",
     "McpConfigFormat",
+    "ProviderHealthStatus",
     "RedisFlag",
     "RedisKeySegment",
     "RedisNamespace",
     "RulesFormat",
     "ScopeType",
     "SessionMetaField",
+    "TierStepStatus",
+    "VerdictAction",
 ]

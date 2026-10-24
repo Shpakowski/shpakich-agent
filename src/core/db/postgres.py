@@ -1,8 +1,8 @@
 """Асинхронный слой доступа к PostgreSQL 18 + pgvector + pg_trgm (Layer 2: Storage Engine).
 
 Отвечает за управление нативным пулом соединений asyncpg, идемпотентную инициализацию
-DDL-схемы (проекты, компоненты Harness², гибридная векторно-полнотекстовая память и аудит хуков)
-и диагностику состояния БД из жизненного цикла FastAPI.
+DDL-схемы (проекты, компоненты Harness², гибридная векторно-полнотекстовая память, аудит хуков
+и рантайм-реестр провайдеров Tier 2) и диагностику состояния БД из жизненного цикла FastAPI.
 """
 
 from __future__ import annotations
@@ -82,6 +82,22 @@ CREATE TABLE IF NOT EXISTS hook_events (
     tool_name TEXT,
     payload JSONB NOT NULL DEFAULT '{{}}'::jsonb,
     decision JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 5. Рантайм-реестр провайдеров второго контура принятия решений (Tier 2 Decision API Pool)
+CREATE TABLE IF NOT EXISTS decision_providers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT UNIQUE NOT NULL,
+    dialect TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    model TEXT NOT NULL,
+    api_key TEXT NOT NULL DEFAULT '',
+    priority INT NOT NULL DEFAULT 100,
+    timeout_ms INT NOT NULL DEFAULT 600,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 """

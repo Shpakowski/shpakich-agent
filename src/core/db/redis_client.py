@@ -31,6 +31,7 @@ from src.core.config import (
     DEFAULT_REDIS_SESSION_TTL_SECONDS,
 )
 from src.core.enums import (
+    ProviderHealthStatus,
     RedisFlag,
     RedisKeySegment,
     RedisNamespace,
@@ -76,6 +77,28 @@ class MemoryPromotionCandidate(BaseModel):
         description="Command or action that successfully resolved the error.",
     )
     step_idx: int = Field(ge=0, description="Conversation step index when the error was recorded.")
+
+
+class ProviderCircuitState(BaseModel):
+    """Неизменяемое состояние открытого прерывателя (Circuit Breaker) для провайдера Tier 2 в Redis.
+
+    Позволяет всем воркерам ядра мгновенно пропускать провайдера, у которого закончились токены
+    (`QUOTA_EXHAUSTED`), превышен RPM (`RATE_LIMITED`) или произошёл сбой (`UPSTREAM_ERROR`),
+    и автоматически восстанавливать его после истечения TTL (`cooldown_seconds`).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    status: ProviderHealthStatus = Field(
+        description="Operational degradation status that triggered the circuit breaker.",
+    )
+    reason: str = Field(
+        description="Diagnostic explanation of the failure or quota exhaustion.",
+    )
+    cooldown_seconds: int = Field(
+        ge=1,
+        description="Duration in seconds for which the provider stays on cooldown in Redis.",
+    )
 
 
 def compute_command_hash(tool_name: str, command: str) -> str:
@@ -381,11 +404,45 @@ class RedisSessionStore:
         serialized = json.dumps(dict(bundle), ensure_ascii=False)
         await self.client.set(cache_key, serialized, ex=self._cache_ttl_seconds)
 
+    # -------------------------------------------------------------------------
+    # 4. Circuit Breaker рантайм-пула провайдеров (Tier 2 Failover State)
+    # -------------------------------------------------------------------------
+
+    async def get_provider_circuit(
+        self,
+        provider_name: str,
+    ) -> ProviderCircuitState | None:
+        """Возвращает активное состояние Circuit Breaker провайдера (`cache:provider_cb:{name}`) или None."""
+        cb_key = self._cache_key(RedisKeySegment.PROVIDER_CB, provider_name.strip().lower())
+        raw_json = await cast(Awaitable[str | None], self.client.get(cb_key))
+        if not raw_json:
+            return None
+        return ProviderCircuitState.model_validate_json(raw_json)
+
+    async def trip_provider_circuit(
+        self,
+        provider_name: str,
+        state: ProviderCircuitState,
+    ) -> None:
+        """Размыкает прерыватель провайдера в Redis на время `state.cooldown_seconds`."""
+        cb_key = self._cache_key(RedisKeySegment.PROVIDER_CB, provider_name.strip().lower())
+        await self.client.set(
+            cb_key,
+            state.model_dump_json(),
+            ex=state.cooldown_seconds,
+        )
+
+    async def clear_provider_circuit(self, provider_name: str) -> None:
+        """Принудительно сбрасывает кулдаун Circuit Breaker для указанного провайдера."""
+        cb_key = self._cache_key(RedisKeySegment.PROVIDER_CB, provider_name.strip().lower())
+        await self.client.delete(cb_key)
+
 
 __all__ = [
     "HASH_DIGEST_LENGTH",
     "REDIS_KEY_SEPARATOR",
     "MemoryPromotionCandidate",
+    "ProviderCircuitState",
     "RedisSessionStore",
     "SessionLastError",
     "compute_command_hash",
