@@ -41,17 +41,20 @@ from src.core.enums import (
     VerdictAction,
 )
 from src.core.harness.compiler import HarnessCompiler
+from src.core.services.antigravity import AntigravitySDKService
 from src.core.services.embeddings import EmbeddingClient, format_pgvector
 
 logger = logging.getLogger("mcp_coop.core.decision.engine")
 
 TIER_1_ID: str = "tier1_local_deterministic"
+TIER_ANTIGRAVITY_PROBE_ID: str = "tier2_antigravity_probe_auditor"
 TIER_2_ID: str = "tier2_system_one_pool"
 TIER_FALLBACK_ID: str = "tier3_heuristic_fallback"
 SEARCH_MODE_HYBRID_VECTOR: str = "hybrid_vector"
 SEARCH_MODE_LEXICAL_FALLBACK: str = "lexical_fallback"
 
 TIER_1_PRIORITY: int = 10
+TIER_ANTIGRAVITY_PROBE_PRIORITY: int = 15
 TIER_2_PRIORITY: int = 20
 MS_PER_SECOND: float = 1000.0
 
@@ -671,6 +674,81 @@ class SystemOneDecisionTier:
         )
 
 
+class AntigravityProbeDecisionTier:
+    """Опциональный тир (`priority=15`): запускает `Read-Only Probe Auditor` для `AgentType.ANTIGRAVITY`."""
+
+    def __init__(self, antigravity_sdk: AntigravitySDKService) -> None:
+        self._antigravity_sdk: AntigravitySDKService = antigravity_sdk
+
+    @property
+    def tier_id(self) -> str:
+        """Возвращает идентификатор тира `Read-Only Probe Auditor`."""
+        return TIER_ANTIGRAVITY_PROBE_ID
+
+    @property
+    def priority(self) -> int:
+        """Возвращает приоритет (15) между локальным `Tier 1` и общим пулом `Tier 2`."""
+        return TIER_ANTIGRAVITY_PROBE_PRIORITY
+
+    async def evaluate(
+        self,
+        request: DecisionRequest,
+        context: dict[str, Any],
+    ) -> TierStepResult:
+        """Выполняет глубокий аудит кандидата в песочнице только для домена `HARNESS_PROBE` и `antigravity`."""
+        if request.domain != DecisionDomain.HARNESS_PROBE:
+            return TierStepResult(
+                status=TierStepStatus.ABSTAIN,
+                tier_id=self.tier_id,
+                reason="Antigravity Probe Tier only evaluates HARNESS_PROBE domain.",
+            )
+
+        raw_agent = request.payload.get("agent_type") or context.get("agent_type")
+        target_agent = str(raw_agent) if isinstance(raw_agent, str) else None
+        if not self._antigravity_sdk.is_enabled_for_agent(target_agent):
+            return TierStepResult(
+                status=TierStepStatus.ABSTAIN,
+                tier_id=self.tier_id,
+                reason="Antigravity SDK is disabled for target agent or unconfigured.",
+            )
+
+        started = time.perf_counter()
+        slug = str(request.payload.get("slug", "candidate")).strip() or "candidate"
+        comp_type = str(request.payload.get("component_type", "skill")).strip() or "skill"
+        title = str(request.payload.get("title", slug)).strip() or slug
+        content_md = str(request.payload.get("content", "")).strip()
+        rationale = str(request.payload.get("rationale", "")).strip()
+        ws_raw = request.payload.get("workspace_path") or request.workspace_path
+        workspace_path = str(ws_raw).strip() if isinstance(ws_raw, str) and ws_raw.strip() else None
+
+        verdict = await self._antigravity_sdk.audit_harness_candidate(
+            slug=slug,
+            component_type=comp_type,
+            title=title,
+            content_md=content_md,
+            rationale=rationale,
+            workspace_path=workspace_path,
+            target_agent=target_agent,
+        )
+        elapsed_ms = round((time.perf_counter() - started) * MS_PER_SECOND, 2)
+        if verdict.fallback_used and not verdict.security_flag:
+            return TierStepResult(
+                status=TierStepStatus.ABSTAIN,
+                tier_id=self.tier_id,
+                latency_ms=elapsed_ms,
+                reason="Antigravity SDK fell back to deterministic mode; deferring to Tier 2 provider pool.",
+            )
+
+        return TierStepResult(
+            status=TierStepStatus.TERMINAL,
+            tier_id=self.tier_id,
+            action=VerdictAction.ALLOW if verdict.promote_to_composed else VerdictAction.DENY,
+            score=verdict.utility_score,
+            reason=verdict.reason,
+            latency_ms=elapsed_ms,
+        )
+
+
 class DecisionEngine:
     """Координатор цепочки ответственности (`Tier 1 -> Tier 2 -> Tier N`) и гибридного поиска опыта."""
 
@@ -681,12 +759,14 @@ class DecisionEngine:
         provider_pool: RuntimeProviderPool | None = None,
         compiler: HarnessCompiler | None = None,
         embedding_client: EmbeddingClient | None = None,
+        antigravity_sdk: AntigravitySDKService | None = None,
         *,
         max_consecutive_failures: int = 2,
     ) -> None:
         self._db: PostgresDatabase | None = db
         self._redis: RedisSessionStore | None = redis
         self._embedding_client: EmbeddingClient | None = embedding_client
+        self._antigravity_sdk: AntigravitySDKService | None = antigravity_sdk
         self._provider_pool: RuntimeProviderPool = provider_pool or RuntimeProviderPool(
             db=db,
             redis=redis,
@@ -704,6 +784,8 @@ class DecisionEngine:
                 max_consecutive_failures=max_consecutive_failures,
             )
         )
+        if self._antigravity_sdk is not None:
+            self.register_tier(AntigravityProbeDecisionTier(self._antigravity_sdk))
         self.register_tier(
             SystemOneDecisionTier(
                 provider_pool=self._provider_pool,
@@ -720,6 +802,11 @@ class DecisionEngine:
     def embedding_client(self) -> EmbeddingClient | None:
         """Возвращает опциональный HTTP-клиент векторных эмбеддингов."""
         return self._embedding_client
+
+    @property
+    def antigravity_sdk(self) -> AntigravitySDKService | None:
+        """Возвращает опциональный сервис микро-агентов второго уровня `google-antigravity` SDK."""
+        return self._antigravity_sdk
 
     def register_tier(self, tier: DecisionTier) -> None:
         """Регистрирует или заменяет вычислительный тир в цепочке ответственности с сортировкой по `priority`."""

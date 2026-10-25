@@ -56,6 +56,8 @@ const DEFAULT_ENV_TEMPLATE = [
   "REDIS_PORT=63799",
   "OPENAI_API_KEY=",
   "EMBEDDING_API_KEY=",
+  "GEMINI_API_KEY=",
+  "ANTIGRAVITY_API_KEY=",
   "",
 ].join("\n");
 
@@ -67,6 +69,7 @@ export interface CoreHealthStatus {
   redis_connected: boolean;
   decisions_api_configured: boolean;
   embedding_api_configured: boolean;
+  antigravity_sdk_configured?: boolean;
   mcp_endpoint?: string;
 }
 

@@ -37,6 +37,7 @@ from src.core.graph.context_graph import (
     ContextGraphManager,
 )
 from src.core.harness.compiler import HarnessCompiler, normalize_stack_tags
+from src.core.services.antigravity import AntigravitySDKService
 from src.core.services.embeddings import EmbeddingClient, format_pgvector
 
 if TYPE_CHECKING:
@@ -122,6 +123,19 @@ class CoopMCPToolService:
         return client
 
     @property
+    def _antigravity_sdk(self) -> AntigravitySDKService:
+        """Возвращает или лениво создаёт `AntigravitySDKService` в `app.state.antigravity_sdk`."""
+        sdk_svc: AntigravitySDKService | None = getattr(
+            self._app.state,
+            "antigravity_sdk",
+            None,
+        )
+        if sdk_svc is None:
+            sdk_svc = AntigravitySDKService(self._settings)
+            self._app.state.antigravity_sdk = sdk_svc
+        return sdk_svc
+
+    @property
     def _provider_pool(self) -> RuntimeProviderPool:
         """Возвращает или лениво создаёт пул провайдеров Tier 2 в `app.state.provider_pool`."""
         pool: RuntimeProviderPool | None = getattr(
@@ -163,6 +177,7 @@ class CoopMCPToolService:
                 provider_pool=self._provider_pool,
                 compiler=self._compiler,
                 embedding_client=self._embedding_client,
+                antigravity_sdk=self._antigravity_sdk,
                 max_consecutive_failures=self._settings.max_consecutive_cmd_failures,
             )
             self._app.state.decision_engine = engine
@@ -463,6 +478,7 @@ class CoopMCPToolService:
             "postgres_connected": postgres_connected,
             "redis_connected": redis_connected,
             "embedding_client": self._embedding_client.get_status(),
+            "antigravity_sdk": self._antigravity_sdk.get_status(),
             "decision_providers": [v.model_dump(mode="json") for v in provider_views],
             "database_counts": counts,
             "context_graph": context_summary,

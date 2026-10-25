@@ -48,4 +48,5 @@ governed_by: []
 - 2026-10-24: Устранён дублирующий файл `.context/harness.json` — все команды (`status`, `sync`, `harness`) теперь читают и гидрируют профиль проекта (`stack_tags`, `agent_type`, `profile_overrides`) напрямую из таблицы `projects` в PostgreSQL через Docker-ядро (`hydrateManifestFromCore`).
 - 2026-10-24: Добавлена команда `up` (`mcp-coop-agentic-factory up`, `renderUpCommand`) для быстрого запуска глобального Docker-стека после `down` без повторного визарда `init`; команды `sync` и `harness` защищены от перезаписи файлов проекта дефолтным оффлайн-фолбэком при выключенном Docker-ядре.
 - 2026-10-24: Выполнена полная декомпозиция `src/cli/hook_runner.ts` (удалены захардкоженные функции Контура 3 и временные файлы `/tmp/mcp-coop-session-*`), модуль переведён в режим чистого HTTP-прокси к `HookScriptDispatcher` в Docker.
+- 2026-10-25: В `src/cli/docker.ts` (`DEFAULT_ENV_TEMPLATE` и `CoreHealthStatus`) добавлены опциональные переменные `GEMINI_API_KEY` / `ANTIGRAVITY_API_KEY` и поле `antigravity_sdk_configured`.
 

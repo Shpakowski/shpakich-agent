@@ -12,7 +12,7 @@ from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.core import __version__
-from src.core.enums import AgentType, EmbeddingDialect
+from src.core.enums import AgentType, AntigravityAuthMode, EmbeddingDialect
 
 # Параметры времени жизни (TTL) для оперативной памяти сессий (24 часа),
 # кэша решений/правил LangCache (1 час) и порога детектора зацикливания команд.
@@ -26,6 +26,12 @@ DEFAULT_EMBEDDING_API_URL: str = "https://generativelanguage.googleapis.com/v1be
 DEFAULT_EMBEDDING_MODEL: str = "models/gemini-embedding-001"
 DEFAULT_EMBEDDING_DIMENSIONS: int = 768
 DEFAULT_EMBEDDING_TIMEOUT_MS: int = 1500
+
+# Базовые параметры опционального контура google-antigravity Python SDK (SPEC.md §6.3)
+DEFAULT_ANTIGRAVITY_MODEL: str = "gemini-2.5-flash"
+DEFAULT_ANTIGRAVITY_LOCATION: str = "us-central1"
+DEFAULT_ANTIGRAVITY_TIMEOUT_MS: int = 30_000
+DEFAULT_ANTIGRAVITY_MAX_CONCURRENCY: int = 2
 
 
 class CoreSettings(BaseSettings):
@@ -173,6 +179,72 @@ class CoreSettings(BaseSettings):
         description="Protocol dialect for the HTTP embedding client (auto, openai_compatible, gemini_native).",
     )
 
+    # Опциональные параметры микро-агентов второго уровня на базе google-antigravity Python SDK (SPEC.md §6.3).
+    # Активируются только при выборе целевого агента AgentType.ANTIGRAVITY и наличии ключа/ADC.
+    antigravity_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "MCP_COOP_ANTIGRAVITY_API_KEY",
+            "ANTIGRAVITY_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+        ),
+        description="Optional API key for google-antigravity Python SDK (Gemini API or Vertex Express Mode).",
+    )
+    antigravity_model: str = Field(
+        default=DEFAULT_ANTIGRAVITY_MODEL,
+        validation_alias=AliasChoices(
+            "MCP_COOP_ANTIGRAVITY_MODEL",
+            "ANTIGRAVITY_MODEL",
+        ),
+        description="Target model identifier for google-antigravity micro-agents.",
+    )
+    antigravity_vertex: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "MCP_COOP_ANTIGRAVITY_VERTEX",
+            "ANTIGRAVITY_VERTEX",
+        ),
+        description="Whether to route google-antigravity SDK requests through Vertex AI (Express or ADC).",
+    )
+    antigravity_project: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "MCP_COOP_ANTIGRAVITY_PROJECT",
+            "ANTIGRAVITY_PROJECT",
+            "GOOGLE_CLOUD_PROJECT",
+        ),
+        description="Optional Google Cloud project ID for Vertex AI standard ADC mode.",
+    )
+    antigravity_location: str = Field(
+        default=DEFAULT_ANTIGRAVITY_LOCATION,
+        validation_alias=AliasChoices(
+            "MCP_COOP_ANTIGRAVITY_LOCATION",
+            "ANTIGRAVITY_LOCATION",
+        ),
+        description="Target Google Cloud region for Vertex AI standard ADC mode.",
+    )
+    antigravity_timeout_ms: int = Field(
+        default=DEFAULT_ANTIGRAVITY_TIMEOUT_MS,
+        ge=1000,
+        le=300_000,
+        validation_alias=AliasChoices(
+            "MCP_COOP_ANTIGRAVITY_TIMEOUT_MS",
+            "ANTIGRAVITY_TIMEOUT_MS",
+        ),
+        description="Execution timeout in milliseconds for isolated google-antigravity micro-agent runs.",
+    )
+    antigravity_max_concurrency: int = Field(
+        default=DEFAULT_ANTIGRAVITY_MAX_CONCURRENCY,
+        ge=1,
+        le=8,
+        validation_alias=AliasChoices(
+            "MCP_COOP_ANTIGRAVITY_MAX_CONCURRENCY",
+            "ANTIGRAVITY_MAX_CONCURRENCY",
+        ),
+        description="Maximum number of concurrent google-antigravity subprocesses inside the container.",
+    )
+
     @property
     def decisions_api_configured(self) -> bool:
         """Проверяет, активирован ли внешний LLM-арбитр для фильтрации правил в цикле Harness²."""
@@ -187,6 +259,24 @@ class CoreSettings(BaseSettings):
             custom_url and custom_url != DEFAULT_EMBEDDING_API_URL
         )
         return has_key or has_custom_endpoint
+
+    @property
+    def antigravity_auth_mode(self) -> AntigravityAuthMode:
+        """Определяет активный режим аутентификации для google-antigravity Python SDK."""
+        has_key = bool(self.antigravity_api_key and self.antigravity_api_key.strip())
+        has_project = bool(self.antigravity_project and self.antigravity_project.strip())
+        if self.antigravity_vertex and has_key:
+            return AntigravityAuthMode.VERTEX_EXPRESS
+        if self.antigravity_vertex and has_project:
+            return AntigravityAuthMode.VERTEX_ADC
+        if has_key:
+            return AntigravityAuthMode.GEMINI_API_KEY
+        return AntigravityAuthMode.UNCONFIGURED
+
+    @property
+    def antigravity_sdk_configured(self) -> bool:
+        """Проверяет, заданы ли учётные данные для запуска микро-агентов google-antigravity SDK."""
+        return self.antigravity_auth_mode != AntigravityAuthMode.UNCONFIGURED
 
 
 @lru_cache(maxsize=1)

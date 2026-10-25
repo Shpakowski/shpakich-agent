@@ -282,8 +282,27 @@ class MCPToolName(StrEnum):
     MANAGE_DECISION_PROVIDERS = "coop_manage_decision_providers"
 
 
+class AntigravityAuthMode(StrEnum):
+    """Режимы аутентификации опционального рантайма google-antigravity Python SDK."""
+
+    UNCONFIGURED = "unconfigured"
+    GEMINI_API_KEY = "gemini_api_key"
+    VERTEX_EXPRESS = "vertex_express"
+    VERTEX_ADC = "vertex_adc"
+
+
+class AntigravityAgentRole(StrEnum):
+    """Целевые роли изолированных микро-агентов второго уровня (SPEC.md §6.3)."""
+
+    PROBE_AUDITOR = "probe_auditor"
+    CONTEXT_HEALER = "context_healer"
+    E2E_RUNNER = "e2e_runner"
+
+
 __all__ = [
     "AgentType",
+    "AntigravityAgentRole",
+    "AntigravityAuthMode",
     "ComponentEffectiveState",
     "ComponentStatus",
     "ComponentType",

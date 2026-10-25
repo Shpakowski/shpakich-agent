@@ -25,6 +25,7 @@ from typing import Any, cast
 
 import redis.asyncio as aioredis
 from pydantic import BaseModel, ConfigDict, Field
+from redis.typing import EncodableT, FieldT
 
 from src.core.config import (
     DEFAULT_REDIS_CACHE_TTL_SECONDS,
@@ -209,10 +210,10 @@ class RedisSessionStore:
     async def init_session(self, conversation_id: str, workspace_path: str) -> None:
         """Инициализирует или освежает метаданные сессии в Redis Hash за 1 сетевой RTT."""
         meta_key = self._session_key(conversation_id, RedisKeySegment.META)
-        mapping: dict[str, str] = {
-            SessionMetaField.WORKSPACE_PATH: workspace_path,
-            SessionMetaField.RESOLVED_ERROR: RedisFlag.FALSE,
-            SessionMetaField.REFLECTION_PROMPTED: RedisFlag.FALSE,
+        mapping: dict[FieldT, EncodableT] = {
+            SessionMetaField.WORKSPACE_PATH.value: workspace_path,
+            SessionMetaField.RESOLVED_ERROR.value: RedisFlag.FALSE.value,
+            SessionMetaField.REFLECTION_PROMPTED.value: RedisFlag.FALSE.value,
         }
         async with self.client.pipeline(transaction=True) as pipe:
             pipe.hset(meta_key, mapping=mapping)
@@ -247,7 +248,7 @@ class RedisSessionStore:
         if not updates:
             return
         meta_key = self._session_key(conversation_id, RedisKeySegment.META)
-        normalized: dict[str, str] = {str(k): str(v) for k, v in updates.items()}
+        normalized: dict[FieldT, EncodableT] = {str(k): str(v) for k, v in updates.items()}
         async with self.client.pipeline(transaction=True) as pipe:
             pipe.hset(meta_key, mapping=normalized)
             pipe.expire(meta_key, self._session_ttl_seconds)

@@ -53,7 +53,7 @@ from src.core.harness import (
     seed_default_components,
 )
 from src.core.mcp import CoopMCPGateway, CoopMCPToolService
-from src.core.services import EmbeddingClient
+from src.core.services import AntigravitySDKService, EmbeddingClient
 
 logger = logging.getLogger("mcp_coop.core")
 
@@ -110,6 +110,15 @@ class ProviderPatchRequest(BaseModel):
     reset_circuit: bool = False
 
 
+class ContextHealRequest(BaseModel):
+    """Запрос на запуск фонового самоисцеления графа `.context/` (`Background Context Healer`)."""
+
+    workspace_path: str = Field(min_length=1)
+    changed_files: list[str] = Field(default_factory=list)
+    diff_summary: str = Field(default="")
+    agent_type: AgentType | None = None
+
+
 def _build_local_mcp_url(settings: CoreSettings) -> str:
     """Формирует локальный HTTP URL FastMCP-шлюза по порту из настроек ядра."""
     return f"http://{DEFAULT_LOCALHOST_HOST}:{settings.port}{MCP_HTTP_PATH}"
@@ -131,6 +140,12 @@ def _get_engine(request: Request) -> DecisionEngine:
         None,
     ) or EmbeddingClient(settings)
     request.app.state.embedding_client = embedding_client
+    antigravity_sdk: AntigravitySDKService = getattr(
+        request.app.state,
+        "antigravity_sdk",
+        None,
+    ) or AntigravitySDKService(settings)
+    request.app.state.antigravity_sdk = antigravity_sdk
     pool: RuntimeProviderPool = getattr(request.app.state, "provider_pool", None) or RuntimeProviderPool(
         db=db,
         redis=redis_store,
@@ -142,6 +157,7 @@ def _get_engine(request: Request) -> DecisionEngine:
         provider_pool=pool,
         compiler=compiler,
         embedding_client=embedding_client,
+        antigravity_sdk=antigravity_sdk,
         max_consecutive_failures=settings.max_consecutive_cmd_failures,
     )
     request.app.state.decision_engine = engine
@@ -322,12 +338,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     ) or EmbeddingClient(settings)
     app.state.embedding_client = embedding_client
 
+    antigravity_sdk: AntigravitySDKService = getattr(
+        app.state,
+        "antigravity_sdk",
+        None,
+    ) or AntigravitySDKService(settings)
+    app.state.antigravity_sdk = antigravity_sdk
+
     app.state.decision_engine = DecisionEngine(
         db=db,
         redis=redis_store,
         provider_pool=provider_pool,
         compiler=compiler,
         embedding_client=embedding_client,
+        antigravity_sdk=antigravity_sdk,
         max_consecutive_failures=settings.max_consecutive_cmd_failures,
     )
     app.state.script_dispatcher = HookScriptDispatcher(
@@ -375,6 +399,7 @@ def create_app() -> FastAPI:
     application.state.settings = settings
     application.state.provider_pool = RuntimeProviderPool()
     application.state.embedding_client = EmbeddingClient(settings)
+    application.state.antigravity_sdk = AntigravitySDKService(settings)
     mcp_service = CoopMCPToolService(application)
     mcp_gateway = CoopMCPGateway(application, mcp_service)
     application.state.mcp_service = mcp_service
@@ -391,6 +416,11 @@ def create_app() -> FastAPI:
             "embedding_client",
             None,
         ) or EmbeddingClient(active_settings)
+        agy_sdk: AntigravitySDKService = getattr(
+            request.app.state,
+            "antigravity_sdk",
+            None,
+        ) or AntigravitySDKService(active_settings)
         postgres_connected = await db.check_health() if db is not None else False
         redis_connected = await redis_store.check_health() if redis_store is not None else False
         return {
@@ -401,9 +431,31 @@ def create_app() -> FastAPI:
             "redis_connected": redis_connected,
             "decisions_api_configured": active_settings.decisions_api_configured,
             "embedding_api_configured": active_settings.embedding_api_configured,
+            "antigravity_sdk_configured": active_settings.antigravity_sdk_configured,
             "embedding_client": emb_client.get_status(),
+            "antigravity_sdk": agy_sdk.get_status(),
             "mcp_endpoint": MCP_HTTP_PATH,
         }
+
+    @application.post("/api/context/heal", tags=["context"])
+    async def heal_project_context(
+        payload: ContextHealRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        """Запускает двухфазное самоисцеление графа `.context/` (`Background Context Healer`)."""
+        active_settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
+        agy_sdk: AntigravitySDKService = getattr(
+            request.app.state,
+            "antigravity_sdk",
+            None,
+        ) or AntigravitySDKService(active_settings)
+        report = await agy_sdk.heal_context_graph(
+            payload.workspace_path,
+            changed_files=payload.changed_files,
+            diff_summary=payload.diff_summary,
+            target_agent=payload.agent_type,
+        )
+        return report.model_dump(mode="json")
 
     @application.post("/api/projects/register", tags=["projects"])
     async def register_project(

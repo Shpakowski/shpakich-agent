@@ -19,6 +19,7 @@ services:
       dockerfile: docker/Dockerfile
     image: mcp-coop-agentic-factory-core:latest
     container_name: mcp-coop-agentic-factory-core
+    init: true
     restart: unless-stopped
     ports:
       # КРИТИЧНО ДЛЯ БЕЗОПАСНОСТИ: биндим порт строго на loopback-интерфейс (127.0.0.1),
@@ -39,6 +40,11 @@ services:
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       HF_TOKEN: ${HF_TOKEN:-}
+      ANTIGRAVITY_API_KEY: ${ANTIGRAVITY_API_KEY:-}
+      ANTIGRAVITY_MODEL: ${ANTIGRAVITY_MODEL:-gemini-2.5-flash}
+      ANTIGRAVITY_VERTEX: ${ANTIGRAVITY_VERTEX:-false}
+      ANTIGRAVITY_PROJECT: ${ANTIGRAVITY_PROJECT:-}
+      ANTIGRAVITY_LOCATION: ${ANTIGRAVITY_LOCATION:-us-central1}
     depends_on:
       # Гарантируем запуск Python-ядра только после полной готовности БД и кэша принимать соединения,
       # исключая ошибки ConnectionRefusedError при накатке миграций и инициализации пула на старте
