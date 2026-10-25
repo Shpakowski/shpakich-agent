@@ -11,25 +11,32 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.decision.models import DecisionResolution
+from src.core.decision.transcript import (
+    CHECKPOINT_HASH_LENGTH,
+    COMPACT_RESUMING_MARKER,
+    COMPACT_STEP_TYPE,
+    MAX_COMPACTION_SUMMARY_CHARS,
+    TRANSCRIPT_TAIL_MAX_BYTES,
+    USER_INPUT_STEP_TYPE,
+    CompactionCheckpoint,
+    TranscriptTailInspection,
+    compute_checkpoint_hash,
+    extract_compaction_summary,
+    inspect_transcript_tail,
+    inspect_transcript_tail_detailed,
+)
 from src.core.enums import (
     AgentType,
     HookDialect,
     HookEventType,
     VerdictAction,
 )
-
-TRANSCRIPT_TAIL_MAX_BYTES: int = 16_384
-COMPACT_RESUMING_MARKER: str = "# Resuming from a compaction"
-COMPACT_STEP_TYPE: str = "CHECKPOINT"
-USER_INPUT_STEP_TYPE: str = "USER_INPUT"
 
 
 class CanonicalHookInput(BaseModel):
@@ -128,17 +135,38 @@ def normalize_hook_payload(
     if not tool_name:
         tool_name = str(
             raw_payload.get("tool_name")
+            or raw_payload.get("toolName")
             or raw_payload.get("tool")
             or ""
         ).strip()
 
     if not tool_args:
-        alt_args = raw_payload.get("tool_input") or raw_payload.get("tool_args") or raw_payload.get("args")
+        alt_args = (
+            raw_payload.get("tool_input")
+            or raw_payload.get("tool_args")
+            or raw_payload.get("toolArgs")
+            or raw_payload.get("args")
+        )
         if isinstance(alt_args, Mapping):
             tool_args = dict(alt_args)
 
-    step_idx_raw = raw_payload.get("stepIdx") or raw_payload.get("step_idx") or 0
-    step_idx = int(step_idx_raw) if isinstance(step_idx_raw, (int, float)) else 0
+    step_idx_raw = (
+        raw_payload.get("stepIdx")
+        if raw_payload.get("stepIdx") is not None
+        else (
+            raw_payload.get("step_idx")
+            if raw_payload.get("step_idx") is not None
+            else raw_payload.get("step_index")
+        )
+    )
+    if isinstance(step_idx_raw, bool) or step_idx_raw is None:
+        step_idx = 0
+    elif isinstance(step_idx_raw, (int, float)):
+        step_idx = max(0, int(step_idx_raw))
+    elif isinstance(step_idx_raw, str) and step_idx_raw.strip().isdigit():
+        step_idx = max(0, int(step_idx_raw.strip()))
+    else:
+        step_idx = 0
 
     raw_err = raw_payload.get("error")
     err_str: str | None = str(raw_err).strip() if raw_err is not None and str(raw_err).strip() else None
@@ -166,48 +194,6 @@ def normalize_hook_payload(
         stop_hook_active=stop_active,
         raw_payload=dict(raw_payload),
     )
-
-
-
-def inspect_transcript_tail(transcript_path: str | None) -> tuple[bool, str]:
-    """Читает последние 16 КБ JSONL-транскрипта для детекции `/compact` и последнего промпта пользователя."""
-    if not transcript_path:
-        return False, ""
-
-    path = Path(transcript_path)
-    if not path.is_file():
-        return False, ""
-
-    try:
-        file_size = path.stat().st_size
-        offset = max(0, file_size - TRANSCRIPT_TAIL_MAX_BYTES)
-        with path.open("rb") as fh:
-            if offset > 0:
-                fh.seek(offset)
-            tail_text = fh.read().decode("utf-8", errors="ignore")
-    except OSError:
-        return False, ""
-
-    lines = [ln.strip() for ln in tail_text.splitlines() if ln.strip()]
-    is_post_compact = False
-    last_user_prompt = ""
-
-    for line in lines[-8:]:
-        if COMPACT_RESUMING_MARKER in line:
-            is_post_compact = True
-        try:
-            obj = json.loads(line)
-            if isinstance(obj, Mapping):
-                step_type = str(obj.get("type") or "")
-                content_str = str(obj.get("content") or "")
-                if step_type == COMPACT_STEP_TYPE or COMPACT_RESUMING_MARKER in content_str:
-                    is_post_compact = True
-                if step_type == USER_INPUT_STEP_TYPE and content_str.strip():
-                    last_user_prompt = content_str.strip()
-        except ValueError:
-            continue
-
-    return is_post_compact, last_user_prompt
 
 
 def format_hook_response(
@@ -350,12 +336,21 @@ def format_hook_response(
 
 
 __all__ = [
+    "CHECKPOINT_HASH_LENGTH",
     "COMPACT_RESUMING_MARKER",
     "COMPACT_STEP_TYPE",
+    "MAX_COMPACTION_SUMMARY_CHARS",
     "TRANSCRIPT_TAIL_MAX_BYTES",
+    "USER_INPUT_STEP_TYPE",
     "CanonicalHookInput",
+    "CompactionCheckpoint",
+    "TranscriptTailInspection",
+    "compute_checkpoint_hash",
+    "extract_compaction_summary",
     "format_hook_response",
     "inspect_transcript_tail",
+    "inspect_transcript_tail_detailed",
     "normalize_hook_payload",
     "resolve_hook_dialect",
 ]
+

@@ -1,4 +1,4 @@
-"""Пакет двухкоординатного контура принятия решений (`DecisionEngine`) и адаптеров жизненных хуков."""
+"""Пакет контура принятия решений (`DecisionEngine`) и адаптеров жизненных хуков."""
 
 from src.core.decision.engine import (
     COMMAND_ARG_KEYS,
@@ -19,12 +19,20 @@ from src.core.decision.engine import (
     build_default_domain_specs,
 )
 from src.core.decision.hook_dialects import (
+    CHECKPOINT_HASH_LENGTH,
     COMPACT_RESUMING_MARKER,
     COMPACT_STEP_TYPE,
+    MAX_COMPACTION_SUMMARY_CHARS,
     TRANSCRIPT_TAIL_MAX_BYTES,
+    USER_INPUT_STEP_TYPE,
     CanonicalHookInput,
+    CompactionCheckpoint,
+    TranscriptTailInspection,
+    compute_checkpoint_hash,
+    extract_compaction_summary,
     format_hook_response,
     inspect_transcript_tail,
+    inspect_transcript_tail_detailed,
     normalize_hook_payload,
     resolve_hook_dialect,
 )
@@ -53,6 +61,7 @@ from src.core.decision.providers import (
 
 __all__ = [
     "AUTH_ERROR_COOLDOWN_SECONDS",
+    "CHECKPOINT_HASH_LENGTH",
     "COMMAND_ARG_KEYS",
     "COMPACT_RESUMING_MARKER",
     "COMPACT_STEP_TYPE",
@@ -61,6 +70,7 @@ __all__ = [
     "DEFAULT_OPENAI_DECISIONS_URL",
     "DEFAULT_PRIMARY_PRIORITY",
     "GREY_ZONE_PATTERNS",
+    "MAX_COMPACTION_SUMMARY_CHARS",
     "QUOTA_COOLDOWN_SECONDS",
     "RATE_LIMIT_COOLDOWN_SECONDS",
     "SUBAGENT_FLASH_CHOICE",
@@ -72,8 +82,10 @@ __all__ = [
     "TIER_FALLBACK_ID",
     "TRANSCRIPT_TAIL_MAX_BYTES",
     "UPSTREAM_ERROR_COOLDOWN_SECONDS",
+    "USER_INPUT_STEP_TYPE",
     "AntigravityProbeDecisionTier",
     "CanonicalHookInput",
+    "CompactionCheckpoint",
     "DecisionEngine",
     "DecisionProviderConfig",
     "DecisionProviderStatusView",
@@ -89,9 +101,14 @@ __all__ = [
     "RuntimeProviderPool",
     "SystemOneDecisionTier",
     "TierStepResult",
+    "TranscriptTailInspection",
     "build_default_domain_specs",
+    "compute_checkpoint_hash",
+    "extract_compaction_summary",
     "format_hook_response",
     "inspect_transcript_tail",
+    "inspect_transcript_tail_detailed",
     "normalize_hook_payload",
     "resolve_hook_dialect",
 ]
+

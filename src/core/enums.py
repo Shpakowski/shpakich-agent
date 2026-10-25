@@ -100,6 +100,8 @@ class SessionMetaField(StrEnum):
     CODE_MODIFIED = "code_modified"
     REMINDER_SENT = "reminder_sent"
     MODIFIED_FILES = "modified_files"
+    LAST_COMPACT_HASH = "last_compact_hash"
+    LAST_COMPACT_STEP = "last_compact_step"
 
 
 class ScriptExecutionMode(StrEnum):

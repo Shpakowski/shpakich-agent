@@ -259,6 +259,22 @@ def _render_node_markdown(frontmatter: ContextNodeFrontmatter, body_md_with_trac
 class ContextGraphManager:
     """Менеджер сборки, валидации и модификации ориентированного графа знаний `.context/` (`nx.DiGraph`)."""
 
+    def __init__(self, workspace_path: str | Path | None = None) -> None:
+        self._workspace_path: Path | None = (
+            Path(workspace_path).expanduser().resolve()
+            if workspace_path is not None
+            else None
+        )
+
+    def validate(
+        self,
+        workspace_path: str | Path | None = None,
+    ) -> GraphValidationReport:
+        """Возвращает отчёт целостности графа `GraphValidationReport` для указанной или сохранённой рабочей директории."""
+        target = workspace_path if workspace_path is not None else (self._workspace_path or Path.cwd())
+        _, _, report = self.build_and_validate(target)
+        return report
+
     def build_and_validate(
         self,
         workspace_path: str | Path,
@@ -538,6 +554,8 @@ class ContextGraphManager:
         return parse_context_node_file(node_file_path, workspace_root)
 
 
+ContextGraphService = ContextGraphManager
+
 __all__ = [
     "AI_TRACES_HEADING",
     "CONTEXT_DIR_NAME",
@@ -549,6 +567,7 @@ __all__ = [
     "INDEX_FILE_NAME",
     "SCHEMA_FILE_NAME",
     "ContextGraphManager",
+    "ContextGraphService",
     "ContextNode",
     "ContextNodeFrontmatter",
     "GraphEdge",

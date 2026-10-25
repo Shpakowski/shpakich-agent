@@ -9,6 +9,10 @@ files:
   - src/core/mcp/tools.py
   - src/core/mcp/server.py
   - src/core/main.py
+  - src/core/api/models.py
+  - src/core/api/deps.py
+  - src/core/api/routes_management.py
+  - src/core/api/routes_hooks.py
   - src/cli/docker.ts
 depends_on:
   - "[[contract-storage-schema]]"
@@ -31,7 +35,7 @@ governed_by:
 
 | № | Имя MCP-инструмента | Входные аргументы (сигнатура) | Назначение и бизнес-логика | Выходной JSON-контракт |
 | :- | :--- | :--- | :--- | :--- |
-| 1 | **`coop_search_memory`** | `query: str`, `stack_tags: list[str] \| None = None`, `limit: int = 5` (диапазон `1..20`) | Выполняет 3-way гибридный поиск по таблице `memories` ([[contract-storage-schema]]): векторная близость `pgvector` (`EmbeddingGemma 2`) + полнотекстовый `ts_rank_cd` + триграммы `pg_trgm`. | `{"query": str, "count": int, "results": [{"id", "title", "error_symptom", "solution", "scope", "stack_tags", "similarity", ...}]}` |
+| 1 | **`coop_search_memory`** | `query: str`, `stack_tags: list[str] \| None = None`, `limit: int = 5` (диапазон `1..20`), `include_compactions: bool = False`, `workspace_path: str = ""` | Выполняет 3-way гибридный поиск по таблице `memories` и (при `include_compactions=True`) по архиву сводок `session_compactions` ([[contract-storage-schema]]): векторная близость `pgvector` (`EmbeddingGemma 2`) + полнотекстовый `ts_rank_cd` + триграммы `pg_trgm`. | `{"query": str, "count": int, "results": [...], "compactions": [...], "compactions_count": int}` |
 | 2 | **`coop_learn_memory`** | `title: str`, `error_symptom: str`, `solution: str`, `stack_tags: list[str] \| None = None`, `scope: str = "global"`, `source_project_path: str \| None = None` | Сохраняет новое решение ошибки или архитектурный паттерн в таблицу `memories` с автоматической генерацией 768-мерного вектора через `EmbeddingClient`. | `{"id": str \| None, "title": str, "scope": str, "stack_tags": list[str], "embedding_indexed": bool, "persisted": bool}` |
 | 3 | **`coop_propose_harness_edit`** | `component_type: str`, `slug: str`, `title: str`, `description: str`, `content: str`, `scope: str = "global"`, `stack_tags: list[str] \| None = None`, `metadata: dict[str, Any] \| None = None`, `source_project_path: str \| None = None` | Реализует цикл эволюции [[adr-002-harness2-evolution-loop]] (`Propose -> Probe -> Compose`): оценивает кандидата через `DecisionEngine.evaluate(domain=HARNESS_PROBE)` (Tier 1 + Tier 2 + опциональный `AntigravityProbeDecisionTier` из [[adr-003-isolated-antigravity-sdk-tier]]), при вердикте `allow` выполняет `UPSERT` в `harness_components` со статусом `composed` и сбрасывает кэш `cache:rules:*` в Redis. | `{"id": str \| None, "slug": str, "component_type": str, "scope": str, "stack_tags": list[str], "status": "composed" \| "rejected", "score": float, "action": str, "decided_by_tier": str, "reason": str \| None, "version": int, "persisted": bool}` |
 | 4 | **`coop_publish_skill`** | `slug: str`, `description: str`, `instructions_md: str`, `stack_tags: list[str] \| None = None`, `helper_scripts: dict[str, str] \| None = None`, `source_project_path: str \| None = None` | Специализированная обёртка над `coop_propose_harness_edit` для публикации переиспользуемого навыка (`ComponentType.SKILL`, `SKILL.md` + `metadata.helper_scripts`) с авто-выводом `scope` (`domain` при наличии стековых тегов, иначе `global`). | Возвращает полный контракт ответа `coop_propose_harness_edit` для созданного/обновлённого скила. |
@@ -84,3 +88,4 @@ governed_by:
 
 ## Логи контекста (AI Traces)
 - 2026-10-25: Сформирован контракт `contract-mcp-and-http-api`, специфицирующий 8 инструментов локального шлюза `FastMCP` (`Streamable HTTP /mcp`) и управляющие REST API эндпоинты `FastAPI` (`/health`, `/api/projects/register`, `/api/harness/components`, `/api/providers`, `/api/decisions/evaluate`, `/api/context/heal`).
+- 2026-10-25: Отражена декомпозиция `src/core/main.py` в пакет `src/core/api/*` (`models.py`, `deps.py`, `routes_management.py`, `routes_hooks.py`), а также расширение `coop_search_memory` (`include_compactions`, `workspace_path`) и `coop_get_factory_status` (`database_counts.session_compactions`) в рамках `SPEC-003`.

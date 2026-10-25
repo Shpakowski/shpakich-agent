@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from src.core.db.compactions import CompactionArchiveRecord, CompactionArchiveStore
 from src.core.db.postgres import SCHEMA_DDL, PostgresDatabase, normalize_asyncpg_dsn
 from src.core.db.redis_client import (
     HASH_DIGEST_LENGTH,
@@ -23,6 +24,8 @@ __all__ = [
     "HASH_DIGEST_LENGTH",
     "REDIS_KEY_SEPARATOR",
     "SCHEMA_DDL",
+    "CompactionArchiveRecord",
+    "CompactionArchiveStore",
     "MemoryPromotionCandidate",
     "PostgresDatabase",
     "ProviderCircuitState",

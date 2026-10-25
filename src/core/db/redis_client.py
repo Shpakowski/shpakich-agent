@@ -254,6 +254,47 @@ class RedisSessionStore:
             pipe.expire(meta_key, self._session_ttl_seconds)
             await pipe.execute()
 
+    async def get_last_compaction_checkpoint(
+        self,
+        conversation_id: str,
+    ) -> tuple[str, int]:
+        """Возвращает последний сархивированный чекпоинт сжатия `(last_compact_hash, last_compact_step)`.
+
+        Используется на `PreInvocation` (SPEC-003) для дедупликации `<summary>` из `transcript.jsonl`,
+        чтобы не архивировать один и тот же чекпоинт повторно на каждом следующем шаге диалога.
+        """
+        meta = await self.get_session_meta(conversation_id)
+        raw_hash_val = meta.get(SessionMetaField.LAST_COMPACT_HASH.value)
+        raw_step_val = meta.get(SessionMetaField.LAST_COMPACT_STEP.value)
+        raw_hash = str(raw_hash_val).strip() if raw_hash_val is not None else ""
+        raw_step = str(raw_step_val).strip() if raw_step_val is not None else ""
+        try:
+            step_idx = max(0, int(raw_step)) if raw_step else 0
+        except (TypeError, ValueError):
+            step_idx = 0
+        return raw_hash, step_idx
+
+    async def record_compaction_checkpoint(
+        self,
+        conversation_id: str,
+        checkpoint_hash: str,
+        step_idx: int,
+    ) -> None:
+        """Атомарно фиксирует хеш и индекс шага сархивированного `<summary>` в `session:{id}:meta`."""
+        meta_key = self._session_key(conversation_id, RedisKeySegment.META)
+        try:
+            safe_step = max(0, int(step_idx))
+        except (TypeError, ValueError):
+            safe_step = 0
+        mapping: dict[FieldT, EncodableT] = {
+            SessionMetaField.LAST_COMPACT_HASH.value: str(checkpoint_hash).strip(),
+            SessionMetaField.LAST_COMPACT_STEP.value: str(safe_step),
+        }
+        async with self.client.pipeline(transaction=True) as pipe:
+            pipe.hset(meta_key, mapping=mapping)
+            pipe.expire(meta_key, self._session_ttl_seconds)
+            await pipe.execute()
+
     async def record_tool_failure(
         self,
         conversation_id: str,

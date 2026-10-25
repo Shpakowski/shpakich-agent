@@ -98,7 +98,7 @@ TOOL_ANNOTATIONS: dict[MCPToolName, dict[str, Any]] = {
 
 TOOL_DESCRIPTIONS: dict[MCPToolName, str] = {
     MCPToolName.SEARCH_MEMORY: (
-        "Search long-term error recovery memories using 3-way hybrid ranking (pgvector + tsvector + pg_trgm)."
+        "Search long-term error recovery memories and optional post-compaction session summaries using 3-way hybrid ranking (pgvector + tsvector + pg_trgm)."
     ),
     MCPToolName.LEARN_MEMORY: (
         "Store a verified error symptom and solution into long-term PostgreSQL memory with EmbeddingGemma 2 vectorization."
@@ -130,6 +130,8 @@ TOOL_INPUT_SCHEMAS: dict[MCPToolName, dict[str, Any]] = {
             "query": {"type": "string"},
             "stack_tags": {"type": "array", "items": {"type": "string"}},
             "limit": {"type": "integer", "default": 5},
+            "include_compactions": {"type": "boolean", "default": False},
+            "workspace_path": {"type": "string", "default": ""},
         },
         "required": ["query"],
     },

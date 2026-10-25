@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from src.core.config import CoreSettings, get_settings
+from src.core.db.compactions import CompactionArchiveStore
 from src.core.decision.engine import DecisionEngine
 from src.core.decision.models import DecisionRequest
 from src.core.decision.providers import RuntimeProviderPool
@@ -190,23 +191,58 @@ class CoopMCPToolService:
                 engine._embedding_client = self._embedding_client
         return engine
 
+    @property
+    def _compaction_store(self) -> CompactionArchiveStore:
+        """Возвращает или лениво создаёт `CompactionArchiveStore` в `app.state.compaction_store`."""
+        store: CompactionArchiveStore | None = getattr(
+            self._app.state,
+            "compaction_store",
+            None,
+        )
+        if store is None:
+            store = CompactionArchiveStore(
+                db=self._db,
+                embedding_client=self._embedding_client,
+            )
+            self._app.state.compaction_store = store
+        else:
+            if self._db is not None and store._db is not self._db:
+                store._db = self._db
+            if store._embedding_client is None:
+                store._embedding_client = self._embedding_client
+        return store
+
     async def search_memory(
         self,
         query: str,
         stack_tags: list[str] | None = None,
         limit: int = 5,
+        include_compactions: bool = False,
+        workspace_path: str = "",
     ) -> dict[str, Any]:
-        """Ищет решения ошибок в долгосрочной базе опыта (`pgvector + tsvector + pg_trgm`)."""
+        """Ищет решения ошибок в долгосрочной базе опыта (`memories`) и опционально сводки `/compact` (`session_compactions`)."""
+        clean_query = query.strip()
+        normalized_tags = stack_tags or [ScopeType.GLOBAL.value]
         results = await self._engine.search_memories(
-            query,
-            stack_tags or [ScopeType.GLOBAL.value],
+            clean_query,
+            normalized_tags,
             limit=limit,
         )
-        return {
+        response: dict[str, Any] = {
             "query": query,
             "count": len(results),
             "results": results,
         }
+        if include_compactions:
+            compactions = await self._compaction_store.search_compactions(
+                clean_query,
+                normalized_tags,
+                workspace_path=workspace_path.strip() or None,
+                limit=limit,
+            )
+            response["compactions"] = compactions
+            response["compactions_count"] = len(compactions)
+        return response
 
     async def learn_memory(
         self,
@@ -451,6 +487,7 @@ class CoopMCPToolService:
             "harness_components": 0,
             "memories": 0,
             "hook_events": 0,
+            "session_compactions": 0,
         }
         if db is not None and db.is_connected:
             for table_name in tuple(counts):

@@ -50,3 +50,7 @@ packages = ["src/core"]
 target-version = "py312"
 line-length = 100
 
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
+

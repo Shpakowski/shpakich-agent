@@ -1,363 +1,54 @@
 """Точка входа HTTP-шлюза и оркестратора жизненного цикла (Layer 2: FastAPI Core Engine).
 
 Управляет инициализацией и корректным освобождением ресурсов через современный паттерн
-lifespan (asynccontextmanager), предоставляет диагностический эндпоинт `/health`, точку
-регистрации/компиляции проектов `POST /api/projects/register`, REST API горячего управления
-пулом провайдеров Tier 2 (`/api/providers`) и 5 универсальных эндпоинтов жизненных хуков (`/api/hooks/*`).
+lifespan (asynccontextmanager), подключает модульные маршрутизаторы управления (`management_router`),
+жизненных хуков (`hooks_router`) и локальный MCP-шлюз (`CoopMCPGateway`), сохраняя 100% обратную
+совместимость всех публичных и внутренних символов пакета `src.core.main`.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import FastAPI
 
+from src.core.api import (
+    HARNESS_CONFIG_REL_PATH,
+    MAX_PLAN_COMPACTIONS_INJECTED,
+    MAX_PLAN_MEMORIES_INJECTED,
+    MAX_PLAN_PATTERNS_INJECTED,
+    PLAN_KEYWORDS,
+    UPDATE_COMPONENT_STATUS_SQL,
+    UPSERT_PROJECT_SQL,
+    ComponentPatchRequest,
+    ContextHealRequest,
+    ProjectRegistrationRequest,
+    ProviderPatchRequest,
+    _build_local_mcp_url,
+    _build_plan_best_practices_hint,
+    _get_compaction_store,
+    _get_engine,
+    _get_script_dispatcher,
+    _log_hook_event,
+    _resolve_project_context,
+    _resolve_project_stack_tags,
+    hooks_router,
+    management_router,
+)
 from src.core.config import CoreSettings, get_settings
-from src.core.db import PostgresDatabase, RedisSessionStore, SessionLastError
-from src.core.decision import (
-    COMMAND_ARG_KEYS,
-    CanonicalHookInput,
-    DecisionEngine,
-    DecisionProviderConfig,
-    DecisionRequest,
-    DecisionResolution,
-    RuntimeProviderPool,
-    format_hook_response,
-    inspect_transcript_tail,
-    normalize_hook_payload,
-)
-from src.core.enums import (
-    AgentType,
-    ComponentEffectiveState,
-    ComponentStatus,
-    ComponentType,
-    DecisionDomain,
-    HookEventType,
-    RedisFlag,
-    ScopeType,
-    SessionMetaField,
-    VerdictAction,
-)
+from src.core.db import CompactionArchiveStore, PostgresDatabase, RedisSessionStore
+from src.core.decision import DecisionEngine, RuntimeProviderPool
 from src.core.harness import (
-    DEFAULT_LOCALHOST_HOST,
-    MCP_HTTP_PATH,
     HarnessCompiler,
     HookScriptDispatcher,
-    ProjectHarnessOverrides,
-    normalize_stack_tags,
-    resolve_effective_stack_tags,
     seed_default_components,
 )
 from src.core.mcp import CoopMCPGateway, CoopMCPToolService
 from src.core.services import AntigravitySDKService, EmbeddingClient
 
 logger = logging.getLogger("mcp_coop.core")
-
-HARNESS_CONFIG_REL_PATH: str = ".context/harness.json"
-MAX_PLAN_PATTERNS_INJECTED: int = 3
-MAX_PLAN_MEMORIES_INJECTED: int = 2
-PLAN_KEYWORDS: tuple[str, ...] = ("/plan", "implementation_plan", "архитектурный план", "пошаговый план")
-
-UPSERT_PROJECT_SQL: str = """
-INSERT INTO projects (workspace_path, name, agent_type, stack_tags, profile_overrides, last_synced_at)
-VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
-ON CONFLICT (workspace_path) DO UPDATE SET
-    name = EXCLUDED.name,
-    agent_type = EXCLUDED.agent_type,
-    stack_tags = EXCLUDED.stack_tags,
-    profile_overrides = EXCLUDED.profile_overrides,
-    last_synced_at = NOW()
-RETURNING id
-"""
-
-UPDATE_COMPONENT_STATUS_SQL: str = """
-UPDATE harness_components
-SET status = $2,
-    version = version + 1,
-    updated_at = NOW()
-WHERE slug = $1
-RETURNING slug, component_type, scope, stack_tags, title, status, score, version
-"""
-
-
-class ProjectRegistrationRequest(BaseModel):
-    """Запрос от хостового CLI-инжектора на регистрацию рабочего пространства и компиляцию харнеса."""
-
-    workspace_path: str = Field(..., min_length=1)
-    project_name: str = Field(..., min_length=1)
-    agent_type: AgentType = AgentType.ANTIGRAVITY
-    stack_tags: list[str] = Field(default_factory=lambda: [ScopeType.GLOBAL.value])
-    profile_overrides: dict[str, Any] | None = None
-
-
-class ComponentPatchRequest(BaseModel):
-    """Запрос на переключение глобального статуса компонента `Harness²` в каталоге."""
-
-    status: ComponentStatus | None = None
-    enabled: bool | None = None
-
-
-class ProviderPatchRequest(BaseModel):
-    """Запрос на частичное обновление провайдера Tier 2 в рантайм-пуле без перезапуска ядра."""
-
-    priority: int | None = None
-    enabled: bool | None = None
-    api_key: str | None = None
-    model: str | None = None
-    base_url: str | None = None
-    timeout_ms: int | None = Field(default=None, ge=50, le=10000)
-    reset_circuit: bool = False
-
-
-class ContextHealRequest(BaseModel):
-    """Запрос на запуск фонового самоисцеления графа `.context/` (`Background Context Healer`)."""
-
-    workspace_path: str = Field(min_length=1)
-    changed_files: list[str] = Field(default_factory=list)
-    diff_summary: str = Field(default="")
-    agent_type: AgentType | None = None
-
-
-def _build_local_mcp_url(settings: CoreSettings) -> str:
-    """Формирует локальный HTTP URL FastMCP-шлюза по порту из настроек ядра."""
-    return f"http://{DEFAULT_LOCALHOST_HOST}:{settings.port}{MCP_HTTP_PATH}"
-
-
-def _get_engine(request: Request) -> DecisionEngine:
-    """Возвращает или лениво создаёт экземпляр `DecisionEngine` в `request.app.state`."""
-    engine: DecisionEngine | None = getattr(request.app.state, "decision_engine", None)
-    if engine is not None:
-        return engine
-
-    settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
-    db: PostgresDatabase | None = getattr(request.app.state, "db", None)
-    redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
-    compiler: HarnessCompiler | None = getattr(request.app.state, "compiler", None)
-    embedding_client: EmbeddingClient = getattr(
-        request.app.state,
-        "embedding_client",
-        None,
-    ) or EmbeddingClient(settings)
-    request.app.state.embedding_client = embedding_client
-    antigravity_sdk: AntigravitySDKService = getattr(
-        request.app.state,
-        "antigravity_sdk",
-        None,
-    ) or AntigravitySDKService(settings)
-    request.app.state.antigravity_sdk = antigravity_sdk
-    pool: RuntimeProviderPool = getattr(request.app.state, "provider_pool", None) or RuntimeProviderPool(
-        db=db,
-        redis=redis_store,
-    )
-    request.app.state.provider_pool = pool
-    engine = DecisionEngine(
-        db=db,
-        redis=redis_store,
-        provider_pool=pool,
-        compiler=compiler,
-        embedding_client=embedding_client,
-        antigravity_sdk=antigravity_sdk,
-        max_consecutive_failures=settings.max_consecutive_cmd_failures,
-    )
-    request.app.state.decision_engine = engine
-    return engine
-
-
-def _get_script_dispatcher(request: Request) -> HookScriptDispatcher:
-    """Возвращает или лениво создаёт экземпляр `HookScriptDispatcher` в `request.app.state`."""
-    dispatcher: HookScriptDispatcher | None = getattr(
-        request.app.state,
-        "script_dispatcher",
-        None,
-    )
-    if dispatcher is not None:
-        return dispatcher
-
-    settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
-    db: PostgresDatabase | None = getattr(request.app.state, "db", None)
-    redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
-    embedding_client: EmbeddingClient = getattr(
-        request.app.state,
-        "embedding_client",
-        None,
-    ) or EmbeddingClient(settings)
-    request.app.state.embedding_client = embedding_client
-    dispatcher = HookScriptDispatcher(
-        db=db,
-        redis=redis_store,
-        embedding_client=embedding_client,
-    )
-    request.app.state.script_dispatcher = dispatcher
-    return dispatcher
-
-
-async def _resolve_project_context(
-    db: PostgresDatabase | None,
-    workspace_path: str,
-    raw_payload: dict[str, Any],
-) -> tuple[tuple[str, ...], dict[str, Any]]:
-    """Разрешает эффективные теги стека и пер-проектные оверрайды из пэйлоада, БД или `.context/harness.json`."""
-    explicit_tags = raw_payload.get("stack_tags") or raw_payload.get("stackTags")
-    explicit_overrides = (
-        raw_payload.get("profile_overrides")
-        if "profile_overrides" in raw_payload
-        else raw_payload.get("profileOverrides")
-    )
-
-    resolved_tags: tuple[str, ...] | None = (
-        normalize_stack_tags([str(t) for t in explicit_tags])
-        if isinstance(explicit_tags, list) and explicit_tags
-        else None
-    )
-    resolved_overrides: dict[str, Any] | None = (
-        dict(explicit_overrides)
-        if isinstance(explicit_overrides, dict)
-        else None
-    )
-
-    if (
-        (resolved_tags is None or resolved_overrides is None)
-        and workspace_path
-        and db is not None
-        and db.is_connected
-    ):
-        try:
-            row = await db.pool.fetchrow(
-                "SELECT stack_tags, profile_overrides FROM projects WHERE workspace_path = $1",
-                workspace_path,
-            )
-            if row is not None:
-                if resolved_tags is None and row["stack_tags"]:
-                    resolved_tags = normalize_stack_tags(list(row["stack_tags"]))
-                if resolved_overrides is None and row["profile_overrides"] is not None:
-                    raw_ov = row["profile_overrides"]
-                    parsed_ov = (
-                        json.loads(raw_ov)
-                        if isinstance(raw_ov, str)
-                        else dict(raw_ov)
-                    )
-                    if isinstance(parsed_ov, dict) and parsed_ov:
-                        resolved_overrides = parsed_ov
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Project context lookup failed for %s: %s", workspace_path, exc)
-
-    if not resolved_overrides and workspace_path:
-        harness_cfg_path = Path(workspace_path) / HARNESS_CONFIG_REL_PATH
-        if harness_cfg_path.is_file():
-            try:
-                disk_data = json.loads(harness_cfg_path.read_text(encoding="utf-8"))
-                if isinstance(disk_data, dict):
-                    resolved_overrides = disk_data
-            except (OSError, json.JSONDecodeError):
-                pass
-
-    final_overrides: dict[str, Any] = resolved_overrides or {}
-    base_tags: tuple[str, ...] = resolved_tags or (ScopeType.GLOBAL.value,)
-    if final_overrides:
-        effective_tags = resolve_effective_stack_tags(
-            base_tags,
-            ProjectHarnessOverrides.from_mapping(final_overrides),
-        )
-        return effective_tags, final_overrides
-    return base_tags, final_overrides
-
-
-async def _resolve_project_stack_tags(
-    db: PostgresDatabase | None,
-    workspace_path: str,
-    raw_payload: dict[str, Any],
-) -> tuple[str, ...]:
-    """Определяет эффективные стековые теги проекта из пэйлоада хука или таблицы `projects` PostgreSQL."""
-    stack_tags, _ = await _resolve_project_context(db, workspace_path, raw_payload)
-    return stack_tags
-
-
-async def _build_plan_best_practices_hint(
-    compiler: HarnessCompiler,
-    engine: DecisionEngine,
-    active_prompt: str,
-    stack_tags: tuple[str, ...],
-    profile_overrides: dict[str, Any],
-) -> str:
-    """Формирует транзиентную подсказку для `/plan`, выбирая проверенные паттерны из `harness_components` и `memories`."""
-    lines: list[str] = [
-        (
-            "[Plan Guardrail]: Break the implementation plan into small Learning-First iterations "
-            "and include a `.context/` graph synchronization step in every iteration."
-        )
-    ]
-    try:
-        catalog = await compiler.list_catalog_components(
-            stack_tags,
-            profile_overrides=profile_overrides,
-        )
-        active_states = {
-            ComponentEffectiveState.ACTIVE_AUTO.value,
-            ComponentEffectiveState.ACTIVE_FORCED.value,
-        }
-        plan_types = {
-            ComponentType.SYSTEM_PROMPT.value,
-            ComponentType.TOOL_GUIDANCE.value,
-            ComponentType.SKILL.value,
-        }
-        active_patterns = [
-            item
-            for item in catalog
-            if item.get("effective_state") in active_states
-            and item.get("component_type") in plan_types
-        ][:MAX_PLAN_PATTERNS_INJECTED]
-        if active_patterns:
-            pattern_items = "; ".join(
-                f"{item.get('slug')} ({item.get('title')})" for item in active_patterns
-            )
-            lines.append(f"[Stack Harness² Patterns ({', '.join(stack_tags)})]: {pattern_items}")
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("Plan catalog pattern lookup failed: %s", exc)
-
-    try:
-        query_text = active_prompt.strip() or "architecture design plan best practices"
-        memories = await engine.search_memories(query_text, stack_tags)
-        if memories:
-            mem_items = "; ".join(
-                f"{m.get('title')}: {str(m.get('solution') or '')[:140]}"
-                for m in memories[:MAX_PLAN_MEMORIES_INJECTED]
-            )
-            lines.append(f"[Prior Architectural Memories]: {mem_items}")
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("Plan memory lookup failed: %s", exc)
-
-    return "\n".join(lines)
-
-
-async def _log_hook_event(
-    db: PostgresDatabase | None,
-    hook_input: CanonicalHookInput,
-    decision_payload: dict[str, Any],
-) -> None:
-    """Асинхронно фиксирует событие жизненного хука и принятый вердикт в таблице `hook_events`."""
-    if db is None or not db.is_connected:
-        return
-    try:
-        await db.pool.execute(
-            """
-            INSERT INTO hook_events (conversation_id, workspace_path, event_type, tool_name, payload, decision)
-            VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
-            """,
-            hook_input.conversation_id,
-            hook_input.workspace_path or None,
-            hook_input.event_type.value,
-            hook_input.tool_name or None,
-            json.dumps(hook_input.raw_payload, ensure_ascii=False),
-            json.dumps(decision_payload, ensure_ascii=False),
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("Hook event audit log failed: %s", exc)
 
 
 @asynccontextmanager
@@ -407,6 +98,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     ) or AntigravitySDKService(settings)
     app.state.antigravity_sdk = antigravity_sdk
 
+    app.state.compaction_store = CompactionArchiveStore(
+        db=db,
+        embedding_client=embedding_client,
+    )
     app.state.decision_engine = DecisionEngine(
         db=db,
         redis=redis_store,
@@ -448,7 +143,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("Shutting down %s and releasing external resources", settings.app_name)
 
 
-
 def create_app() -> FastAPI:
     """Фабрика экземпляра FastAPI для запуска через Uvicorn и изоляции в интеграционных тестах."""
     settings = get_settings()
@@ -458,661 +152,49 @@ def create_app() -> FastAPI:
         description="MCP-COOP Agentic Factory Core Engine (FastAPI + FastMCP)",
         lifespan=lifespan,
     )
+    embedding_client = EmbeddingClient(settings)
     application.state.settings = settings
     application.state.provider_pool = RuntimeProviderPool()
-    application.state.embedding_client = EmbeddingClient(settings)
+    application.state.embedding_client = embedding_client
     application.state.antigravity_sdk = AntigravitySDKService(settings)
+    application.state.compaction_store = CompactionArchiveStore(
+        db=None,
+        embedding_client=embedding_client,
+    )
     mcp_service = CoopMCPToolService(application)
     mcp_gateway = CoopMCPGateway(application, mcp_service)
     application.state.mcp_service = mcp_service
     application.state.mcp_gateway = mcp_gateway
 
-    @application.get("/health", tags=["diagnostics"])
-    async def health_check(request: Request) -> dict[str, Any]:
-        """Диагностический эндпоинт для Docker healthcheck и хостового CLI-инжектора на Bun."""
-        active_settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
-        db: PostgresDatabase | None = getattr(request.app.state, "db", None)
-        redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
-        emb_client: EmbeddingClient = getattr(
-            request.app.state,
-            "embedding_client",
-            None,
-        ) or EmbeddingClient(active_settings)
-        agy_sdk: AntigravitySDKService = getattr(
-            request.app.state,
-            "antigravity_sdk",
-            None,
-        ) or AntigravitySDKService(active_settings)
-        postgres_connected = await db.check_health() if db is not None else False
-        redis_connected = await redis_store.check_health() if redis_store is not None else False
-        return {
-            "status": "ok",
-            "service": active_settings.app_name,
-            "version": active_settings.version,
-            "postgres_connected": postgres_connected,
-            "redis_connected": redis_connected,
-            "decisions_api_configured": active_settings.decisions_api_configured,
-            "embedding_api_configured": active_settings.embedding_api_configured,
-            "antigravity_sdk_configured": active_settings.antigravity_sdk_configured,
-            "embedding_client": emb_client.get_status(),
-            "antigravity_sdk": agy_sdk.get_status(),
-            "mcp_endpoint": MCP_HTTP_PATH,
-        }
-
-    @application.post("/api/context/heal", tags=["context"])
-    async def heal_project_context(
-        payload: ContextHealRequest,
-        request: Request,
-    ) -> dict[str, Any]:
-        """Запускает двухфазное самоисцеление графа `.context/` (`Background Context Healer`)."""
-        active_settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
-        agy_sdk: AntigravitySDKService = getattr(
-            request.app.state,
-            "antigravity_sdk",
-            None,
-        ) or AntigravitySDKService(active_settings)
-        report = await agy_sdk.heal_context_graph(
-            payload.workspace_path,
-            changed_files=payload.changed_files,
-            diff_summary=payload.diff_summary,
-            target_agent=payload.agent_type,
-        )
-        return report.model_dump(mode="json")
-
-    @application.post("/api/projects/register", tags=["projects"])
-    async def register_project(
-        payload: ProjectRegistrationRequest,
-        request: Request,
-    ) -> dict[str, Any]:
-        """Регистрирует локальный проект в базе знаний и возвращает скомпилированный артефакт харнеса."""
-        active_settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
-        db: PostgresDatabase | None = getattr(request.app.state, "db", None)
-        redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
-        compiler: HarnessCompiler = getattr(request.app.state, "compiler", None) or HarnessCompiler(
-            db=db,
-            redis=redis_store,
-            mcp_url=_build_local_mcp_url(active_settings),
-            plugin_version=active_settings.version,
-        )
-
-        normalized_tags = normalize_stack_tags(payload.stack_tags)
-        project_id: Any = None
-
-        if db is not None and db.is_connected:
-            try:
-                async with db.pool.acquire() as conn:
-                    project_id = await conn.fetchval(
-                        UPSERT_PROJECT_SQL,
-                        payload.workspace_path,
-                        payload.project_name,
-                        payload.agent_type.value,
-                        list(normalized_tags),
-                        json.dumps(payload.profile_overrides or {}, ensure_ascii=False),
-                    )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Failed to upsert project %s into PostgreSQL: %s", payload.workspace_path, exc)
-
-        artifact = await compiler.compile_for_project(
-            agent_type=payload.agent_type,
-            stack_tags=normalized_tags,
-            profile_overrides=payload.profile_overrides,
-        )
-
-        return {
-            "status": "ok",
-            "project_id": str(project_id) if project_id is not None else None,
-            "persisted_in_db": project_id is not None,
-            "artifact": artifact.model_dump(mode="json"),
-        }
-
-    @application.get("/api/harness/components", tags=["harness"])
-    async def list_harness_components(
-        request: Request,
-        workspace_path: str = "",
-        stack_tags: str = "",
-    ) -> dict[str, Any]:
-        """Возвращает каталог всех компонентов `Harness²` с вычисленным статусом для стека/проекта."""
-        active_settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
-        db: PostgresDatabase | None = getattr(request.app.state, "db", None)
-        redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
-        compiler: HarnessCompiler = getattr(request.app.state, "compiler", None) or HarnessCompiler(
-            db=db,
-            redis=redis_store,
-            mcp_url=_build_local_mcp_url(active_settings),
-            plugin_version=active_settings.version,
-        )
-
-        explicit_tags = [tag.strip() for tag in stack_tags.split(",") if tag.strip()]
-        raw_lookup: dict[str, Any] = {"stack_tags": explicit_tags} if explicit_tags else {}
-        resolved_tags, profile_overrides = await _resolve_project_context(
-            db,
-            workspace_path.strip(),
-            raw_lookup,
-        )
-        items = await compiler.list_catalog_components(
-            resolved_tags,
-            profile_overrides=profile_overrides,
-        )
-        return {
-            "status": "ok",
-            "count": len(items),
-            "stack_tags": list(resolved_tags),
-            "profile_overrides": profile_overrides,
-            "components": items,
-        }
-
-    @application.patch("/api/harness/components/{slug}", tags=["harness"])
-    async def patch_harness_component(
-        slug: str,
-        payload: ComponentPatchRequest,
-        request: Request,
-    ) -> dict[str, Any]:
-        """Обновляет глобальный статус компонента `Harness²` в PostgreSQL и сбрасывает кэш правил в Redis."""
-        if payload.status is not None:
-            target_status = payload.status
-        elif payload.enabled is True:
-            target_status = ComponentStatus.COMPOSED
-        elif payload.enabled is False:
-            target_status = ComponentStatus.DISABLED
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Either 'status' or 'enabled' must be provided",
-            )
-
-        db: PostgresDatabase | None = getattr(request.app.state, "db", None)
-        redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
-        if db is None or not db.is_connected:
-            raise HTTPException(
-                status_code=503,
-                detail="PostgreSQL is not connected; global catalog cannot be modified offline",
-            )
-
-        clean_slug = slug.strip()
-        async with db.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                UPDATE_COMPONENT_STATUS_SQL,
-                clean_slug,
-                target_status.value,
-            )
-
-        if row is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Harness component '{clean_slug}' not found",
-            )
-
-        if redis_store is not None and redis_store.is_connected:
-            try:
-                await redis_store.invalidate_rules_cache()
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Failed to invalidate Redis rules cache: %s", exc)
-
-        return {
-            "status": "ok",
-            "component": {
-                "slug": str(row["slug"]),
-                "component_type": str(row["component_type"]),
-                "scope": str(row["scope"]),
-                "stack_tags": list(row["stack_tags"] or []),
-                "title": str(row["title"]),
-                "status": str(row["status"]),
-                "score": float(row["score"]),
-                "version": int(row["version"]),
-            },
-        }
-
-    @application.get("/api/providers", tags=["providers"])
-    async def list_providers(request: Request) -> dict[str, Any]:
-        """Возвращает отсортированный список провайдеров Tier 2 с актуальным статусом здоровья."""
-        engine = _get_engine(request)
-        views = await engine.provider_pool.list_providers()
-        return {
-            "status": "ok",
-            "providers": [v.model_dump(mode="json") for v in views],
-        }
-
-    @application.post("/api/providers", tags=["providers"])
-    async def upsert_provider(
-        payload: DecisionProviderConfig,
-        request: Request,
-    ) -> dict[str, Any]:
-        """Добавляет или полностью обновляет провайдера второго контура на лету."""
-        engine = _get_engine(request)
-        view = await engine.provider_pool.upsert_provider(payload)
-        return {
-            "status": "ok",
-            "provider": view.model_dump(mode="json"),
-        }
-
-    @application.patch("/api/providers/{name}", tags=["providers"])
-    async def patch_provider(
-        name: str,
-        payload: ProviderPatchRequest,
-        request: Request,
-    ) -> dict[str, Any]:
-        """Частично обновляет приоритет, ключ, статус включения или сбрасывает Circuit Breaker провайдера."""
-        engine = _get_engine(request)
-        view = await engine.provider_pool.update_provider(
-            name,
-            priority=payload.priority,
-            enabled=payload.enabled,
-            api_key=payload.api_key,
-            model=payload.model,
-            base_url=payload.base_url,
-            timeout_ms=payload.timeout_ms,
-            reset_circuit=payload.reset_circuit,
-        )
-        if view is None:
-            raise HTTPException(status_code=404, detail=f"Provider '{name}' not found")
-        return {
-            "status": "ok",
-            "provider": view.model_dump(mode="json"),
-        }
-
-    @application.delete("/api/providers/{name}", tags=["providers"])
-    async def delete_provider(name: str, request: Request) -> dict[str, Any]:
-        """Удаляет провайдера Tier 2 из рантайм-пула и таблицы `decision_providers`."""
-        engine = _get_engine(request)
-        removed = await engine.provider_pool.remove_provider(name)
-        if not removed:
-            raise HTTPException(status_code=404, detail=f"Provider '{name}' not found")
-        return {"status": "ok", "removed": name}
-
-    @application.post("/api/decisions/evaluate", tags=["decisions"])
-    async def evaluate_decision(
-        payload: DecisionRequest,
-        request: Request,
-    ) -> DecisionResolution:
-        """Прямой эндпоинт вычисления решения в любом из 5 доменов `DecisionEngine`."""
-        engine = _get_engine(request)
-        return await engine.evaluate(payload)
-
-
-    @application.post("/api/hooks/session-start", tags=["hooks"])
-    async def hook_session_start(
-        raw_payload: dict[str, Any],
-        request: Request,
-    ) -> dict[str, Any]:
-        """Обрабатывает старт сессии: инициализирует метаданные в Redis и запускает скрипты `session-start`."""
-        if not raw_payload.get("context_index_md"):
-            ws_candidate = str(
-                raw_payload.get("workspace_path")
-                or (raw_payload.get("workspacePaths") or [""])[0]
-                if isinstance(raw_payload.get("workspacePaths"), list)
-                else raw_payload.get("workspace_path") or ""
-            ).strip()
-            if ws_candidate:
-                idx_path = Path(ws_candidate) / ".context" / "index.md"
-                if idx_path.is_file():
-                    try:
-                        raw_payload = {
-                            **raw_payload,
-                            "context_index_md": idx_path.read_text(encoding="utf-8").strip(),
-                        }
-                    except OSError:
-                        pass
-
-        hook_in = normalize_hook_payload(HookEventType.SESSION_START, raw_payload)
-        db: PostgresDatabase | None = getattr(request.app.state, "db", None)
-        redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
-        dispatcher = _get_script_dispatcher(request)
-        stack_tags, profile_overrides = await _resolve_project_context(
-            db,
-            hook_in.workspace_path,
-            raw_payload,
-        )
-
-        if redis_store is not None and redis_store.is_connected:
-            try:
-                await redis_store.init_session(
-                    hook_in.conversation_id,
-                    hook_in.workspace_path,
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Redis session init failed: %s", exc)
-
-        sys_parts: list[str] = [
-            (
-                f"[MCP-COOP Factory]: Active stack tags={list(stack_tags)}. "
-                "Follow Learning-First iterative workflow and keep .context/ graph synchronized."
-            )
-        ]
-        script_res = await dispatcher.execute_hook_scripts(
-            hook_in,
-            stack_tags,
-            profile_overrides,
-        )
-        sys_parts.extend(script_res.system_messages)
-        sys_msg = "\n\n".join(sys_parts)
-
-        active_settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
-        compiler: HarnessCompiler = getattr(request.app.state, "compiler", None) or HarnessCompiler(
-            db=db,
-            redis=redis_store,
-            mcp_url=_build_local_mcp_url(active_settings),
-            plugin_version=active_settings.version,
-        )
-        artifact = await compiler.compile_for_project(
-            agent_type=hook_in.agent_type,
-            stack_tags=stack_tags,
-            profile_overrides=profile_overrides,
-        )
-        sync_files = [f.model_dump(mode="json") for f in artifact.files]
-
-        response_dict = format_hook_response(
-            HookEventType.SESSION_START,
-            hook_in.dialect,
-            system_message=sys_msg,
-            sync_files=sync_files,
-        )
-        await _log_hook_event(db, hook_in, response_dict)
-        return response_dict
-
-    @application.post("/api/hooks/pre-tool-use", tags=["hooks"])
-    async def hook_pre_tool_use(
-        raw_payload: dict[str, Any],
-        request: Request,
-    ) -> dict[str, Any]:
-        """Перехватывает вызов инструмента: проверяет `DecisionEngine` и скрипты `pre-tool-use` из БД."""
-        hook_in = normalize_hook_payload(HookEventType.PRE_TOOL_USE, raw_payload)
-        db: PostgresDatabase | None = getattr(request.app.state, "db", None)
-        engine = _get_engine(request)
-        dispatcher = _get_script_dispatcher(request)
-        stack_tags, profile_overrides = await _resolve_project_context(
-            db,
-            hook_in.workspace_path,
-            raw_payload,
-        )
-
-        target_path = str(
-            hook_in.tool_args.get("Path")
-            or hook_in.tool_args.get("path")
-            or hook_in.tool_args.get("file_path")
-            or ""
-        )
-        is_plan_write = hook_in.tool_name in ("write_file", "edit_file") and (
-            target_path.endswith("implementation_plan.md")
-        )
-
-        if is_plan_write:
-            plan_content = str(
-                hook_in.tool_args.get("Content")
-                or hook_in.tool_args.get("Replacement")
-                or hook_in.tool_args.get("content")
-                or ""
-            )
-            dec_req = DecisionRequest(
-                domain=DecisionDomain.PLAN_VALIDATION,
-                conversation_id=hook_in.conversation_id,
-                workspace_path=hook_in.workspace_path,
-                agent_type=hook_in.agent_type,
-                stack_tags=list(stack_tags),
-                payload={"content": plan_content, "path": target_path},
-            )
-        else:
-            dec_req = DecisionRequest(
-                domain=DecisionDomain.TOOL_SAFETY,
-                conversation_id=hook_in.conversation_id,
-                workspace_path=hook_in.workspace_path,
-                agent_type=hook_in.agent_type,
-                stack_tags=list(stack_tags),
-                payload={
-                    "tool_name": hook_in.tool_name,
-                    "tool_args": hook_in.tool_args,
-                    "profile_overrides": profile_overrides,
-                },
-            )
-
-        resolution = await engine.evaluate(dec_req)
-        script_res = await dispatcher.execute_hook_scripts(
-            hook_in,
-            stack_tags,
-            profile_overrides,
-        )
-        if script_res.action != VerdictAction.ALLOW and resolution.action == VerdictAction.ALLOW:
-            resolution = resolution.model_copy(
-                update={
-                    "action": script_res.action,
-                    "reason": script_res.reason or resolution.reason,
-                    "overwrite_args": script_res.overwrite_args or resolution.overwrite_args,
-                    "decided_by_tier": "hook_script_dispatcher",
-                }
-            )
-        response_dict = format_hook_response(
-            HookEventType.PRE_TOOL_USE,
-            hook_in.dialect,
-            resolution,
-        )
-        await _log_hook_event(db, hook_in, response_dict)
-        return response_dict
-
-    @application.post("/api/hooks/post-tool-use", tags=["hooks"])
-    async def hook_post_tool_use(
-        raw_payload: dict[str, Any],
-        request: Request,
-    ) -> dict[str, Any]:
-        """Фиксирует ошибку инструмента в Redis и исполняет скрипты `post-tool-use` (трекинг файлов и др.)."""
-        hook_in = normalize_hook_payload(HookEventType.POST_TOOL_USE, raw_payload)
-        db: PostgresDatabase | None = getattr(request.app.state, "db", None)
-        redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
-        dispatcher = _get_script_dispatcher(request)
-        stack_tags, profile_overrides = await _resolve_project_context(
-            db,
-            hook_in.workspace_path,
-            raw_payload,
-        )
-
-        cmd = ""
-        for key in COMMAND_ARG_KEYS:
-            val = hook_in.tool_args.get(key)
-            if isinstance(val, str) and val.strip():
-                cmd = val.strip()
-                break
-
-        eph_parts: list[str] = []
-        if redis_store is not None and redis_store.is_connected:
-            try:
-                if hook_in.error:
-                    fail_count = await redis_store.record_tool_failure(
-                        hook_in.conversation_id,
-                        SessionLastError(
-                            tool_name=hook_in.tool_name,
-                            command=cmd or hook_in.tool_name,
-                            error_text=hook_in.error,
-                            step_idx=hook_in.step_idx,
-                        ),
-                    )
-                    eph_parts.append(
-                        f"[MCP-COOP Working Memory]: Recorded tool failure #{fail_count} "
-                        f"for '{hook_in.tool_name}'. Inspect the root cause before retrying."
-                    )
-                else:
-                    candidate = await redis_store.mark_error_resolved(
-                        hook_in.conversation_id,
-                        recovery_command=cmd or hook_in.tool_name,
-                    )
-                    if candidate is not None:
-                        eph_parts.append(
-                            "[MCP-COOP Memory Promotion]: Previous tool failure was resolved! "
-                            "Before finishing, record the root cause and fix into long-term memory."
-                        )
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("PostToolUse Redis tracking failed: %s", exc)
-
-        script_res = await dispatcher.execute_hook_scripts(
-            hook_in,
-            stack_tags,
-            profile_overrides,
-        )
-        eph_parts.extend(script_res.ephemeral_messages)
-        eph_msg = "\n\n".join(eph_parts) if eph_parts else None
-
-        response_dict = format_hook_response(
-            HookEventType.POST_TOOL_USE,
-            hook_in.dialect,
-            ephemeral_message=eph_msg,
-        )
-        await _log_hook_event(db, hook_in, response_dict)
-        return response_dict
-
-    @application.post("/api/hooks/pre-invocation", tags=["hooks"])
-    async def hook_pre_invocation(
-        raw_payload: dict[str, Any],
-        request: Request,
-    ) -> dict[str, Any]:
-        """Анализирует контекст перед вызовом LLM: ре-гидратация после `/compact`, `/plan`, RAG и скрипты `pre-invocation`."""
-        hook_in = normalize_hook_payload(HookEventType.PRE_INVOCATION, raw_payload)
-        db: PostgresDatabase | None = getattr(request.app.state, "db", None)
-        redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
-        engine = _get_engine(request)
-        dispatcher = _get_script_dispatcher(request)
-        stack_tags, profile_overrides = await _resolve_project_context(
-            db,
-            hook_in.workspace_path,
-            raw_payload,
-        )
-
-        is_post_compact, tail_prompt = inspect_transcript_tail(hook_in.transcript_path)
-        active_prompt = hook_in.prompt or tail_prompt
-        hints: list[str] = []
-        sys_parts: list[str] = []
-
-        if is_post_compact:
-            rehydrated_msg = (
-                "[Post-Compaction Re-Hydration]: Context was compacted. Re-verify `.context/index.md` "
-                "and active session state before editing project files."
-            )
-            idx_text = str(raw_payload.get("context_index_md") or "").strip()
-            if not idx_text and hook_in.workspace_path:
-                idx_path = Path(hook_in.workspace_path) / ".context" / "index.md"
-                if idx_path.is_file():
-                    try:
-                        idx_text = idx_path.read_text(encoding="utf-8").strip()
-                    except OSError:
-                        pass
-            if idx_text:
-                rehydrated_msg = f"{rehydrated_msg}\n\n[Active Context Graph (.context/index.md)]:\n{idx_text}"
-            sys_parts.append(rehydrated_msg)
-
-        prompt_lower = active_prompt.lower()
-        if any(kw in prompt_lower for kw in PLAN_KEYWORDS):
-            active_settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
-            compiler: HarnessCompiler = getattr(request.app.state, "compiler", None) or HarnessCompiler(
-                db=db,
-                redis=redis_store,
-                mcp_url=_build_local_mcp_url(active_settings),
-                plugin_version=active_settings.version,
-            )
-            hints.append(
-                await _build_plan_best_practices_hint(
-                    compiler=compiler,
-                    engine=engine,
-                    active_prompt=active_prompt,
-                    stack_tags=stack_tags,
-                    profile_overrides=profile_overrides,
-                )
-            )
-
-        if redis_store is not None and redis_store.is_connected:
-            try:
-                last_err = await redis_store.get_last_error(hook_in.conversation_id)
-                if last_err is not None:
-                    matches = await engine.search_memories(last_err.error_text, stack_tags)
-                    if matches:
-                        top = matches[0]
-                        hints.append(
-                            f"[Error Recovery RAG]: Similar error '{top['title']}' solved previously: {top['solution']}"
-                        )
-                    else:
-                        hints.append(
-                            f"[Active Session Error]: Unresolved error in '{last_err.tool_name}': {last_err.error_text[:200]}"
-                        )
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("PreInvocation error lookup failed: %s", exc)
-
-        script_res = await dispatcher.execute_hook_scripts(
-            hook_in,
-            stack_tags,
-            profile_overrides,
-        )
-        sys_parts.extend(script_res.system_messages)
-        hints.extend(script_res.ephemeral_messages)
-
-        sys_msg = "\n\n".join(sys_parts) if sys_parts else None
-        eph_msg = "\n\n".join(hints) if hints else None
-        response_dict = format_hook_response(
-            HookEventType.PRE_INVOCATION,
-            hook_in.dialect,
-            system_message=sys_msg,
-            ephemeral_message=eph_msg,
-        )
-        await _log_hook_event(db, hook_in, response_dict)
-        return response_dict
-
-    @application.post("/api/hooks/stop", tags=["hooks"])
-    async def hook_stop(
-        raw_payload: dict[str, Any],
-        request: Request,
-    ) -> dict[str, Any]:
-        """Перехватывает завершение хода: исполняет скрипты `stop` (`enforce-context-sync` и др.) и рефлексию `Harness²`."""
-        hook_in = normalize_hook_payload(HookEventType.STOP, raw_payload)
-        db: PostgresDatabase | None = getattr(request.app.state, "db", None)
-        redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
-        dispatcher = _get_script_dispatcher(request)
-        stack_tags, profile_overrides = await _resolve_project_context(
-            db,
-            hook_in.workspace_path,
-            raw_payload,
-        )
-
-        resolution = DecisionResolution(
-            domain=DecisionDomain.HARNESS_PROBE,
-            action=VerdictAction.ALLOW,
-            decided_by_tier="stop_gate",
-        )
-
-        script_res = await dispatcher.execute_hook_scripts(
-            hook_in,
-            stack_tags,
-            profile_overrides,
-        )
-        if script_res.action != VerdictAction.ALLOW:
-            resolution = DecisionResolution(
-                domain=DecisionDomain.HARNESS_PROBE,
-                action=script_res.action,
-                decided_by_tier="hook_script_dispatcher",
-                reason=script_res.reason,
-            )
-        elif not hook_in.stop_hook_active and redis_store is not None and redis_store.is_connected:
-            try:
-                meta = await redis_store.get_session_meta(hook_in.conversation_id)
-                resolved_flag = meta.get(SessionMetaField.RESOLVED_ERROR.value) == RedisFlag.TRUE.value
-                prompted_flag = meta.get(SessionMetaField.REFLECTION_PROMPTED.value) == RedisFlag.TRUE.value
-                if resolved_flag and not prompted_flag:
-                    await redis_store.mark_reflection_prompted(hook_in.conversation_id)
-                    resolution = DecisionResolution(
-                        domain=DecisionDomain.HARNESS_PROBE,
-                        action=VerdictAction.CONTINUE,
-                        decided_by_tier="stop_reflection_gate",
-                        reason=(
-                            "[Harness² Reflection]: You resolved a non-trivial tool error in this session. "
-                            "Please propose a memory update or summarize the root cause before finishing."
-                        ),
-                    )
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Stop hook Redis check failed: %s", exc)
-
-        response_dict = format_hook_response(
-            HookEventType.STOP,
-            hook_in.dialect,
-            resolution,
-        )
-        await _log_hook_event(db, hook_in, response_dict)
-        return response_dict
-
+    application.include_router(management_router)
+    application.include_router(hooks_router)
     mcp_gateway.mount(application)
     return application
 
 
 app = create_app()
+
+__all__ = [
+    "HARNESS_CONFIG_REL_PATH",
+    "MAX_PLAN_COMPACTIONS_INJECTED",
+    "MAX_PLAN_MEMORIES_INJECTED",
+    "MAX_PLAN_PATTERNS_INJECTED",
+    "PLAN_KEYWORDS",
+    "UPDATE_COMPONENT_STATUS_SQL",
+    "UPSERT_PROJECT_SQL",
+    "ComponentPatchRequest",
+    "ContextHealRequest",
+    "ProjectRegistrationRequest",
+    "ProviderPatchRequest",
+    "_build_local_mcp_url",
+    "_build_plan_best_practices_hint",
+    "_get_compaction_store",
+    "_get_engine",
+    "_get_script_dispatcher",
+    "_log_hook_event",
+    "_resolve_project_context",
+    "_resolve_project_stack_tags",
+    "app",
+    "create_app",
+    "lifespan",
+]

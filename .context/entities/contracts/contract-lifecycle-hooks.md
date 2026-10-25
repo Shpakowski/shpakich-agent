@@ -7,6 +7,8 @@ status: Active
 stack: [fastapi, python, bun, typescript]
 files:
   - src/core/main.py
+  - src/core/api/routes_hooks.py
+  - src/core/decision/transcript.py
   - src/core/decision/hook_dialects.py
   - src/core/harness/script_runner.py
   - src/cli/hook_runner.ts
@@ -57,11 +59,12 @@ governed_by:
 ## 3. Три сценария `PreInvocation` и двухступенчатый отбор `HookScriptDispatcher`
 
 ### 3.1. Интеллектуальные сценарии `PreInvocation`
-1. **Сценарий А — Ре-гидратация после `/compact` (`Post-Compact Re-Hydration`):**
-   * Функция `inspect_transcript_tail()` сканирует последние 16 КБ (`TRANSCRIPT_TAIL_MAX_BYTES`) файла `transcript.jsonl` на наличие шага `"type": "CHECKPOINT"` или маркера `# Resuming from a compaction`.
-   * При обнаружении сжатия контекста ядро заново читает `.context/index.md` и инжектит его в постоянный `systemMessage`, предотвращая потерю архитектурной карты после отсечения истории `SessionStart`.
+1. **Сценарий А — Ре-гидратация и архивация `<summary>` после `/compact` (`Post-Compact Re-Hydration & Summary Archival`, `SPEC-003`):**
+   * Функция `inspect_transcript_tail_detailed()` (`src/core/decision/transcript.py`) сканирует последние 64 КБ (`TRANSCRIPT_TAIL_MAX_BYTES = 65_536`) файла `transcript.jsonl` на наличие шага `"type": "CHECKPOINT"`, маркера `# Resuming from a compaction` или блока `<summary>...</summary>`, извлекая неизменяемый чекпоинт `CompactionCheckpoint` (`summary_text`, 16-символьный SHA-256 `checkpoint_hash`, `step_idx`).
+   * В `hook_pre_invocation` (`src/core/api/routes_hooks.py`) дайджест `checkpoint_hash` сверяется с `last_compact_hash` в `session:{conversation_id}:meta` Redis (`RedisSessionStore.get_last_compaction_checkpoint`).
+   * Если чекпоинт **новый**: ядро выполняет **Re-Hydration** карты `.context/index.md` в `systemMessage`, идемпотентно сохраняет сводку `<summary>` в таблицу `session_compactions` PostgreSQL через `CompactionArchiveStore.archive_compaction()` (с 768-мерным вектором `EmbeddingGemma 2`) и фиксирует `last_compact_hash` / `last_compact_step` в Redis, предотвращая повторную инъекцию `index.md` и дублирование записей на последующих шагах диалога.
 2. **Сценарий Б — Инъекция паттернов проектирования при `/plan` (`Planning Best Practices Injection`):**
-   * Если активный промпт пользователя содержит триггеры планирования (`/plan`, `implementation_plan`, `архитектурный план`, `пошаговый план`), функция `_build_plan_best_practices_hint()` выбирает до 3 активных компонентов `Harness²` (`MAX_PLAN_PATTERNS_INJECTED = 3`) и до 2 релевантных записей из `memories` (`MAX_PLAN_MEMORIES_INJECTED = 2`) под стек проекта, инжектируя их вместе с правилом `[Plan Guardrail]` через транзиентный `ephemeralMessage`.
+   * Если активный промпт пользователя содержит триггеры планирования (`/plan`, `implementation_plan`, `архитектурный план`, `пошаговый план`), функция `_build_plan_best_practices_hint()` выбирает до 3 активных компонентов `Harness²` (`MAX_PLAN_PATTERNS_INJECTED = 3`), до 2 релевантных записей из `memories` (`MAX_PLAN_MEMORIES_INJECTED = 2`) и до 1 релевантной сводки прошлых сессий из `session_compactions` (`MAX_PLAN_COMPACTIONS_INJECTED = 1`) под стек проекта, инжектируя их вместе с правилом `[Plan Guardrail]` через транзиентный `ephemeralMessage`.
 3. **Сценарий В — Подсказка решения при ошибке (`Error Recovery RAG`):**
    * Если в Redis (`session:{id}:last_error`) числится неразрешённый сбой инструмента с предыдущего шага, ядро выполняет 3-way гибридный поиск `engine.search_memories(last_err.error_text, stack_tags)` и передаёт найденное решение из прошлого опыта в `ephemeralMessage`.
 
@@ -84,3 +87,4 @@ governed_by:
 
 ## Логи контекста (AI Traces)
 - 2026-10-25: Зафиксирован контракт жизненных хуков `contract-lifecycle-hooks` (5 событий, таблица трансляции 3 диалектов с учётом ограничения `ANTIGRAVITY_PROTOJSON` в `PreToolUse`, 3 сценария `PreInvocation`, двухступенчатая воронка `HookScriptDispatcher` и тройной контур принуждения `.context/`).
+- 2026-10-25: Обновлён Сценарий А и Сценарий Б `PreInvocation` под `SPEC-003` (`src/core/decision/transcript.py`, `src/core/api/routes_hooks.py`: окно хвоста 64 КБ, дедупликация чекпоинтов `/compact` через `last_compact_hash` в Redis, архивация `<summary>` в `session_compactions` и инъекция прошлых сводок при `/plan`).

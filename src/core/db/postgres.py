@@ -1,8 +1,8 @@
 """Асинхронный слой доступа к PostgreSQL 18 + pgvector + pg_trgm (Layer 2: Storage Engine).
 
 Отвечает за управление нативным пулом соединений asyncpg, идемпотентную инициализацию
-DDL-схемы (проекты, компоненты Harness², гибридная векторно-полнотекстовая память, аудит хуков
-и рантайм-реестр провайдеров Tier 2) и диагностику состояния БД из жизненного цикла FastAPI.
+DDL-схемы (проекты, компоненты Harness², гибридная векторно-полнотекстовая память, аудит хуков,
+рантайм-реестр провайдеров Tier 2 и архив сводок сжатия контекста SPEC-003) и диагностику БД.
 """
 
 from __future__ import annotations
@@ -115,6 +115,35 @@ CREATE TABLE IF NOT EXISTS decision_providers (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- 6. Долгосрочный архив сводок сжатия контекста (<summary> после /compact, SPEC-003)
+CREATE TABLE IF NOT EXISTS session_compactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_id TEXT NOT NULL,
+    workspace_path TEXT,
+    agent_type TEXT NOT NULL,
+    step_idx INT NOT NULL DEFAULT 0,
+    checkpoint_hash TEXT NOT NULL,
+    summary_text TEXT NOT NULL,
+    stack_tags TEXT[] NOT NULL DEFAULT ARRAY['{ScopeType.GLOBAL}'],
+    metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+    embedding vector(768),
+    search_tsv tsvector GENERATED ALWAYS AS (
+        to_tsvector('simple', coalesce(summary_text, '') || ' ' || coalesce(workspace_path, ''))
+    ) STORED,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (conversation_id, checkpoint_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_compactions_workspace_created
+    ON session_compactions (workspace_path, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_compactions_tsv
+    ON session_compactions USING GIN (search_tsv);
+CREATE INDEX IF NOT EXISTS idx_compactions_summary_trgm
+    ON session_compactions USING GIN (summary_text gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_compactions_embedding_hnsw
+    ON session_compactions USING hnsw (embedding vector_cosine_ops)
+    WHERE embedding IS NOT NULL;
 """
 
 
