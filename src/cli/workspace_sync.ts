@@ -158,6 +158,25 @@ function normalizeSlug(raw: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+const MIN_SLUG_TAG_LENGTH = 2 as const;
+
+/**
+ * Извлекает детерминированный набор семантических тегов напрямую из имени компонента (`slug`),
+ * разбивая его по дефисам и подчёркиваниям без копирования всех тегов рабочего пространства.
+ */
+export function extractTagsFromSlug(
+  slug: string,
+  fallbackTags: readonly string[] = [],
+): string[] {
+  const normalized = normalizeSlug(slug);
+  const tokens = normalized
+    .split(/[-_]+/)
+    .map((tok) => tok.trim().toLowerCase())
+    .filter((tok) => tok.length >= MIN_SLUG_TAG_LENGTH);
+  const unique = Array.from(new Set(tokens));
+  return unique.length > 0 ? unique : [...fallbackTags];
+}
+
 function extractMarkdownMetadata(
   rawContent: string,
   fallbackSlug: string,
@@ -270,7 +289,7 @@ export function scanCustomWorkspaceComponents(
           description: meta.description,
           content,
           content_hash: computeNormalizedContentHash(content),
-          stack_tags: [...effectiveTags],
+          stack_tags: extractTagsFromSlug(slug, effectiveTags),
           file_updated_at: stat.mtime.toISOString(),
           metadata: { source_relative_path: relPath },
         });
@@ -323,7 +342,7 @@ export function scanCustomWorkspaceComponents(
           description: meta.description,
           content,
           content_hash: computeNormalizedContentHash(content),
-          stack_tags: [...effectiveTags],
+          stack_tags: extractTagsFromSlug(slug, effectiveTags),
           file_updated_at: stat.mtime.toISOString(),
           metadata: { source_relative_path: relPath },
         });

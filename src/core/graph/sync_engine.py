@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -48,8 +49,10 @@ INGEST_ACTION_UNCHANGED: str = "unchanged"
 INGEST_ACTION_SKIPPED_SYSTEM: str = "skipped_system"
 INGEST_ACTION_REJECTED_PROBE: str = "rejected_probe"
 MIN_CANDIDATE_CONTENT_LENGTH: int = 20
+MIN_SLUG_TAG_LENGTH: int = 2
 MAX_COMPONENT_DOC_CHARS: int = 500
 MAX_CONTEXT_NODE_DOC_CHARS: int = 1500
+SLUG_TOKEN_SPLIT_REGEX: re.Pattern[str] = re.compile(r"[-_]+")
 SYSTEM_BOOTSTRAP_SLUGS: frozenset[str] = frozenset({
     "harness-orchestrator", "core-engineering-mentor", "block-destructive-commands",
     "context-graph-discipline", "inject-context-map", "track-file-changes", "enforce-context-sync",
@@ -172,6 +175,35 @@ def normalize_relative_context_path(relative_path: str) -> str:
     return cleaned.removeprefix(prefix).lstrip("/") if cleaned.startswith(prefix) else cleaned
 
 
+def extract_tags_from_slug(slug: str) -> list[str]:
+    """Разбивает `slug` компонента по разделителям `[-_]+` в упорядоченный список уникальных тегов."""
+    seen: dict[str, None] = {}
+    for raw_tok in SLUG_TOKEN_SPLIT_REGEX.split(slug.strip().lower()):
+        tok = raw_tok.strip()
+        if len(tok) >= MIN_SLUG_TAG_LENGTH and tok not in seen:
+            seen[tok] = None
+    return list(seen.keys())
+
+
+def resolve_component_tags_and_scope(
+    slug: str,
+    raw_tags: Sequence[str],
+    fallback_tags: Sequence[str] = (),
+) -> tuple[list[str], str]:
+    """Определяет чистые `stack_tags` компонента (из `raw_tags` или `slug`) и глобальный `scope = 'global'`."""
+    cleaned_explicit: dict[str, None] = {}
+    for item in raw_tags:
+        tag = str(item or "").strip().lower()
+        if len(tag) >= MIN_SLUG_TAG_LENGTH and tag != ScopeType.GLOBAL.value:
+            cleaned_explicit[tag] = None
+
+    resolved_tags = list(cleaned_explicit.keys()) or extract_tags_from_slug(slug)
+    if not resolved_tags:
+        resolved_tags = list(normalize_stack_tags(fallback_tags))
+
+    return resolved_tags, ScopeType.GLOBAL.value
+
+
 class WorkspaceSyncEngine:
     """Оркестратор двусторонней синхронизации пользовательских компонентов и графа `.context/` с PostgreSQL."""
 
@@ -220,8 +252,11 @@ class WorkspaceSyncEngine:
                     items.append(ComponentIngestItemResult(slug=clean_slug, component_type=comp_type_str, action=INGEST_ACTION_UNCHANGED, version=int(existing_row["version"] or 1)))
                     continue
 
-            cand_tags = list(normalize_stack_tags(cand.stack_tags or base_tags))
-            scope_str = ScopeType.DOMAIN.value if any(t != ScopeType.GLOBAL.value for t in cand_tags) else ScopeType.GLOBAL.value
+            cand_tags, scope_str = resolve_component_tags_and_scope(
+                clean_slug,
+                cand.stack_tags,
+                base_tags,
+            )
             clean_title, clean_desc, clean_content = cand.title.strip() or clean_slug, cand.description.strip(), cand.content.strip()
             if self._engine is not None:
                 from src.core.decision.models import DecisionRequest

@@ -2,7 +2,7 @@
 type: GraphIndex
 version: "2026.2"
 project: mcp-coop-agentic-factory
-updated_at: "2026-10-25"
+updated_at: "2026-10-26"
 ---
 
 # Карта Контекстного Графа (`index.md`)
@@ -16,7 +16,7 @@ updated_at: "2026-10-25"
 * [`AGENTS.md`](../AGENTS.md) — Инженерные правила работы агента, режим менторства, предметный стиль комментариев, стандарты `KISS / DRY / SOLID / YAGNI / Zero-Hardcode` и протокол обновления `.context/`.
 * [`README.md`](../README.md) — Краткий обзор проекта и команд CLI.
 * [`.context/schema.md`](./schema.md) — Формальная онтология и правила валидации графа (`Graph-as-Code`, классы `Module | Contract | Decision`, рёбра `nx.DiGraph`, инварианты `No Phantom Nodes` и `No Broken Links`).
-* [`specs/`](../specs/) — Директория архитектурных спецификаций проекта (выполненные вехи в [`specs/001-mcp-coop-agentic-factory-v1.md`](../specs/001-mcp-coop-agentic-factory-v1.md) и черновики будущих итераций развития).
+* [`specs/`](../specs/) — Директория архитектурных спецификаций проекта (выполненные вехи в [`specs/001-mcp-coop-agentic-factory-v1.md`](../specs/001-mcp-coop-agentic-factory-v1.md), черновики [`specs/004-e2e-test-suite.md`](../specs/004-e2e-test-suite.md) и [`specs/005-smart-tag-routing-pre-invocation.md`](../specs/005-smart-tag-routing-pre-invocation.md)).
 
 ---
 

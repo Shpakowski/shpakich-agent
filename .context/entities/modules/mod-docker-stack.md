@@ -41,3 +41,5 @@ governed_by:
 - 2026-10-24: Выполнено обновление до `pgvector/pgvector:pg18` (с адаптацией маунта тома `/var/lib/postgresql` под структуру PostgreSQL 18+) и перенос дефолтных хост-портов БД и кэша на неконфликтующие значения (`54329:5432` и `63799:6379`).
 - 2026-10-25: В `docker/docker-compose.yml` включён `init: true` (`tini`) для защиты от процессов-зомби при запуске подпроцессов микро-агентов и проброшены опциональные переменные окружения `ANTIGRAVITY_*`.
 - 2026-10-25: Проставлена связь `governed_by: ["[[adr-001-clean-host-global-docker]]"]` после декомпозиции `SPEC.md` v1.0 в граф `.context/`.
+- 2026-10-26: Оптимизирован интервал `healthcheck` сервиса `mcp-coop-agentic-factory-core` в `docker/docker-compose.yml` и `docker/Dockerfile` (`start_period: 15s`, `start_interval: 2s`, `interval: 1h`) для быстрой проверки на старте без спама `GET /health` в логах.
+

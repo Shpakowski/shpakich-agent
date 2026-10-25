@@ -55,10 +55,11 @@ services:
     healthcheck:
       # Проверяем доступность эндпоинта /health встроенным клиентом urllib.request
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=3)"]
-      interval: 10s
+      interval: 1h
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
+      start_interval: 2s
     networks:
       - mcp-coop-agentic-factory-net
 

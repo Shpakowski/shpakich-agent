@@ -132,6 +132,8 @@ governed_by:
 - 2026-10-25: Реализована Фаза 9 (Комплексные юнит- и интеграционные тесты `tests/unit/test_visualizer.py`): верифицированы 4 ключевых контура визуализатора (автономный режим сборщика топологии, снимок с дельтой изменений и семантическими рёбрами, гибридный и лексический поиск, эндпоинты FastAPI /ui, /api/visualizer/graph, /api/visualizer/search), 19/19 тестов успешно пройдены, 0 ошибок в `ruff` и `pyright`.
 - 2026-10-25: Завершена Фаза 10 (Синхронизация Graph-as-Code и валидация целостности графа `.context/`): зарегистрированы все файлы визуализатора и веб-UI (`src/core/visualizer/*`, `src/core/ui/*`, `src/core/api/routes_visualizer.py`, `tests/unit/test_visualizer.py`), обновлены `mod-python-core.md`, `contract-mcp-and-http-api.md` и `index.md`, верифицирована валидность контекстного графа (10 узлов, 35 рёбер) и пройден полный тестовый сьют (19/19 тестов).
 - 2026-10-25: Исправлена фильтрация видимости составных групп (`group_container`) в `src/core/ui/graph_canvas.js` (`style("display") !== "none"` вместо `:visible` внутри `cy.batch`), улучшена визуальная дифференциация узлов `.context/` (`GraphIndex`, `Module`, `Contract`, `Decision`) и компонентов `Harness²`, добавлены полные сводки для `project` и `stack_tag` и очищена иерархия связей `context:index` в `src/core/visualizer/topology.py`.
+- 2026-10-26: В `src/core/graph/sync_engine.py` добавлены `extract_tags_from_slug` и `resolve_component_tags_and_scope` для сохранения чистых семантических тегов из `slug` без принудительного подмешивания `"global"` и с установкой `scope = 'global'` для всех синхронизируемых компонентов; расширены тесты в `tests/unit/test_spec002_dynamic_harness.py`.
+
 
 
 

@@ -243,6 +243,18 @@ async def test_contour2_workspace_ingest_content_hash_gate() -> None:
     assert actions1[HARNESS_ORCHESTRATOR_SLUG] == INGEST_ACTION_SKIPPED_SYSTEM
     assert actions1["custom-pytest-skill"] == INGEST_ACTION_CREATED
     assert fake_db.pool.components["custom-pytest-skill"]["metadata"]["execution_mode"] == ScriptExecutionMode.SEMANTIC.value
+    assert fake_db.pool.components["custom-pytest-skill"]["stack_tags"] == ["python", "pytest"]
+    assert fake_db.pool.components["custom-pytest-skill"]["scope"] == "global"
+
+    slug_derived_cand = WorkspaceComponentCandidate(
+        slug="clean-architecture-standards", component_type=ComponentType.SYSTEM_PROMPT,
+        title="Clean Architecture Standards", description="Universal clean architecture rules",
+        content="Dependencies must point strictly inward toward the pure Domain Core.",
+    )
+    report_slug = await sync_engine.ingest_components(TEST_WORKSPACE_PATH, ["python"], [slug_derived_cand])
+    assert report_slug.created == 1
+    assert fake_db.pool.components["clean-architecture-standards"]["stack_tags"] == ["clean", "architecture", "standards"]
+    assert fake_db.pool.components["clean-architecture-standards"]["scope"] == "global"
 
     report2 = await sync_engine.ingest_components(TEST_WORKSPACE_PATH, ["python"], [candidates[1]])
     assert report2.unchanged == 1 and report2.items[0].action == INGEST_ACTION_UNCHANGED

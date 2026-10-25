@@ -54,7 +54,7 @@ EXPOSE 8787
 # Нативная проверка жизнеспособности (Healthcheck) контейнера:
 # Используем встроенный в стандартную библиотеку Python модуль urllib.request вместо curl/wget,
 # чтобы не устанавливать в slim-образ лишние системные утилиты и не увеличивать поверхность атаки.
-HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=1h --timeout=5s --start-period=15s --start-interval=2s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=3)"]
 
 # Запускаем асинхронный ASGI-сервер Uvicorn.

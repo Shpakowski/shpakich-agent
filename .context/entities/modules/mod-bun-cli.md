@@ -59,4 +59,6 @@ governed_by:
 - 2026-10-25: Связаны направленные рёбра `implements` (`contract-lifecycle-hooks`, `contract-mcp-and-http-api`) и `governed_by` (`adr-001-clean-host-global-docker`, `adr-002-harness2-evolution-loop`) после декомпозиции `SPEC.md` v1.0 в граф `.context/`.
 - 2026-10-25: Реализован хостовый контур `SPEC-002` (`src/cli/workspace_sync.ts`, расширены `src/cli/docker.ts`, `src/cli/index.ts`, `src/cli/wizard.ts`, `src/cli/materializer.ts`): двусторонний инжест пользовательских скиллов и правил при `sync` (`scanCustomWorkspaceComponents` -> `POST /api/sync/ingest`), 3-Way Hash Sync узлов `.context/` (`collectWorkspaceContextNodes` -> `POST /api/sync/context` -> `applyContextSyncResults`) и подкоманда `harness consolidate [--dry-run]`.
 - 2026-10-25: Реализована Phase 8 — CLI-команда `ui` в `src/cli/index.ts` и `src/cli/wizard.ts` (`renderUiCommand`, опция `--no-open`, кросс-платформенное открытие веб-интерфейса `openUrlInBrowser` для macOS/Windows/Linux, формирование URL визуализатора с параметром workspace).
+- 2026-10-26: В `src/cli/workspace_sync.ts` добавлена функция `extractTagsFromSlug`, чтобы `scanCustomWorkspaceComponents` при `sync` извлекал `stack_tags` детерминированно из имени файла (`slug`) вместо копирования всех тегов рабочего пространства.
+
 
