@@ -15,8 +15,15 @@ files:
   - src/core/api/routes_hooks.py
   - src/core/api/routes_sync.py
   - src/core/api/routes_visualizer.py
-  - src/cli/docker.ts
-  - src/cli/workspace_sync.ts
+  - src/cli/core-api/http-client.ts
+  - src/cli/core-api/endpoints-projects.ts
+  - src/cli/core-api/endpoints-harness.ts
+  - src/cli/core-api/endpoints-sync.ts
+  - src/cli/core-api/endpoints-providers.ts
+  - src/cli/core-api/endpoints-hooks.ts
+  - src/cli/sync/component-scanner.ts
+  - src/cli/sync/context-sync.ts
+  - src/cli/sync/sync-orchestrator.ts
 depends_on:
   - "[[contract-storage-schema]]"
 implements: []
@@ -28,7 +35,7 @@ governed_by:
 
 # Контракт локального шлюза FastMCP (`/mcp`) и управляющего REST API ядра (`contract-mcp-and-http-api`)
 
-Формальный интерфейс взаимодействия между нативными ИИ-агентами, хостовым CLI-инжектором [[mod-bun-cli]] (`src/cli/docker.ts`) и глобальным контейнером ядра [[mod-python-core]] (`src/core/mcp/server.py`, `src/core/mcp/tools.py`, `src/core/main.py`). Объединяет 8 инструментов протокола Model Context Protocol поверх транспорта Streamable HTTP (`http://127.0.0.1:8787/mcp`, JSON-RPC 2.0) и управляющие REST API эндпоинты `FastAPI` на порту `8787`.
+Формальный интерфейс взаимодействия между нативными ИИ-агентами, хостовым CLI-инжектором [[mod-cli]] ([[mod-cli-core-api]], [[mod-cli-sync]]) и глобальным контейнером ядра [[mod-python-core]] (`src/core/mcp/server.py`, `src/core/mcp/tools.py`, `src/core/main.py`). Объединяет 8 инструментов протокола Model Context Protocol поверх транспорта Streamable HTTP (`http://127.0.0.1:8787/mcp`, JSON-RPC 2.0) и управляющие REST API эндпоинты `FastAPI` на порту `8787`.
 
 ---
 
@@ -43,7 +50,7 @@ governed_by:
 | 3 | **`coop_propose_harness_edit`** | `component_type: str`, `slug: str`, `title: str`, `description: str`, `content: str`, `scope: str = "global"`, `stack_tags: list[str] \| None = None`, `metadata: dict[str, Any] \| None = None`, `source_project_path: str \| None = None` | Реализует цикл эволюции [[adr-002-harness2-evolution-loop]] (`Propose -> Probe -> Compose`): оценивает кандидата через `DecisionEngine.evaluate(domain=HARNESS_PROBE)` (Tier 1 + Tier 2 + опциональный `AntigravityProbeDecisionTier` из [[adr-003-isolated-antigravity-sdk-tier]]), при вердикте `allow` выполняет `UPSERT` в `harness_components` со статусом `composed` и сбрасывает кэш `cache:rules:*` в Redis. | `{"id": str \| None, "slug": str, "component_type": str, "scope": str, "stack_tags": list[str], "status": "composed" \| "rejected", "score": float, "action": str, "decided_by_tier": str, "reason": str \| None, "version": int, "persisted": bool}` |
 | 4 | **`coop_publish_skill`** | `slug: str`, `description: str`, `instructions_md: str`, `stack_tags: list[str] \| None = None`, `helper_scripts: dict[str, str] \| None = None`, `source_project_path: str \| None = None` | Специализированная обёртка над `coop_propose_harness_edit` для публикации переиспользуемого навыка (`ComponentType.SKILL`, `SKILL.md` + `metadata.helper_scripts`) с авто-выводом `scope` (`domain` при наличии стековых тегов, иначе `global`). | Возвращает полный контракт ответа `coop_propose_harness_edit` для созданного/обновлённого скила. |
 | 5 | **`coop_query_context_graph`** | `workspace_path: str`, `node_id: str = ""`, `depth: int = 2` (диапазон `0..5`) | Собирает ориентированный граф `nx.DiGraph` из `.context/entities/**/*.md`, проверяет инварианты целостности и возвращает двунаправленную окрестность узла `node_id` радиуса `depth` (`SubgraphQueryResult`). | `{"root_node_id": str \| None, "depth": int, "nodes": list[ContextNode], "edges": list[GraphEdge], "validation": GraphValidationReport}` |
-| 6 | **`coop_upsert_context_node`** | `workspace_path: str`, `entity_class: str` (`Module` \| `Contract` \| `Decision`), `node_id: str`, `name: str`, `files: list[str]`, `body_md: str`, `trace_note: str`, `stack: list[str] \| None = None`, `depends_on: list[str] \| None = None`, `implements: list[str] \| None = None`, `governed_by: list[str] \| None = None`, `status: str = "Active"`, `conversation_id: str = ""` | Атомарно создаёт или обновляет `.md`-узел в `.context/entities/`, дописывает датированную строку в `## Логи контекста (AI Traces)`, освежает `updated_at` в `.context/index.md`, зеркалирует узел и обновлённый `index.md` в таблицу `project_context_nodes` PostgreSQL (`Write-Through`, `SPEC-002`) и выставляет флаг `context_updated = "1"` в Redis для сессии `conversation_id`. | `{"node": ContextNode, "validation": {"is_valid": bool, "node_count": int, "edge_count": int, "missing_files": dict, "broken_links": dict, "parse_errors": dict}}` |
+| 6 | **`coop_upsert_context_node`** | `workspace_path: str`, `entity_class: str` (`Module` \| `Contract` \| `Decision`), `node_id: str`, `name: str`, `files: list[str]`, `body_md: str`, `trace_note: str`, `stack: list[str] \| None = None`, `depends_on: list[str] \| None = None`, `implements: list[str] \| None = None`, `governed_by: list[str] \| None = None`, `status: str = "Active"`, `conversation_id: str = ""` | Атомарно создаёт или обновляет `.md`-узел в `.context/entities/`, дописывает датированную строку в `## Логи контекста (AI Traces)`, освежает `updated_at` в `.context/index.md`, зеркалирует узел и обновлённый `index.md` в таблицу `project_context_nodes` PostgreSQL (`Write-Through`) и выставляет флаг `context_updated = "1"` в Redis для сессии `conversation_id`. | `{"node": ContextNode, "validation": {"is_valid": bool, "node_count": int, "edge_count": int, "missing_files": dict, "broken_links": dict, "parse_errors": dict}}` |
 | 7 | **`coop_get_factory_status`** | `workspace_path: str = ""` | Возвращает комплексную диагностику фабрики: подключение к PostgreSQL и Redis, количественные метрики таблиц, статус `EmbeddingClient`, `AntigravitySDKService`, пула провайдеров Tier 2 и отчёт валидации `.context/`. | `{"service": str, "version": str, "postgres_connected": bool, "redis_connected": bool, "embedding_client": dict, "antigravity_sdk": dict, "decision_providers": list[dict], "database_counts": dict[str, int], "context_graph": dict \| None}` |
 | 8 | **`coop_manage_decision_providers`** | `action: str = "list"` (`"list"` \| `"update"`), `name: str = ""`, `priority: int \| None = None`, `enabled: bool \| None = None`, `reset_circuit: bool = False` | Позволяет агенту просматривать состояние провайдеров второго контура (`list`) или менять их приоритет, активность и сбрасывать Circuit Breaker (`update`) без экспонирования секретных API-ключей в чат. | При `list`: `{"action": "list", "count": int, "providers": list[ProviderStatusView]}`; при `update`: `{"action": "update", "updated": bool, "provider": ProviderStatusView}`. |
 
@@ -51,11 +58,11 @@ governed_by:
 
 ## 2. Контракт управляющего REST API (`FastAPI` — `http://127.0.0.1:8787`)
 
-Хостовый CLI-инжектор [[mod-bun-cli]] (`init`, `up`, `sync`, `status`, `harness`, `providers`) взаимодействует с контейнером ядра [[mod-docker-stack]] через следующие HTTP-эндпоинты (`src/core/main.py`):
+Хостовый CLI-инжектор [[mod-cli]] ([[mod-cli-commands]], [[mod-cli-core-api]]: `init`, `up`, `sync`, `status`, `harness`, `providers`) взаимодействует с контейнером ядра [[mod-docker-stack]] через следующие HTTP-эндпоинты (`src/core/main.py`):
 
 ### 2.1. Диагностика и регистрация проектов
 * **`GET /health`**
-  * **Назначение:** Проверка готовности ядра при старте Docker Compose и выполнении команд CLI (`checkCoreHealth` в `src/cli/docker.ts`).
+  * **Назначение:** Проверка готовности ядра при старте Docker Compose и выполнении команд CLI (`checkCoreHealth` в `src/cli/core-api/http-client.ts`).
   * **Ответ (`200 OK`):** `{"status": "ok", "service": str, "version": str, "postgres_connected": bool, "redis_connected": bool, "decisions_api_configured": bool, "embedding_api_configured": bool, "antigravity_sdk_configured": bool, "embedding_client": dict, "antigravity_sdk": dict, "mcp_endpoint": "/mcp"}`.
 * **`POST /api/projects/register`**
   * **Тело запроса (`ProjectRegistrationRequest`):** `{"workspace_path": str, "project_name": str, "agent_type": AgentType, "stack_tags": list[str], "profile_overrides": dict[str, Any] | null}`.
@@ -86,7 +93,7 @@ governed_by:
   * **Действие:** Запускает двухфазное самоисцеление графа `.context/` через `AntigravitySDKService.heal_context_graph()` ([[adr-003-isolated-antigravity-sdk-tier]]): детерминированная сверка `ContextGraphManager.build_and_validate()` + спавн изолированного микро-агента `Background Context Healer` при обнаружении рассинхронизации.
   * **Ответ (`200 OK`, `ContextHealReport`):** `{"status": str, "healed": bool, "initial_validation": dict, "final_validation": dict, "agent_summary": str, ...}`.
 
-### 2.5. Двусторонняя синхронизация и консолидация знаний (`SPEC-002`, `src/core/api/routes_sync.py`)
+### 2.5. Двусторонняя синхронизация и консолидация знаний (`src/core/api/routes_sync.py`)
 * **`POST /api/sync/ingest`**
   * **Тело запроса (`SyncIngestRequest`):** `{"workspace_path": str, "stack_tags": list[str], "components": list[WorkspaceComponentCandidate]}`.
   * **Действие:** Инжестирует пользовательские скиллы и правила рабочей директории в `harness_components` через `WorkspaceSyncEngine.ingest_components()` (фильтр `SYSTEM_BOOTSTRAP_SLUGS`, `Content-Hash Gate` и оценка `DecisionDomain.HARNESS_PROBE` с присвоением `execution_mode = 'semantic'`).
@@ -115,6 +122,7 @@ governed_by:
 
 ## Логи контекста (AI Traces)
 - 2026-10-25: Сформирован контракт `contract-mcp-and-http-api`, специфицирующий 8 инструментов локального шлюза `FastMCP` (`Streamable HTTP /mcp`) и управляющие REST API эндпоинты `FastAPI` (`/health`, `/api/projects/register`, `/api/harness/components`, `/api/providers`, `/api/decisions/evaluate`, `/api/context/heal`).
-- 2026-10-25: Отражена декомпозиция `src/core/main.py` в пакет `src/core/api/*` (`models.py`, `deps.py`, `routes_management.py`, `routes_hooks.py`), а также расширение `coop_search_memory` (`include_compactions`, `workspace_path`) и `coop_get_factory_status` (`database_counts.session_compactions`) в рамках `SPEC-003`.
-- 2026-10-25: Добавлены контракты эндпоинтов `POST /api/sync/ingest`, `POST /api/sync/context`, `POST /api/harness/consolidate` (`src/core/api/routes_sync.py`) и Write-Through зеркалирование в `coop_upsert_context_node` (`SPEC-002`).
+- 2026-10-25: Отражена декомпозиция `src/core/main.py` в пакет `src/core/api/*` (`models.py`, `deps.py`, `routes_management.py`, `routes_hooks.py`), а также расширение `coop_search_memory` (`include_compactions`, `workspace_path`) и `coop_get_factory_status` (`database_counts.session_compactions`) для долгосрочной архивации сводок сжатия контекста `/compact`.
+- 2026-10-25: Добавлены контракты эндпоинтов `POST /api/sync/ingest`, `POST /api/sync/context`, `POST /api/harness/consolidate` (`src/core/api/routes_sync.py`) и Write-Through зеркалирование в `coop_upsert_context_node`.
 - 2026-10-25: Специфицированы маршруты визуализатора `GET /ui`, `GET /api/visualizer/graph`, `GET /api/visualizer/search` (`src/core/api/routes_visualizer.py`).
+- 2026-10-26: Обновлены ссылки и пути клиентских адаптеров после декомпозиции CLI в рантайм-агностичные узлы (`mod-cli`, `mod-cli-core-api`, `mod-cli-sync`, `mod-cli-commands`).

@@ -12,7 +12,9 @@ files:
   - src/core/decision/hook_dialects.py
   - src/core/harness/dynamic_rag.py
   - src/core/harness/script_runner.py
-  - src/cli/hook_runner.ts
+  - src/cli/hooks/stdin-reader.ts
+  - src/cli/hooks/dialect-translator.ts
+  - src/cli/hooks/hook-executor.ts
 depends_on:
   - "[[contract-storage-schema]]"
 implements: []
@@ -22,7 +24,7 @@ governed_by:
 
 # Контракт перехвата жизненных хуков ИИ-агентов и тройного контура принуждения `.context/` (`contract-lifecycle-hooks`)
 
-Формальный межслойный протокол взаимодействия между хостовым CLI-мостом [[mod-bun-cli]] (`src/cli/hook_runner.ts`) и шлюзом контекста [[mod-python-core]] (`src/core/main.py`, `src/core/decision/hook_dialects.py`, `src/core/harness/script_runner.py`). Определяет унифицированную нормализацию входных событий, семантическую диспетчеризацию скриптов `HookScriptDispatcher`, трансляцию ответов в 3 протокольных диалекта ИИ-агентов и трёхуровневую защиту целостности графа `.context/`.
+Формальный межслойный протокол взаимодействия между хостовым CLI-мостом [[mod-cli]] / [[mod-cli-hooks]] (`src/cli/hooks/hook-executor.ts`, `src/cli/hooks/dialect-translator.ts`, `src/cli/hooks/stdin-reader.ts`) и шлюзом контекста [[mod-python-core]] (`src/core/main.py`, `src/core/decision/hook_dialects.py`, `src/core/harness/script_runner.py`). Определяет унифицированную нормализацию входных событий, семантическую диспетчеризацию скриптов `HookScriptDispatcher`, трансляцию ответов в 3 протокольных диалекта ИИ-агентов и трёхуровневую защиту целостности графа `.context/`.
 
 ---
 
@@ -60,7 +62,7 @@ governed_by:
 ## 3. Три сценария `PreInvocation` и двухступенчатый отбор `HookScriptDispatcher`
 
 ### 3.1. Интеллектуальные сценарии `PreInvocation`
-1. **Сценарий А — Ре-гидратация и архивация `<summary>` после `/compact` (`Post-Compact Re-Hydration & Summary Archival`, `SPEC-003`):**
+1. **Сценарий А — Ре-гидратация и архивация `<summary>` после `/compact` (`Post-Compact Re-Hydration & Summary Archival`):**
    * Функция `inspect_transcript_tail_detailed()` (`src/core/decision/transcript.py`) сканирует последние 64 КБ (`TRANSCRIPT_TAIL_MAX_BYTES = 65_536`) файла `transcript.jsonl` на наличие шага `"type": "CHECKPOINT"`, маркера `# Resuming from a compaction` или блока `<summary>...</summary>`, извлекая неизменяемый чекпоинт `CompactionCheckpoint` (`summary_text`, 16-символьный SHA-256 `checkpoint_hash`, `step_idx`).
    * В `hook_pre_invocation` (`src/core/api/routes_hooks.py`) дайджест `checkpoint_hash` сверяется с `last_compact_hash` в `session:{conversation_id}:meta` Redis (`RedisSessionStore.get_last_compaction_checkpoint`).
    * Если чекпоинт **новый**: ядро выполняет **Re-Hydration** карты `.context/index.md` в `systemMessage`, идемпотентно сохраняет сводку `<summary>` в таблицу `session_compactions` PostgreSQL через `CompactionArchiveStore.archive_compaction()` (с 768-мерным вектором `EmbeddingGemma 2`) и фиксирует `last_compact_hash` / `last_compact_step` в Redis, предотвращая повторную инъекцию `index.md` и дублирование записей на последующих шагах диалога.
@@ -68,7 +70,7 @@ governed_by:
    * Если активный промпт пользователя содержит триггеры планирования (`/plan`, `implementation_plan`, `архитектурный план`, `пошаговый план`), функция `_build_plan_best_practices_hint()` выбирает до 3 активных компонентов `Harness²` (`MAX_PLAN_PATTERNS_INJECTED = 3`), до 2 релевантных записей из `memories` (`MAX_PLAN_MEMORIES_INJECTED = 2`) и до 1 релевантной сводки прошлых сессий из `session_compactions` (`MAX_PLAN_COMPACTIONS_INJECTED = 1`) под стек проекта, инжектируя их вместе с правилом `[Plan Guardrail]` через транзиентный `ephemeralMessage`.
 3. **Сценарий В — Подсказка решения при ошибке (`Error Recovery RAG`):**
    * Если в Redis (`session:{id}:last_error`) числится неразрешённый сбой инструмента с предыдущего шага, ядро выполняет 3-way гибридный поиск `engine.search_memories(last_err.error_text, stack_tags)` и передаёт найденное решение из прошлого опыта в `ephemeralMessage`.
-4. **Сценарий Г — Двухступенчатый Progressive Disclosure семантических правил и скиллов (`Dynamic Prompt RAG`, `SPEC-002`):**
+4. **Сценарий Г — Двухступенчатый Progressive Disclosure семантических правил и скиллов (`Dynamic Prompt RAG`):**
    * На каждом шаге `PreInvocation` при непустом запросе пользователя функция `select_dynamic_components_for_prompt()` (`src/core/harness/dynamic_rag.py`) отбирает компоненты `harness_components` с `execution_mode = 'semantic'`, не входящие в статический Bootstrap на диске:
      * **Top-3 доменных правил** (`system_prompt`, `tool_guidance`, `guardrail`) при гибридной релевантности `relevance >= 0.25` инжектируются в секцию `[Dynamic Harness² Rules]`.
      * **Top-2 прикладных скиллов** (`skill`): при `relevance >= 0.45` (`MIN_SKILL_BLUEPRINT_RELEVANCE`) инжектируется полный чертёж `[Active Skill Blueprint: <slug>]`, а при `0.22 <= relevance < 0.45` (`MIN_SKILL_INDEX_RELEVANCE`) — компактный однострочный индекс-намёк `[Available Skill Hint]: <slug> — <description>`.
@@ -92,5 +94,6 @@ governed_by:
 
 ## Логи контекста (AI Traces)
 - 2026-10-25: Зафиксирован контракт жизненных хуков `contract-lifecycle-hooks` (5 событий, таблица трансляции 3 диалектов с учётом ограничения `ANTIGRAVITY_PROTOJSON` в `PreToolUse`, 3 сценария `PreInvocation`, двухступенчатая воронка `HookScriptDispatcher` и тройной контур принуждения `.context/`).
-- 2026-10-25: Обновлён Сценарий А и Сценарий Б `PreInvocation` под `SPEC-003` (`src/core/decision/transcript.py`, `src/core/api/routes_hooks.py`: окно хвоста 64 КБ, дедупликация чекпоинтов `/compact` через `last_compact_hash` в Redis, архивация `<summary>` в `session_compactions` и инъекция прошлых сводок при `/plan`).
-- 2026-10-25: Добавлен Сценарий Г в `PreInvocation` (`src/core/harness/dynamic_rag.py`, `SPEC-002`): двухступенчатый Progressive Disclosure семантических правил (`relevance >= 0.25`) и скиллов (`relevance >= 0.45` для полного blueprint, `0.22 <= relevance < 0.45` для индекс-намёка).
+- 2026-10-25: Обновлён Сценарий А и Сценарий Б `PreInvocation` для долгосрочной архивации сводок сжатия контекста `/compact` (`src/core/decision/transcript.py`, `src/core/api/routes_hooks.py`: окно хвоста 64 КБ, дедупликация чекпоинтов `/compact` через `last_compact_hash` в Redis, архивация `<summary>` в `session_compactions` и инъекция прошлых сводок при `/plan`).
+- 2026-10-25: Добавлен Сценарий Г в `PreInvocation` (`src/core/harness/dynamic_rag.py`): двухступенчатый Progressive Disclosure семантических правил (`relevance >= 0.25`) и скиллов (`relevance >= 0.45` для полного blueprint, `0.22 <= relevance < 0.45` для индекс-намёка).
+- 2026-10-26: Синхронизированы ссылки и пути после модульной декомпозиции CLI в рантайм-агностичные узлы `mod-cli` и `mod-cli-hooks` (`src/cli/hooks/stdin-reader.ts`, `src/cli/hooks/dialect-translator.ts`, `src/cli/hooks/hook-executor.ts`).

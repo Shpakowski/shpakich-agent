@@ -1,18 +1,23 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
+    "target": "ES2024",
+    "lib": ["ESNext"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "rootDir": "./src/cli",
-    "outDir": "./dist",
+    "rootDir": "src/cli",
+    "outDir": "dist",
     "types": ["node"],
     "strict": true,
+    "erasableSyntaxOnly": true,
+    "noImplicitOverride": true,
+    "useUnknownInCatchVariables": true,
     "noEmit": false,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-    "rewriteRelativeImportExtensions": true
+    "rewriteRelativeImportExtensions": true,
+    "allowImportingTsExtensions": true
   },
   "include": [
     "src/cli/**/*.ts"

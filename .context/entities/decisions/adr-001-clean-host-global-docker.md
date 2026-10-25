@@ -8,7 +8,9 @@ stack: [docker, bun, nodejs, python, fastapi, postgresql, redis]
 files:
   - docker/docker-compose.yml
   - docker/Dockerfile
-  - src/cli/docker.ts
+  - src/cli/docker/assets.ts
+  - src/cli/docker/compose-runner.ts
+  - src/cli/docker/stack-status.ts
   - pyproject.toml
 depends_on: []
 implements: []
@@ -18,7 +20,7 @@ governed_by: []
 # ADR-001: Чистая хост-машина (Dual-Runtime CLI) и изолированное глобальное Docker-ядро без локальных ML-весов (`adr-001-clean-host-global-docker`)
 
 > **Статус:** Active  
-> **Связанные узлы:** `[[mod-bun-cli]]`, `[[mod-docker-stack]]`, `[[mod-python-core]]`, `[[contract-storage-schema]]`, `[[contract-mcp-and-http-api]]`
+> **Связанные узлы:** `[[mod-cli]]`, `[[mod-cli-docker]]`, `[[mod-cli-hooks]]`, `[[mod-docker-stack]]`, `[[mod-python-core]]`, `[[contract-storage-schema]]`, `[[contract-mcp-and-http-api]]`
 
 ---
 
@@ -36,13 +38,13 @@ governed_by: []
 Мы разделяем архитектуру `mcp-coop-agentic-factory` на два строго изолированных контура:
 
 ### 2.1. Слой 1 — Абсолютно чистая хост-машина (`Dual-Runtime CLI`)
-На хост-машине разработчика исполняется исключительно легковесный кросс-рантаймовый CLI-инжектор и прокси жизненных хуков (`[[mod-bun-cli]]`), работающий как через `bunx`, так и через стандартный `npx` (`Node.js` + `@clack/prompts` + встроенные модули `node:fs`, `node:util`, `node:child_process`).
+На хост-машине разработчика исполняется исключительно легковесный кросс-рантаймовый CLI-инжектор и прокси жизненных хуков (`[[mod-cli]]`), работающий как через `bunx`, так и через стандартный `npx` (`Node.js` + `@clack/prompts` + встроенные модули `node:fs`, `node:util`, `node:child_process`).
 * Хостовый пакет не содержит нативных C/C++ аддонов, локальных СУБД или ML-библиотек.
 * В рабочем репозитории материализуются только текстовые декларативные адаптеры (`.agents/plugins/...`, `AGENTS.md`, `SKILL.md`, `hooks.json`, `mcp_config.json`) и граф знаний `.context/`.
-* В случае недоступности Docker-ядра прокси-хук (`src/cli/hook_runner.ts`) отрабатывает по стратегии **Fail-Open**, не блокируя штатную работу IDE.
+* В случае недоступности Docker-ядра прокси-хук (`[[mod-cli-hooks]]`, `src/cli/hooks/hook-executor.ts`) отрабатывает по стратегии **Fail-Open**, не блокируя штатную работу IDE.
 
 ### 2.2. Слой 2 — Единое глобальное Docker-ядро (`~/.mcp-coop-agentic-factory/`)
-Все состояние, оркестрация памяти и вычислительная логика вынесены в единый глобальный Docker Compose стек (`[[mod-docker-stack]]`), автоматически разворачиваемый модулем `src/cli/docker.ts` в домашней директории `~/.mcp-coop-agentic-factory/`:
+Все состояние, оркестрация памяти и вычислительная логика вынесены в единый глобальный Docker Compose стек (`[[mod-docker-stack]]`), автоматически разворачиваемый подмодулем `[[mod-cli-docker]]` (`src/cli/docker/assets.ts`, `src/cli/docker/compose-runner.ts`) в домашней директории `~/.mcp-coop-agentic-factory/`:
 * **`mcp-coop-agentic-factory-core` (`python:3.12-slim`)**: единый асинхронный ASGI-сервер (`FastAPI` + `FastMCP` + `uvicorn`, узел `[[mod-python-core]]` и контракт `[[contract-mcp-and-http-api]]`), работающий от непривилегированного пользователя `appuser` (UID `10001`). Потребление оперативной памяти в рантайме составляет **~50–70 МБ RAM**.
 * **`mcp-coop-agentic-factory-postgres` (`pgvector/pgvector:pg18`)**: единое персистентное хранилище всех подключённых проектов, компонентов харнеса, векторных индексов `HNSW` (`vector(768)`) и полнотекстового поиска (`tsvector` + `pg_trgm`) согласно `[[contract-storage-schema]]`.
 * **`mcp-coop-agentic-factory-redis` (`redis:7-alpine`)**: оперативная память активных сессий, детекторов зацикливания команд и `LangCache Lite` с персистентностью `AOF`.
@@ -62,9 +64,10 @@ governed_by: []
 2. **Встраивание легковесных ONNX / CPU-моделей эмбеддингов внутрь контейнера `core`:**
    * *Причина отказа:* увеличивает размер образа с ~150 МБ до >1 ГБ, замедляет первый старт `mcp-coop-agentic-factory init` и создаёт пиковые нагрузки на CPU ноутбука при пакетной индексации, тогда как комбинация внешнего HTTP API (`EmbeddingGemma 2`) + нативный `PostgreSQL FTS/pg_trgm` обеспечивает лучшую точность при нулевом оверхеде по памяти.
 3. **Компромисс принятого решения:**
-   * Требуется установленный Docker Engine на хост-машине для работы полного цикла аналитики и кросс-проектной памяти. Этот компромисс компенсируется механизмом **Fail-Open** в `[[mod-bun-cli]]` и автономными оффлайн-сидами (`DEFAULT_HARNESS_SEEDS`).
+   * Требуется установленный Docker Engine на хост-машине для работы полного цикла аналитики и кросс-проектной памяти. Этот компромисс компенсируется механизмом **Fail-Open** в `[[mod-cli]]` (`[[mod-cli-hooks]]`) и автономными оффлайн-сидами (`DEFAULT_HARNESS_SEEDS`).
 
 ---
 
 ## Логи контекста (AI Traces)
-- 2026-10-25: Зафиксировано архитектурное решение `adr-001-clean-host-global-docker`, формализующее разделение системы на чистый Dual-Runtime CLI на хосте (`mod-bun-cli`) и легковесный глобальный Docker-стек (`mod-docker-stack`, `mod-python-core`) без локальных ML-фреймворков.
+- 2026-10-25: Зафиксировано архитектурное решение `adr-001-clean-host-global-docker`, формализующее разделение системы на чистый Dual-Runtime CLI на хосте (`mod-cli`) и легковесный глобальный Docker-стек (`mod-docker-stack`, `mod-python-core`) без локальных ML-фреймворков.
+- 2026-10-26: Обновлены ссылки и пути файлов после декомпозиции CLI в рантайм-агностичные узлы (`mod-cli`, `mod-cli-docker`, `mod-cli-hooks`).

@@ -19,7 +19,7 @@ governed_by: []
 # ADR-002: Эволюция окружения агента по методологии Harness² (`Propose -> Probe -> Compose`) и декаплированная шина хуков (`adr-002-harness2-evolution-loop`)
 
 > **Статус:** Active  
-> **Связанные узлы:** `[[adr-001-clean-host-global-docker]]`, `[[mod-python-core]]`, `[[mod-bun-cli]]`, `[[contract-storage-schema]]`, `[[contract-lifecycle-hooks]]`, `[[contract-mcp-and-http-api]]`
+> **Связанные узлы:** `[[adr-001-clean-host-global-docker]]`, `[[mod-python-core]]`, `[[mod-cli]]`, `[[mod-cli-hooks]]`, `[[contract-storage-schema]]`, `[[contract-lifecycle-hooks]]`, `[[contract-mcp-and-http-api]]`
 
 ---
 
@@ -52,7 +52,7 @@ governed_by: []
 
 ### 2.3. Декаплированная шина жизненных хуков и `HookScriptDispatcher`
 Вместо жёсткого хардкода скриптов в файловой системе проектов все исполняемые скрипты жизненных хуков (`inject-context-map`, `track-file-changes`, `enforce-context-sync` и пользовательские расширения) перенесены в таблицу `harness_components` (`ComponentType.SCRIPT`) под управление `HookScriptDispatcher` (`src/core/harness/script_runner.py`) и протокола `[[contract-lifecycle-hooks]]`:
-* Хостовый `src/cli/hook_runner.ts` (`[[mod-bun-cli]]`) работает как тонкий универсальный HTTP-прокси.
+* Хостовый `src/cli/hooks/hook-executor.ts` (`[[mod-cli-hooks]]` в составе `[[mod-cli]]`) работает как тонкий универсальный HTTP-прокси.
 * При поступлении события хука `HookScriptDispatcher` применяет **двухступенчатую воронку отбора**:
   1. Обязательные инвариантные скрипты с режимом `activation = "always"` для текущей фазы хука и стека проекта.
   2. Семантический **Top-K отбор** (`pgvector` косинусная близость или полнотекстовый `tsvector`) для динамического подключения специализированных скриптов под конкретный контекст ошибки или вызываемого инструмента.
@@ -73,3 +73,4 @@ governed_by: []
 
 ## Логи контекста (AI Traces)
 - 2026-10-25: Зафиксировано архитектурное решение `adr-002-harness2-evolution-loop`, описывающее модель 8 компонентов `Harness²`, цикл `Propose -> Probe -> Compose`, каскадный `DecisionEngine` и перенос скриптов хуков в БД под управление `HookScriptDispatcher`.
+- 2026-10-26: Синхронизированы ссылки на рантайм-агностичный CLI (`mod-cli`, `mod-cli-hooks`: `src/cli/hooks/hook-executor.ts`).

@@ -45,7 +45,7 @@ governed_by:
 * `scope` (`TEXT NOT NULL DEFAULT 'global'`) — область действия из `ScopeType`: `global` (инвариантное правило для всех проектов) или `domain` (доменно-специфичное по `stack_tags`).
 * `stack_tags` (`TEXT[] NOT NULL DEFAULT ARRAY['global']`) — технологические теги, определяющие применимость компонента.
 * `title`, `description`, `content` (`TEXT NOT NULL`) — заголовок, описание для семантического поиска и тело компонента (Markdown-инструкции или исходный код Python-скрипта).
-* `content_hash` (`TEXT NOT NULL DEFAULT ''`) — 64-символьный SHA-256 дайджест нормализованного тела (`compute_component_content_hash`) для дедупликации при инжесте (`Content-Hash Gate`, `SPEC-002`).
+* `content_hash` (`TEXT NOT NULL DEFAULT ''`) — 64-символьный SHA-256 дайджест нормализованного тела (`compute_component_content_hash`) для дедупликации при инжесте (`Content-Hash Gate`).
 * `metadata` (`JSONB NOT NULL DEFAULT '{}'::jsonb`) — типизированные параметры исполнения:
   * для `guardrail`: `{ "action": "deny" | "overwrite", "matcher": "run_command", "pattern": "...", "replacement": "...", "execution_mode": "always" | "semantic" }`;
   * для `script`: `{ "hook_events": ["session-start", ...], "execution_mode": "always" | "semantic", "priority": 100, "timeout_ms": 500 }`;
@@ -87,7 +87,7 @@ governed_by:
 * `timeout_ms` (`INT NOT NULL DEFAULT 600`), `enabled` (`BOOLEAN NOT NULL DEFAULT TRUE`), `metadata` (`JSONB NOT NULL DEFAULT '{}'::jsonb`).
 * `updated_at`, `created_at` (`TIMESTAMPTZ DEFAULT NOW()`).
 
-### 1.6. Таблица `session_compactions` (Долгосрочный архив сводок сжатия контекста `/compact`, SPEC-003)
+### 1.6. Таблица `session_compactions` (Долгосрочный архив сводок сжатия контекста `/compact`)
 Хранит извлечённые чекпоинты `<summary>` после выполнения `/compact` для кросс-сессионного восстановления контекста и планирования (`CompactionArchiveStore`).
 * `id` (`UUID PRIMARY KEY DEFAULT gen_random_uuid()`).
 * `conversation_id` (`TEXT NOT NULL`), `workspace_path` (`TEXT NOT NULL DEFAULT ''`), `agent_type` (`TEXT NOT NULL`).
@@ -99,7 +99,7 @@ governed_by:
 * `search_tsv` (`tsvector GENERATED ALWAYS AS (to_tsvector('simple', coalesce(workspace_path, '') || ' ' || coalesce(summary_text, ''))) STORED`).
 * `created_at` (`TIMESTAMPTZ DEFAULT NOW()`).
 
-### 1.7. Таблица `project_context_nodes` (Серверное зеркало узлов графа `.context/`, SPEC-002)
+### 1.7. Таблица `project_context_nodes` (Серверное зеркало узлов графа `.context/`)
 Хранит каноническую серверную копию всех узлов локального графа `.context/` (`index.md`, `schema.md`, `entities/{modules,contracts,decisions}/*.md`) для двусторонней 3-Way Hash синхронизации (`WorkspaceSyncEngine`) и Write-Through зеркалирования (`coop_upsert_context_node`).
 * `id` (`UUID PRIMARY KEY DEFAULT gen_random_uuid()`).
 * `project_id` (`UUID REFERENCES projects(id) ON DELETE CASCADE`) — ссылка на проект.
@@ -157,5 +157,5 @@ governed_by:
 
 ## Логи контекста (AI Traces)
 - 2026-10-25: Сформирован формальный контракт схемы хранения `contract-storage-schema` (5 таблиц PostgreSQL 18 с HNSW/GIN-индексами `vector(768)` + `tsvector` + `pg_trgm`, 3 паттерна Redis Iris и Circuit Breaker провайдеров Tier 2).
-- 2026-10-25: Добавлена 6-я таблица `session_compactions` с 4 гибридными индексами (`idx_compactions_workspace`, `idx_compactions_tsv`, `idx_compactions_summary_trgm`, `idx_compactions_embedding_hnsw`) и поля дедупликации чекпоинтов сжатия `last_compact_hash`, `last_compact_step` в `session:{id}:meta` (`SPEC-003`).
-- 2026-10-25: Добавлены колонка `content_hash` и статус `archived` в `harness_components`, а также 7-я таблица `project_context_nodes` с индексами `idx_context_nodes_workspace`, `idx_context_nodes_tsv`, `idx_context_nodes_embedding_hnsw` для 3-Way Hash Sync графа `.context/` (`SPEC-002`).
+- 2026-10-25: Добавлена 6-я таблица `session_compactions` с 4 гибридными индексами (`idx_compactions_workspace`, `idx_compactions_tsv`, `idx_compactions_summary_trgm`, `idx_compactions_embedding_hnsw`) и поля дедупликации чекпоинтов сжатия `last_compact_hash`, `last_compact_step` в `session:{id}:meta` для долгосрочной архивации сводок `/compact`.
+- 2026-10-25: Добавлены колонка `content_hash` и статус `archived` в `harness_components`, а также 7-я таблица `project_context_nodes` с индексами `idx_context_nodes_workspace`, `idx_context_nodes_tsv`, `idx_context_nodes_embedding_hnsw` для 3-Way Hash Sync графа `.context/`.

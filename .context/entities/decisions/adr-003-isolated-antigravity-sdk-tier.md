@@ -20,7 +20,7 @@ governed_by: []
 # ADR-003: Модульная изоляция `google-antigravity` SDK во втором контуре микро-агентов и песочнице `/tmp` (`adr-003-isolated-antigravity-sdk-tier`)
 
 > **Статус:** Active  
-> **Связанные узлы:** `[[adr-001-clean-host-global-docker]]`, `[[adr-002-harness2-evolution-loop]]`, `[[mod-python-core]]`, `[[mod-docker-stack]]`, `[[mod-bun-cli]]`, `[[contract-mcp-and-http-api]]`
+> **Связанные узлы:** `[[adr-001-clean-host-global-docker]]`, `[[adr-002-harness2-evolution-loop]]`, `[[mod-python-core]]`, `[[mod-docker-stack]]`, `[[mod-cli]]`, `[[contract-mcp-and-http-api]]`
 
 ---
 
@@ -79,3 +79,4 @@ governed_by: []
 
 ## Логи контекста (AI Traces)
 - 2026-10-25: Зафиксировано архитектурное решение `adr-003-isolated-antigravity-sdk-tier`, формализующее модульную декомпозицию `src/core/services/antigravity/`, строгий гейтинг для `AgentType.ANTIGRAVITY`, двухфазный протокол `Plan -> Validate -> Apply` и защиту песочницы `/tmp/mcp_coop_agy_*`.
+- 2026-10-26: Обновлена ссылка на рантайм-агностичный корневой узел CLI (`mod-cli`).

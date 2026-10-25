@@ -508,7 +508,17 @@ class ContextGraphManager:
         target_folder = ENTITY_CLASS_TO_FOLDER[entity_class]
         target_dir = workspace_root / CONTEXT_DIR_NAME / ENTITIES_DIR_NAME / target_folder.value
         target_dir.mkdir(parents=True, exist_ok=True)
-        node_file_path = target_dir / f"{clean_node_id}.md"
+        # Если узел уже организован во вложенной подпапке домена (например, entities/modules/cli/mod-cli.md),
+        # обновляем его на месте (in-place), чтобы не создавать дубликат в корне target_dir.
+        existing_matches = sorted(
+            target_dir.rglob(f"{clean_node_id}.md"),
+            key=lambda p: p.relative_to(target_dir).as_posix(),
+        )
+        node_file_path = (
+            existing_matches[0]
+            if existing_matches
+            else target_dir / f"{clean_node_id}.md"
+        )
 
         existing_traces: list[str] = []
         if node_file_path.exists():
