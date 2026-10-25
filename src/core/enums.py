@@ -49,6 +49,16 @@ class ComponentStatus(StrEnum):
     COMPOSED = "composed"
     REJECTED = "rejected"
     DISABLED = "disabled"
+    ARCHIVED = "archived"
+
+
+class ContextSyncAction(StrEnum):
+    """Итоговые статусы 3-Way Hash синхронизации узлов графа `.context/` между рабочей папкой и PostgreSQL."""
+
+    UNCHANGED = "unchanged"
+    PUSHED_TO_DB = "pushed_to_db"
+    PULLED_FROM_DB = "pulled_from_db"
+    MERGED = "merged"
 
 
 class ComponentEffectiveState(StrEnum):
@@ -312,6 +322,7 @@ __all__ = [
     "ContextEntityFolder",
     "ContextEntityStatus",
     "ContextRelationType",
+    "ContextSyncAction",
     "DecisionDomain",
     "DecisionProviderDialect",
     "DecisionQuestionType",

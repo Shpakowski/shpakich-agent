@@ -12,6 +12,14 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import type {
+  ComponentIngestReportPayload,
+  ConsolidationReportPayload,
+  ContextNodeSyncInputPayload,
+  ContextSyncReportPayload,
+  WorkspaceComponentCandidatePayload,
+} from "./workspace_sync.ts";
+
 export const GLOBAL_FACTORY_DIR_NAME = ".mcp-coop-agentic-factory" as const;
 export const FACTORY_HOME_ENV_KEY = "MCP_COOP_FACTORY_HOME" as const;
 export const CORE_URL_ENV_KEY = "MCP_COOP_CORE_URL" as const;
@@ -21,6 +29,9 @@ export const HEALTH_ENDPOINT = "/health" as const;
 export const REGISTER_PROJECT_ENDPOINT = "/api/projects/register" as const;
 export const PROVIDERS_ENDPOINT = "/api/providers" as const;
 export const HARNESS_COMPONENTS_ENDPOINT = "/api/harness/components" as const;
+export const HARNESS_CONSOLIDATE_ENDPOINT = "/api/harness/consolidate" as const;
+export const SYNC_INGEST_ENDPOINT = "/api/sync/ingest" as const;
+export const SYNC_CONTEXT_ENDPOINT = "/api/sync/context" as const;
 export const CONTEXT_HEAL_ENDPOINT = "/api/context/heal" as const;
 export const HOOKS_BASE_ENDPOINT = "/api/hooks" as const;
 export const HOOK_LAUNCHER_REL_PATH = "bin/run-hook.sh" as const;
@@ -846,6 +857,89 @@ export async function healProjectContext(
       return null;
     }
     return (await response.json()) as ContextHealResponse;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Отправляет кастомные скиллы и правила рабочей директории на серверный инжест (`POST /api/sync/ingest`).
+ */
+export async function ingestWorkspaceComponents(
+  payload: {
+    workspace_path: string;
+    stack_tags: readonly string[];
+    components: readonly WorkspaceComponentCandidatePayload[];
+  },
+  timeoutMs: number = DEFAULT_REGISTER_TIMEOUT_MS,
+): Promise<ComponentIngestReportPayload | null> {
+  try {
+    const response = await fetch(`${resolveCoreBaseUrl()}${SYNC_INGEST_ENDPOINT}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as ComponentIngestReportPayload;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Выполняет 3-Way Hash сверку и AST-мерж локальных узлов `.context/` с таблицей `project_context_nodes` (`POST /api/sync/context`).
+ */
+export async function syncWorkspaceContextNodes(
+  payload: {
+    workspace_path: string;
+    nodes: readonly ContextNodeSyncInputPayload[];
+  },
+  timeoutMs: number = DEFAULT_REGISTER_TIMEOUT_MS,
+): Promise<ContextSyncReportPayload | null> {
+  try {
+    const response = await fetch(`${resolveCoreBaseUrl()}${SYNC_CONTEXT_ENDPOINT}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as ContextSyncReportPayload;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Запускает серверную кластеризацию и Lineage-слияние семантических дубликатов `HarnessConsolidator` (`POST /api/harness/consolidate`).
+ */
+export async function consolidateHarnessComponents(
+  payload: {
+    stack_tags?: readonly string[];
+    component_type?: string;
+    dry_run?: boolean;
+  },
+  timeoutMs: number = DEFAULT_CONTEXT_HEAL_TIMEOUT_MS,
+): Promise<ConsolidationReportPayload | null> {
+  try {
+    const response = await fetch(
+      `${resolveCoreBaseUrl()}${HARNESS_CONSOLIDATE_ENDPOINT}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(timeoutMs),
+      },
+    );
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as ConsolidationReportPayload;
   } catch {
     return null;
   }

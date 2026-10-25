@@ -37,6 +37,7 @@ from src.core.graph.context_graph import (
     ENTITIES_DIR_NAME,
     ContextGraphManager,
 )
+from src.core.graph.sync_engine import WorkspaceSyncEngine
 from src.core.harness.compiler import HarnessCompiler, normalize_stack_tags
 from src.core.services.antigravity import AntigravitySDKService
 from src.core.services.embeddings import EmbeddingClient, format_pgvector
@@ -211,6 +212,16 @@ class CoopMCPToolService:
             if store._embedding_client is None:
                 store._embedding_client = self._embedding_client
         return store
+
+    @property
+    def _sync_engine(self) -> WorkspaceSyncEngine:
+        """Возвращает оркестратор двусторонней синхронизации `WorkspaceSyncEngine` с актуальными зависимостями."""
+        return WorkspaceSyncEngine(
+            db=self._db,
+            redis=self._redis,
+            engine=self._engine,
+            embedding_client=self._embedding_client,
+        )
 
     async def search_memory(
         self,
@@ -453,6 +464,19 @@ class CoopMCPToolService:
             status=ContextEntityStatus(status),
         )
 
+        try:
+            node_file_path = Path(workspace_path).expanduser().resolve() / node.relative_path
+            written_content = node_file_path.read_text(encoding="utf-8")
+            await self._sync_engine.upsert_node_write_through(
+                workspace_path=workspace_path,
+                relative_path=node.relative_path,
+                node_id=node.frontmatter.id,
+                entity_class=node.frontmatter.entity_class.value,
+                content=written_content,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Write-through context node sync skipped: %s", exc)
+
         clean_conv = conversation_id.strip()
         if clean_conv and self._redis is not None and self._redis.is_connected:
             try:
@@ -488,6 +512,7 @@ class CoopMCPToolService:
             "memories": 0,
             "hook_events": 0,
             "session_compactions": 0,
+            "project_context_nodes": 0,
         }
         if db is not None and db.is_connected:
             for table_name in tuple(counts):

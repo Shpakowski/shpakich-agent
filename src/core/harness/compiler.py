@@ -28,6 +28,15 @@ from src.core.enums import (
     McpConfigFormat,
     RulesFormat,
     ScopeType,
+    ScriptExecutionMode,
+)
+from src.core.harness.dynamic_rag import (
+    DEFAULT_MAX_DYNAMIC_RULES,
+    DEFAULT_MAX_DYNAMIC_SKILLS,
+    DynamicMatchedRule,
+    DynamicMatchedSkill,
+    DynamicPromptRAGResult,
+    select_dynamic_components_for_prompt,
 )
 from src.core.harness.profiles import (
     AgentTargetProfile,
@@ -47,6 +56,7 @@ from src.core.harness.seed import (
 if TYPE_CHECKING:
     from src.core.db.postgres import PostgresDatabase
     from src.core.db.redis_client import RedisSessionStore
+    from src.core.services.embeddings import EmbeddingClient
 
 logger = logging.getLogger("mcp_coop.core.harness.compiler")
 
@@ -409,12 +419,14 @@ class HarnessCompiler:
         db: PostgresDatabase | None = None,
         redis: RedisSessionStore | None = None,
         *,
+        embedding_client: EmbeddingClient | None = None,
         mcp_url: str = DEFAULT_MCP_URL,
         plugin_version: str = __version__,
         hook_command_template: str = DEFAULT_HOOK_CLI_COMMAND_TEMPLATE,
     ) -> None:
         self._db: PostgresDatabase | None = db
         self._redis: RedisSessionStore | None = redis
+        self._embedding_client: EmbeddingClient | None = embedding_client
         self._mcp_url: str = mcp_url
         self._plugin_version: str = plugin_version
         self._hook_command_template: str = hook_command_template
@@ -528,9 +540,19 @@ class HarnessCompiler:
                 if target_skill:
                     script_map.setdefault(target_skill, {})[filename] = comp.content
 
+        enabled_set = set(overrides.enabled_components)
         skills: list[CompiledSkillArtifact] = []
         for comp in components:
-            if comp.component_type in (
+            comp_slug_norm = comp.slug.strip().lower()
+            exec_mode = str(
+                comp.metadata.get("execution_mode", ScriptExecutionMode.ALWAYS.value)
+            ).strip().lower()
+            is_static_bootstrap = (
+                exec_mode == ScriptExecutionMode.ALWAYS.value
+                or comp_slug_norm in enabled_set
+            )
+
+            if is_static_bootstrap and comp.component_type in (
                 ComponentType.SYSTEM_PROMPT,
                 ComponentType.GUARDRAIL,
                 ComponentType.TOOL_GUIDANCE,
@@ -558,7 +580,7 @@ class HarnessCompiler:
                         )
                     )
 
-            if comp.component_type == ComponentType.SKILL:
+            if is_static_bootstrap and comp.component_type == ComponentType.SKILL:
                 skills.append(
                     CompiledSkillArtifact(
                         slug=comp.slug,
@@ -590,6 +612,27 @@ class HarnessCompiler:
             await self._redis.cache_rules_bundle(cache_tokens, bundle.model_dump(mode="json"))
 
         return bundle
+
+    async def select_dynamic_components_for_prompt(
+        self,
+        prompt: str,
+        stack_tags: Sequence[str] | None = None,
+        profile_overrides: Mapping[str, Any] | ProjectHarnessOverrides | None = None,
+        *,
+        embedding_client: EmbeddingClient | None = None,
+        max_rules: int = DEFAULT_MAX_DYNAMIC_RULES,
+        max_skills: int = DEFAULT_MAX_DYNAMIC_SKILLS,
+    ) -> DynamicPromptRAGResult:
+        """Отбирает семантические правила и скиллы (`execution_mode = 'semantic'`) под текущий запрос `PreInvocation`."""
+        return await select_dynamic_components_for_prompt(
+            prompt=prompt,
+            stack_tags=stack_tags or (),
+            profile_overrides=profile_overrides,
+            db=self._db,
+            embedding_client=embedding_client or self._embedding_client,
+            max_rules=max_rules,
+            max_skills=max_skills,
+        )
 
     async def list_catalog_components(
         self,
@@ -966,6 +1009,9 @@ __all__ = [
     "CanonicalHarnessBundle",
     "CompiledGuardrail",
     "CompiledSkillArtifact",
+    "DynamicMatchedRule",
+    "DynamicMatchedSkill",
+    "DynamicPromptRAGResult",
     "HarnessCompiler",
     "ProjectHarnessOverrides",
     "RenderedFile",
@@ -974,4 +1020,5 @@ __all__ = [
     "enforce_markdown_byte_budget",
     "normalize_stack_tags",
     "resolve_effective_stack_tags",
+    "select_dynamic_components_for_prompt",
 ]

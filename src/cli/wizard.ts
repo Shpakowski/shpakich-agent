@@ -43,6 +43,11 @@ import {
   type MaterializationReport,
   type ProjectHarnessManifest,
 } from "./materializer.ts";
+import type {
+  ComponentIngestReportPayload,
+  ConsolidationReportPayload,
+  ContextSyncReportPayload,
+} from "./workspace_sync.ts";
 
 export interface InitWizardOptions {
   yes?: boolean;
@@ -420,8 +425,18 @@ export function renderSyncSummary(params: {
   report: MaterializationReport;
   source: string;
   healReport?: ContextHealResponse | null;
+  ingestReport?: ComponentIngestReportPayload | null;
+  contextSyncReport?: ContextSyncReportPayload | null;
 }): void {
-  const { profile, manifest, report, source, healReport } = params;
+  const {
+    profile,
+    manifest,
+    report,
+    source,
+    healReport,
+    ingestReport,
+    contextSyncReport,
+  } = params;
   const effectiveTags = resolveEffectiveStackTags(manifest);
   const filesSummary = [
     styleText("green", `${report.written.length} written`),
@@ -438,6 +453,30 @@ export function renderSyncSummary(params: {
     `${styleText("dim", "Effective Tags")}  ${formatStackTagsGrid(effectiveTags)}`,
     `${styleText("dim", "Materialized  ")}  ${filesSummary}`,
   ];
+
+  if (ingestReport) {
+    const ingestSummary = [
+      styleText("green", `${ingestReport.created} created`),
+      styleText("cyan", `${ingestReport.updated} updated`),
+      styleText("dim", `${ingestReport.unchanged} unchanged`),
+      ingestReport.rejected > 0
+        ? styleText("yellow", `${ingestReport.rejected} rejected`)
+        : styleText("dim", "0 rejected"),
+    ].join(styleText("dim", " · "));
+    lines.push(`${styleText("dim", "Custom Ingest ")}  ${ingestSummary}`);
+  }
+
+  if (contextSyncReport) {
+    const ctxSummary = [
+      styleText("green", `${contextSyncReport.pushed_to_db} pushed`),
+      styleText("cyan", `${contextSyncReport.pulled_from_db} pulled`),
+      contextSyncReport.merged > 0
+        ? styleText("magenta", `${contextSyncReport.merged} merged`)
+        : styleText("dim", "0 merged"),
+      styleText("dim", `${contextSyncReport.unchanged} unchanged`),
+    ].join(styleText("dim", " · "));
+    lines.push(`${styleText("dim", "3-Way Context ")}  ${ctxSummary}`);
+  }
 
   if (healReport) {
     const healBadge = healReport.executed
@@ -721,7 +760,55 @@ export function renderHarnessCatalogView(params: {
   outro(
     styleText(
       "dim",
-      "Use `harness enable|disable <slug>` or `harness hook-enable|hook-disable <event>` to customize.",
+      "Use `harness enable|disable <slug>` or `harness consolidate [--dry-run]` to manage knowledge.",
+    ),
+  );
+}
+
+/**
+ * Отображает панель результатов серверной консолидации знаний `HarnessConsolidator` (`harness consolidate [--dry-run]`).
+ */
+export function renderConsolidationView(params: {
+  version: string;
+  runtime: string;
+  report: ConsolidationReportPayload;
+}): void {
+  const { version, runtime, report } = params;
+  const title = report.dry_run
+    ? "Harness² Consolidation (Dry Run)"
+    : "Harness² Consolidation";
+  intro(renderCliBanner(version, runtime, title));
+
+  if (report.clusters.length === 0) {
+    note(
+      styleText(
+        "dim",
+        "No semantic or lexical duplicate clusters detected above similarity threshold.",
+      ),
+      `Consolidation Report (0 clusters · dry_run=${String(report.dry_run)})`,
+    );
+  } else {
+    const rows = report.clusters.map((cluster) => {
+      const badge = cluster.applied
+        ? styleText("green", "● merged")
+        : styleText("cyan", "◆ candidate");
+      const canon = styleText(["bold", "white"], cluster.canonical_slug);
+      const dups = styleText("yellow", cluster.duplicate_slugs.join(", "));
+      const sim = styleText("dim", `(sim=${cluster.max_similarity.toFixed(2)})`);
+      return `${badge} ${canon} <= [${dups}] ${sim}`;
+    });
+    note(
+      rows.join("\n"),
+      `Clusters (${report.clusters_found} found · ${report.components_archived} archived)`,
+    );
+  }
+
+  outro(
+    styleText(
+      "green",
+      report.dry_run
+        ? `✔ Dry-run complete: ${report.clusters_found} cluster(s) ready for consolidation.`
+        : `✔ Consolidation complete: ${report.components_archived} duplicate component(s) archived.`,
     ),
   );
 }
@@ -809,7 +896,7 @@ export function renderHelpScreen(
     `  ${styleText(["bold", "green"], "init     ")}  Interactive TUI wizard for Docker stack, project DB registration & agent hooks`,
     `  ${styleText(["bold", "cyan"], "sync     ")}  Recompile & sync workspace rules/skills/hooks from Core PostgreSQL DB`,
     `  ${styleText(["bold", "cyan"], "harness  ")}  Manage rules, skills, hooks & tags (list, enable, disable, hook-enable,`,
-    `             ${styleText("dim", "hook-disable, tag-add, tag-exclude)")}`,
+    `             ${styleText("dim", "hook-disable, tag-add, tag-exclude, consolidate)")}`,
     `  ${styleText(["bold", "cyan"], "providers")}  Manage Tier 2 Decision API providers (list, add, enable, disable,`,
     `             ${styleText("dim", "priority, remove, reset)")}`,
     `  ${styleText(["bold", "cyan"], "status   ")}  Inspect workspace profile, PostgreSQL 18 Core, Docker & Tier 2 health`,
@@ -822,6 +909,7 @@ export function renderHelpScreen(
     `  ${styleText("cyan", "-y, --yes          ")}  Skip interactive prompts and use detected defaults`,
     `  ${styleText("cyan", "-g, --global       ")}  Toggle component globally in PostgreSQL (for harness enable/disable)`,
     `  ${styleText("cyan", "--all              ")}  Include unmatched stack components in harness list`,
+    `  ${styleText("cyan", "--dry-run          ")}  Preview semantic duplicate clusters in harness consolidate without DB mutation`,
     `  ${styleText("cyan", "-t, --type <type>  ")}  Filter component type in harness list (system_prompt, guardrail, tool_guidance, skill)`,
     `  ${styleText("cyan", "--tag <tag>        ")}  Filter stack tag in harness list`,
     `  ${styleText("cyan", "--dialect <id>     ")}  Provider dialect for providers add [default: "openai_decisions"]`,

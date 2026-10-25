@@ -1,7 +1,7 @@
 """Пакет управления знаниями, декларативными профилями агентов и компилятором `Harness²` (Layer 2 & Layer 4).
 
-Объединяет базовый идемпотентный Seed (`seed.py`), декларативные профили 5 целевых агентов (`profiles.py`)
-и двухфазный компилятор конфигураций (`compiler.py`).
+Объединяет базовый идемпотентный Seed (`seed.py`), декларативные профили 5 целевых агентов (`profiles.py`),
+двухфазный компилятор (`compiler.py`), динамический RAG (`dynamic_rag.py`) и консолидатор (`consolidator.py`).
 """
 
 from __future__ import annotations
@@ -25,6 +25,24 @@ from src.core.harness.compiler import (
     enforce_markdown_byte_budget,
     normalize_stack_tags,
     resolve_effective_stack_tags,
+)
+from src.core.harness.consolidator import (
+    CONSOLIDATABLE_COMPONENT_TYPES,
+    DEFAULT_MIN_LEXICAL_SIMILARITY,
+    DEFAULT_MIN_VECTOR_SIMILARITY,
+    ConsolidationCluster,
+    ConsolidationReport,
+    HarnessConsolidator,
+    compute_lexical_similarity,
+    synthesize_cluster_markdown,
+)
+from src.core.harness.dynamic_rag import (
+    DEFAULT_MAX_DYNAMIC_RULES,
+    DEFAULT_MAX_DYNAMIC_SKILLS,
+    DynamicMatchedRule,
+    DynamicMatchedSkill,
+    DynamicPromptRAGResult,
+    select_dynamic_components_for_prompt,
 )
 from src.core.harness.profiles import (
     AGENT_PROFILES,
@@ -50,7 +68,9 @@ from src.core.harness.script_runner import (
 )
 from src.core.harness.seed import (
     DEFAULT_HARNESS_SEEDS,
+    HARNESS_ORCHESTRATOR_SLUG,
     HarnessComponentSeed,
+    compute_component_content_hash,
     filter_seed_components,
     resolve_seed_components_with_overrides,
     seed_default_components,
@@ -61,22 +81,34 @@ __all__ = [
     "BUNDLE_SOURCE_POSTGRES",
     "BUNDLE_SOURCE_REDIS_CACHE",
     "BUNDLE_SOURCE_SEED_FALLBACK",
+    "CONSOLIDATABLE_COMPONENT_TYPES",
     "DEFAULT_HARNESS_SEEDS",
     "DEFAULT_LOCALHOST_HOST",
+    "DEFAULT_MAX_DYNAMIC_RULES",
+    "DEFAULT_MAX_DYNAMIC_SKILLS",
     "DEFAULT_MAX_SEMANTIC_SCRIPTS",
     "DEFAULT_MCP_URL",
+    "DEFAULT_MIN_LEXICAL_SIMILARITY",
     "DEFAULT_MIN_SEMANTIC_SCORE",
+    "DEFAULT_MIN_VECTOR_SIMILARITY",
     "DEFAULT_SCRIPT_PRIORITY",
     "DEFAULT_SCRIPT_TIMEOUT_MS",
     "FACTORY_PLUGIN_ID",
+    "HARNESS_ORCHESTRATOR_SLUG",
     "MAX_RULES_MARKDOWN_BYTES",
     "MCP_HTTP_PATH",
     "AgentTargetProfile",
     "CanonicalHarnessBundle",
     "CompiledGuardrail",
     "CompiledSkillArtifact",
+    "ConsolidationCluster",
+    "ConsolidationReport",
+    "DynamicMatchedRule",
+    "DynamicMatchedSkill",
+    "DynamicPromptRAGResult",
     "HarnessCompiler",
     "HarnessComponentSeed",
+    "HarnessConsolidator",
     "HookScriptDispatcher",
     "HooksTargetSpec",
     "McpTargetSpec",
@@ -90,6 +122,8 @@ __all__ = [
     "SkillsTargetSpec",
     "build_hook_semantic_query",
     "compute_bundle_cache_tags",
+    "compute_component_content_hash",
+    "compute_lexical_similarity",
     "enforce_markdown_byte_budget",
     "filter_seed_components",
     "get_agent_profile",
@@ -98,4 +132,6 @@ __all__ = [
     "resolve_effective_stack_tags",
     "resolve_seed_components_with_overrides",
     "seed_default_components",
+    "select_dynamic_components_for_prompt",
+    "synthesize_cluster_markdown",
 ]

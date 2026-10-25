@@ -24,24 +24,32 @@ from src.core.api import (
     UPSERT_PROJECT_SQL,
     ComponentPatchRequest,
     ContextHealRequest,
+    HarnessConsolidateRequest,
     ProjectRegistrationRequest,
     ProviderPatchRequest,
+    SyncContextRequest,
+    SyncIngestRequest,
     _build_local_mcp_url,
     _build_plan_best_practices_hint,
     _get_compaction_store,
+    _get_consolidator,
     _get_engine,
     _get_script_dispatcher,
+    _get_sync_engine,
     _log_hook_event,
     _resolve_project_context,
     _resolve_project_stack_tags,
     hooks_router,
     management_router,
+    sync_router,
 )
 from src.core.config import CoreSettings, get_settings
 from src.core.db import CompactionArchiveStore, PostgresDatabase, RedisSessionStore
 from src.core.decision import DecisionEngine, RuntimeProviderPool
+from src.core.graph import WorkspaceSyncEngine
 from src.core.harness import (
     HarnessCompiler,
+    HarnessConsolidator,
     HookScriptDispatcher,
     seed_default_components,
 )
@@ -116,6 +124,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         redis=redis_store,
         embedding_client=embedding_client,
     )
+    app.state.sync_engine = WorkspaceSyncEngine(
+        db=db,
+        redis=redis_store,
+        engine=app.state.decision_engine,
+        embedding_client=embedding_client,
+    )
+    app.state.consolidator = HarnessConsolidator(
+        db=db,
+        redis=redis_store,
+        engine=app.state.decision_engine,
+        embedding_client=embedding_client,
+    )
 
     mcp_gateway: CoopMCPGateway | None = getattr(app.state, "mcp_gateway", None)
 
@@ -167,6 +187,7 @@ def create_app() -> FastAPI:
     application.state.mcp_gateway = mcp_gateway
 
     application.include_router(management_router)
+    application.include_router(sync_router)
     application.include_router(hooks_router)
     mcp_gateway.mount(application)
     return application
@@ -184,13 +205,18 @@ __all__ = [
     "UPSERT_PROJECT_SQL",
     "ComponentPatchRequest",
     "ContextHealRequest",
+    "HarnessConsolidateRequest",
     "ProjectRegistrationRequest",
     "ProviderPatchRequest",
+    "SyncContextRequest",
+    "SyncIngestRequest",
     "_build_local_mcp_url",
     "_build_plan_best_practices_hint",
     "_get_compaction_store",
+    "_get_consolidator",
     "_get_engine",
     "_get_script_dispatcher",
+    "_get_sync_engine",
     "_log_hook_event",
     "_resolve_project_context",
     "_resolve_project_stack_tags",

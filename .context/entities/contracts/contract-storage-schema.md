@@ -25,7 +25,7 @@ governed_by:
 
 ## 1. Схема персистентного хранилища PostgreSQL 18 (`pgvector` + `tsvector` + `pg_trgm`)
 
-При старте ASGI-приложения (`lifespan`) метод `PostgresDatabase.init_schema()` внутри единой транзакции идемпотентно активирует расширения `vector` и `pg_trgm` и разворачивает 6 базовых таблиц:
+При старте ASGI-приложения (`lifespan`) метод `PostgresDatabase.init_schema()` внутри единой транзакции идемпотентно активирует расширения `vector` и `pg_trgm` и разворачивает 7 базовых таблиц:
 
 ### 1.1. Таблица `projects` (Зарегистрированные рабочие пространства)
 Хранит привязку локальных директорий разработчика к целевому профилю агента и тегам технологического стека.
@@ -45,13 +45,14 @@ governed_by:
 * `scope` (`TEXT NOT NULL DEFAULT 'global'`) — область действия из `ScopeType`: `global` (инвариантное правило для всех проектов) или `domain` (доменно-специфичное по `stack_tags`).
 * `stack_tags` (`TEXT[] NOT NULL DEFAULT ARRAY['global']`) — технологические теги, определяющие применимость компонента.
 * `title`, `description`, `content` (`TEXT NOT NULL`) — заголовок, описание для семантического поиска и тело компонента (Markdown-инструкции или исходный код Python-скрипта).
+* `content_hash` (`TEXT NOT NULL DEFAULT ''`) — 64-символьный SHA-256 дайджест нормализованного тела (`compute_component_content_hash`) для дедупликации при инжесте (`Content-Hash Gate`, `SPEC-002`).
 * `metadata` (`JSONB NOT NULL DEFAULT '{}'::jsonb`) — типизированные параметры исполнения:
-  * для `guardrail`: `{ "action": "deny" | "overwrite", "matcher": "run_command", "pattern": "...", "replacement": "..." }`;
+  * для `guardrail`: `{ "action": "deny" | "overwrite", "matcher": "run_command", "pattern": "...", "replacement": "...", "execution_mode": "always" | "semantic" }`;
   * для `script`: `{ "hook_events": ["session-start", ...], "execution_mode": "always" | "semantic", "priority": 100, "timeout_ms": 500 }`;
-  * для `skill`: `{ "helper_scripts": { "<filename>": "<content>" } }`.
+  * для `skill` / `system_prompt` / `tool_guidance`: `{ "execution_mode": "always" | "semantic", "helper_scripts": { "<filename>": "<content>" }, "merged_from": [...], "merged_into": "<slug>" }`.
 * `embedding` (`vector(768)`) — опциональный L2-нормализованный 768-мерный вектор от `EmbeddingGemma 2` для семантического отбора скриптов и навыков.
 * `search_tsv` (`tsvector GENERATED ALWAYS AS (to_tsvector('simple', coalesce(slug, '') || ' ' || coalesce(title, '') || ' ' || coalesce(description, ''))) STORED`) — автоматически вычисляемый полнотекстовый индекс.
-* `status` (`TEXT NOT NULL DEFAULT 'composed'`) — фаза жизненного цикла из `ComponentStatus` (`candidate`, `probing`, `composed`, `rejected`, `disabled`).
+* `status` (`TEXT NOT NULL DEFAULT 'composed'`) — фаза жизненного цикла из `ComponentStatus` (`candidate`, `probing`, `composed`, `rejected`, `disabled`, `archived`).
 * `score` (`REAL NOT NULL DEFAULT 1.0`), `usage_count` (`INT NOT NULL DEFAULT 0`), `version` (`INT NOT NULL DEFAULT 1`) — метрики качества, частоты применения и ревизии.
 * `source_project_path` (`TEXT`), `updated_at`, `created_at` (`TIMESTAMPTZ DEFAULT NOW()`).
 
@@ -98,8 +99,20 @@ governed_by:
 * `search_tsv` (`tsvector GENERATED ALWAYS AS (to_tsvector('simple', coalesce(workspace_path, '') || ' ' || coalesce(summary_text, ''))) STORED`).
 * `created_at` (`TIMESTAMPTZ DEFAULT NOW()`).
 
-### 1.7. Гибридные индексы (`HNSW` + `GIN tsvector` + `GIN pg_trgm`)
-Для суб-миллисекундного 3-way гибридного поиска (косинусная близость `pgvector` + полнотекстовый `ts_rank_cd` + триграммная схожесть `word_similarity` / `similarity`) поддерживаются 10 индексов:
+### 1.7. Таблица `project_context_nodes` (Серверное зеркало узлов графа `.context/`, SPEC-002)
+Хранит каноническую серверную копию всех узлов локального графа `.context/` (`index.md`, `schema.md`, `entities/{modules,contracts,decisions}/*.md`) для двусторонней 3-Way Hash синхронизации (`WorkspaceSyncEngine`) и Write-Through зеркалирования (`coop_upsert_context_node`).
+* `id` (`UUID PRIMARY KEY DEFAULT gen_random_uuid()`).
+* `project_id` (`UUID REFERENCES projects(id) ON DELETE CASCADE`) — ссылка на проект.
+* `workspace_path` (`TEXT NOT NULL`), `relative_path` (`TEXT NOT NULL`) — канонический путь рабочей директории и путь узла относительно `.context/`; образуют ограничение `UNIQUE (workspace_path, relative_path)`.
+* `node_id` (`TEXT NOT NULL`), `entity_class` (`TEXT NOT NULL`) — идентификатор узла (`mod-python-core`, `index`) и класс сущности (`Module`, `Contract`, `Decision`, `GraphIndex`).
+* `content` (`TEXT NOT NULL`) — полный Markdown-текст узла.
+* `content_hash` (`TEXT NOT NULL`), `base_hash` (`TEXT NOT NULL DEFAULT ''`) — 64-символьные SHA-256 дайджесты нормализованного контента и последнего общего предка для алгоритма 3-Way Hash Sync `(local_hash, db_hash, base_hash)`.
+* `embedding` (`vector(768)`) — опциональный 768-мерный вектор `EmbeddingGemma 2`.
+* `search_tsv` (`tsvector GENERATED ALWAYS AS (to_tsvector('simple', coalesce(node_id, '') || ' ' || coalesce(relative_path, '') || ' ' || coalesce(content, ''))) STORED`).
+* `updated_at`, `created_at` (`TIMESTAMPTZ DEFAULT NOW()`).
+
+### 1.8. Гибридные индексы (`HNSW` + `GIN tsvector` + `GIN pg_trgm`)
+Для суб-миллисекундного 3-way гибридного поиска (косинусная близость `pgvector` + полнотекстовый `ts_rank_cd` + триграммная схожесть `word_similarity` / `similarity`) поддерживаются 13 индексов:
 * **На таблице `harness_components`:**
   * `idx_components_tsv` — `USING GIN (search_tsv)`;
   * `idx_components_desc_trgm` — `USING GIN (description gin_trgm_ops)`;
@@ -113,6 +126,10 @@ governed_by:
   * `idx_compactions_tsv` — `USING GIN (search_tsv)`;
   * `idx_compactions_summary_trgm` — `USING GIN (summary_text gin_trgm_ops)`;
   * `idx_compactions_embedding_hnsw` — частичный HNSW-индекс `USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL`.
+* **На таблице `project_context_nodes`:**
+  * `idx_context_nodes_workspace` — `(workspace_path, relative_path)`;
+  * `idx_context_nodes_tsv` — `USING GIN (search_tsv)`;
+  * `idx_context_nodes_embedding_hnsw` — частичный HNSW-индекс `USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL`.
 
 ---
 
@@ -141,3 +158,4 @@ governed_by:
 ## Логи контекста (AI Traces)
 - 2026-10-25: Сформирован формальный контракт схемы хранения `contract-storage-schema` (5 таблиц PostgreSQL 18 с HNSW/GIN-индексами `vector(768)` + `tsvector` + `pg_trgm`, 3 паттерна Redis Iris и Circuit Breaker провайдеров Tier 2).
 - 2026-10-25: Добавлена 6-я таблица `session_compactions` с 4 гибридными индексами (`idx_compactions_workspace`, `idx_compactions_tsv`, `idx_compactions_summary_trgm`, `idx_compactions_embedding_hnsw`) и поля дедупликации чекпоинтов сжатия `last_compact_hash`, `last_compact_step` в `session:{id}:meta` (`SPEC-003`).
+- 2026-10-25: Добавлены колонка `content_hash` и статус `archived` в `harness_components`, а также 7-я таблица `project_context_nodes` с индексами `idx_context_nodes_workspace`, `idx_context_nodes_tsv`, `idx_context_nodes_embedding_hnsw` для 3-Way Hash Sync графа `.context/` (`SPEC-002`).

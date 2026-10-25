@@ -54,6 +54,7 @@ from src.core.enums import (
     VerdictAction,
 )
 from src.core.harness import HarnessCompiler
+from src.core.services import EmbeddingClient
 
 logger = logging.getLogger("mcp_coop.core")
 
@@ -454,26 +455,51 @@ async def hook_pre_invocation(
                     except Exception as exc:  # noqa: BLE001
                         logger.debug("Compaction checkpoint Redis record failed: %s", exc)
 
-    prompt_lower = active_prompt.lower()
-    if any(kw in prompt_lower for kw in PLAN_KEYWORDS):
+    if active_prompt.strip():
         active_settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
+        embedding_client: EmbeddingClient = getattr(
+            request.app.state,
+            "embedding_client",
+            None,
+        ) or EmbeddingClient(active_settings)
         compiler: HarnessCompiler = getattr(request.app.state, "compiler", None) or HarnessCompiler(
             db=db,
             redis=redis_store,
+            embedding_client=embedding_client,
             mcp_url=_build_local_mcp_url(active_settings),
             plugin_version=active_settings.version,
         )
-        hints.append(
-            await _build_plan_best_practices_hint(
-                compiler=compiler,
-                engine=engine,
-                active_prompt=active_prompt,
-                stack_tags=stack_tags,
-                profile_overrides=profile_overrides,
-                compaction_store=compaction_store,
-                workspace_path=hook_in.workspace_path,
+        if db is not None and compiler._db is not db:
+            compiler._db = db
+        if redis_store is not None and compiler._redis is not redis_store:
+            compiler._redis = redis_store
+
+        prompt_lower = active_prompt.lower()
+        if any(kw in prompt_lower for kw in PLAN_KEYWORDS):
+            hints.append(
+                await _build_plan_best_practices_hint(
+                    compiler=compiler,
+                    engine=engine,
+                    active_prompt=active_prompt,
+                    stack_tags=stack_tags,
+                    profile_overrides=profile_overrides,
+                    compaction_store=compaction_store,
+                    workspace_path=hook_in.workspace_path,
+                )
             )
-        )
+
+        try:
+            rag_result = await compiler.select_dynamic_components_for_prompt(
+                active_prompt,
+                stack_tags,
+                profile_overrides=profile_overrides,
+                embedding_client=embedding_client,
+            )
+            dynamic_hint = rag_result.format_ephemeral_hint()
+            if dynamic_hint:
+                hints.append(dynamic_hint)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("PreInvocation dynamic prompt RAG failed: %s", exc)
 
     if redis_store is not None and redis_store.is_connected:
         try:

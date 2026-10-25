@@ -10,8 +10,10 @@ from __future__ import annotations
 from src.core.api.deps import (
     _build_local_mcp_url,
     _get_compaction_store,
+    _get_consolidator,
     _get_engine,
     _get_script_dispatcher,
+    _get_sync_engine,
     _log_hook_event,
     _resolve_project_context,
     _resolve_project_stack_tags,
@@ -26,8 +28,11 @@ from src.core.api.models import (
     UPSERT_PROJECT_SQL,
     ComponentPatchRequest,
     ContextHealRequest,
+    HarnessConsolidateRequest,
     ProjectRegistrationRequest,
     ProviderPatchRequest,
+    SyncContextRequest,
+    SyncIngestRequest,
 )
 from src.core.api.routes_hooks import (
     _build_plan_best_practices_hint,
@@ -51,6 +56,12 @@ from src.core.api.routes_management import (
     register_project,
     upsert_provider,
 )
+from src.core.api.routes_sync import (
+    consolidate_harness_components,
+    ingest_workspace_components,
+    sync_router,
+    sync_workspace_context_nodes,
+)
 
 __all__ = [
     "HARNESS_CONFIG_REL_PATH",
@@ -62,16 +73,22 @@ __all__ = [
     "UPSERT_PROJECT_SQL",
     "ComponentPatchRequest",
     "ContextHealRequest",
+    "HarnessConsolidateRequest",
     "ProjectRegistrationRequest",
     "ProviderPatchRequest",
+    "SyncContextRequest",
+    "SyncIngestRequest",
     "_build_local_mcp_url",
     "_build_plan_best_practices_hint",
     "_get_compaction_store",
+    "_get_consolidator",
     "_get_engine",
     "_get_script_dispatcher",
+    "_get_sync_engine",
     "_log_hook_event",
     "_resolve_project_context",
     "_resolve_project_stack_tags",
+    "consolidate_harness_components",
     "delete_provider",
     "evaluate_decision",
     "heal_project_context",
@@ -82,11 +99,14 @@ __all__ = [
     "hook_session_start",
     "hook_stop",
     "hooks_router",
+    "ingest_workspace_components",
     "list_harness_components",
     "list_providers",
     "management_router",
     "patch_harness_component",
     "patch_provider",
     "register_project",
+    "sync_router",
+    "sync_workspace_context_nodes",
     "upsert_provider",
 ]

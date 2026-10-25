@@ -20,10 +20,12 @@ from src.core.config import CoreSettings, get_settings
 from src.core.db import CompactionArchiveStore, PostgresDatabase, RedisSessionStore
 from src.core.decision import CanonicalHookInput, DecisionEngine, RuntimeProviderPool
 from src.core.enums import ScopeType
+from src.core.graph import WorkspaceSyncEngine
 from src.core.harness import (
     DEFAULT_LOCALHOST_HOST,
     MCP_HTTP_PATH,
     HarnessCompiler,
+    HarnessConsolidator,
     HookScriptDispatcher,
     ProjectHarnessOverrides,
     normalize_stack_tags,
@@ -158,6 +160,84 @@ def _get_compaction_store(request: Request) -> CompactionArchiveStore:
     return store
 
 
+def _get_sync_engine(request: Request) -> WorkspaceSyncEngine:
+    """Возвращает или лениво создаёт экземпляр `WorkspaceSyncEngine` в `request.app.state`."""
+    settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
+    db: PostgresDatabase | None = getattr(request.app.state, "db", None)
+    redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
+    engine = _get_engine(request)
+    embedding_client: EmbeddingClient = getattr(
+        request.app.state,
+        "embedding_client",
+        None,
+    ) or EmbeddingClient(settings)
+    request.app.state.embedding_client = embedding_client
+
+    sync_engine: WorkspaceSyncEngine | None = getattr(
+        request.app.state,
+        "sync_engine",
+        None,
+    )
+    if sync_engine is not None:
+        if db is not None and sync_engine._db is not db:
+            sync_engine._db = db
+        if redis_store is not None and sync_engine._redis is not redis_store:
+            sync_engine._redis = redis_store
+        if sync_engine._engine is not engine:
+            sync_engine._engine = engine
+        if sync_engine._embedding_client is None:
+            sync_engine._embedding_client = embedding_client
+        return sync_engine
+
+    sync_engine = WorkspaceSyncEngine(
+        db=db,
+        redis=redis_store,
+        engine=engine,
+        embedding_client=embedding_client,
+    )
+    request.app.state.sync_engine = sync_engine
+    return sync_engine
+
+
+def _get_consolidator(request: Request) -> HarnessConsolidator:
+    """Возвращает или лениво создаёт экземпляр `HarnessConsolidator` в `request.app.state`."""
+    settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
+    db: PostgresDatabase | None = getattr(request.app.state, "db", None)
+    redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
+    engine = _get_engine(request)
+    embedding_client: EmbeddingClient = getattr(
+        request.app.state,
+        "embedding_client",
+        None,
+    ) or EmbeddingClient(settings)
+    request.app.state.embedding_client = embedding_client
+
+    consolidator: HarnessConsolidator | None = getattr(
+        request.app.state,
+        "consolidator",
+        None,
+    )
+    if consolidator is not None:
+        if db is not None and consolidator._db is not db:
+            consolidator._db = db
+        if redis_store is not None and consolidator._redis is not redis_store:
+            consolidator._redis = redis_store
+        if consolidator._engine is not engine:
+            consolidator._engine = engine
+        if consolidator._embedding_client is None:
+            consolidator._embedding_client = embedding_client
+        return consolidator
+
+    consolidator = HarnessConsolidator(
+        db=db,
+        redis=redis_store,
+        engine=engine,
+        embedding_client=embedding_client,
+    )
+    request.app.state.consolidator = consolidator
+    return consolidator
+
+
 async def _resolve_project_context(
     db: PostgresDatabase | None,
     workspace_path: str,
@@ -267,8 +347,10 @@ async def _log_hook_event(
 __all__ = [
     "_build_local_mcp_url",
     "_get_compaction_store",
+    "_get_consolidator",
     "_get_engine",
     "_get_script_dispatcher",
+    "_get_sync_engine",
     "_log_hook_event",
     "_resolve_project_context",
     "_resolve_project_stack_tags",

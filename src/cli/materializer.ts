@@ -70,6 +70,7 @@ export interface ProjectHarnessManifest {
     disabled_hooks: HookEventName[];
   };
   managed_files: string[];
+  context_base_hashes?: Record<string, string>;
   updated_at: string;
 }
 
@@ -141,6 +142,19 @@ function atomicWriteTextFile(targetPath: string, content: string): void {
   fs.writeFileSync(tempPath, content, "utf-8");
   fs.renameSync(tempPath, targetPath);
 }
+function normalizeStringRecord(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return {};
+  }
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "string" && k.trim().length > 0 && v.trim().length > 0) {
+      result[k.trim()] = v.trim();
+    }
+  }
+  return result;
+}
+
 /**
  * Создаёт дефолтный манифест `.context/harness.json` для нового или впервые синхронизируемого проекта.
  */
@@ -166,6 +180,7 @@ export function createDefaultHarnessManifest(
       disabled_hooks: [],
     },
     managed_files: [],
+    context_base_hashes: {},
     updated_at: new Date().toISOString(),
   };
 }
@@ -241,6 +256,7 @@ export function loadProjectHarnessConfig(
         disabled_hooks: normalizeHookEvents(overridesObj.disabled_hooks),
       },
       managed_files: normalizeUniqueStrings(parsed.managed_files, false),
+      context_base_hashes: normalizeStringRecord(parsed.context_base_hashes),
       updated_at:
         typeof parsed.updated_at === "string"
           ? parsed.updated_at
@@ -328,6 +344,10 @@ export function hydrateManifestFromCore(
       Array.isArray(ov.managed_files) && ov.managed_files.length > 0
         ? normalizeUniqueStrings(ov.managed_files, false)
         : baseManifest.managed_files,
+    context_base_hashes: {
+      ...(baseManifest.context_base_hashes ?? {}),
+      ...normalizeStringRecord(ov.context_base_hashes),
+    },
     updated_at: new Date().toISOString(),
   };
 }
@@ -375,6 +395,7 @@ export function buildProfileOverridesPayload(
     disabled_components: manifest.overrides.disabled_components,
     disabled_hooks: manifest.overrides.disabled_hooks,
     managed_files: manifest.managed_files,
+    context_base_hashes: manifest.context_base_hashes ?? {},
   };
 }
 function isPlainObject(value: unknown): value is Record<string, unknown> {

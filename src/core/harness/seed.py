@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from collections.abc import Sequence
@@ -33,6 +34,13 @@ DEFAULT_COMPONENT_VERSION: int = 1
 DEFAULT_SCRIPT_PRIORITY: int = 10
 DEFAULT_SCRIPT_TIMEOUT_MS: int = 500
 BUN_STACK_TAG: str = "bun"
+HARNESS_ORCHESTRATOR_SLUG: str = "harness-orchestrator"
+
+
+def compute_component_content_hash(content: str) -> str:
+    """Вычисляет детерминированный SHA-256 дайджест контента с нормализацией LF и краевых пробелов."""
+    normalized = content.replace("\r\n", "\n").strip()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 INJECT_CONTEXT_MAP_SCRIPT_CODE: str = '''import json
 import sys
@@ -218,12 +226,13 @@ INSERT INTO harness_components (
     title,
     description,
     content,
+    content_hash,
     metadata,
     status,
     score,
     version
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12)
 ON CONFLICT (slug) DO NOTHING
 """
 
@@ -291,6 +300,9 @@ DEFAULT_HARNESS_SEEDS: tuple[HarnessComponentSeed, ...] = (
             "modules. Extract all statuses, agent identifiers, key prefixes, TTLs, and limits "
             "into strict `StrEnum` / `as const` types, top-level constants, or typed settings."
         ),
+        metadata={
+            "execution_mode": ScriptExecutionMode.ALWAYS.value,
+        },
     ),
     HarnessComponentSeed(
         slug="block-destructive-commands",
@@ -312,6 +324,7 @@ DEFAULT_HARNESS_SEEDS: tuple[HarnessComponentSeed, ...] = (
             "action": GuardrailAction.DENY.value,
             "matcher": SHELL_TOOL_MATCHER,
             "pattern": DESTRUCTIVE_COMMANDS_PATTERN,
+            "execution_mode": ScriptExecutionMode.ALWAYS.value,
         },
     ),
     HarnessComponentSeed(
@@ -335,6 +348,7 @@ DEFAULT_HARNESS_SEEDS: tuple[HarnessComponentSeed, ...] = (
             "matcher": SHELL_TOOL_MATCHER,
             "pattern": NPM_TO_BUN_PATTERN,
             "replacement": NPM_TO_BUN_REPLACEMENT,
+            "execution_mode": ScriptExecutionMode.SEMANTIC.value,
         },
     ),
     HarnessComponentSeed(
@@ -359,6 +373,48 @@ DEFAULT_HARNESS_SEEDS: tuple[HarnessComponentSeed, ...] = (
             "`.context/entities/`, append an entry under `## Логи контекста (AI Traces)`, and "
             "refresh `.context/index.md` before ending your response."
         ),
+        metadata={
+            "execution_mode": ScriptExecutionMode.ALWAYS.value,
+        },
+    ),
+    HarnessComponentSeed(
+        slug=HARNESS_ORCHESTRATOR_SLUG,
+        component_type=ComponentType.SKILL,
+        scope=ScopeType.GLOBAL,
+        stack_tags=(ScopeType.GLOBAL.value,),
+        title="Harness² Dynamic Knowledge & Context Graph Orchestrator",
+        description=(
+            "Unified bootstrap skill for navigating the MCP-COOP Agentic Factory, "
+            "querying dynamic skills and error memories, proposing Harness² rules/skills, "
+            "and synchronizing the .context/ knowledge graph."
+        ),
+        content=(
+            "# Harness² Dynamic Orchestrator (`harness-orchestrator`)\n\n"
+            "This workspace is connected to the global **MCP-COOP Agentic Factory** (`PostgreSQL 18 + pgvector + Redis 7`).\n"
+            "To keep the workspace clean and maximize LLM Prompt Caching, only invariant bootstrap rules and this "
+            "orchestrator skill are materialized on disk.\n\n"
+            "## 1. Two-Stage Progressive Disclosure (`PreInvocation` Hook RAG)\n"
+            "- Domain-specific engineering rules (`system_prompt`, `tool_guidance`) and specialized skills (`skill`) "
+            "are stored in PostgreSQL with `execution_mode = 'semantic'`.\n"
+            "- On every `PreInvocation` hook, the factory computes hybrid vector + lexical relevance against your active task:\n"
+            "  - **Top-3 semantic rules** (`relevance >= 0.25`) are injected automatically into `[Dynamic Harness² Rules]`.\n"
+            "  - **Top-2 matching skills**: full `SKILL.md` blueprints are injected when `relevance >= 0.45` "
+            "(`[Active Skill Blueprint: <slug>]`), or a 1-line index hint when `0.22 <= relevance < 0.45` "
+            "(`[Available Skill Hint]`).\n\n"
+            "## 2. Core MCP Tools (`http://127.0.0.1:8787/mcp`)\n"
+            "- **`coop_search_memory`**: search cross-project error solutions, architectural patterns, and `/compact` summaries.\n"
+            "- **`coop_learn_memory`**: record a verified root cause and fix after resolving a non-trivial bug or tool failure.\n"
+            "- **`coop_propose_harness_edit`**: propose a new rule (`system_prompt`, `tool_guidance`) or `guardrail` into the `Propose -> Probe -> Compose` loop.\n"
+            "- **`coop_publish_skill`**: publish a reusable modular skill (`SKILL.md` + optional companion scripts) into the global catalog.\n"
+            "- **`coop_query_context_graph`** & **`coop_upsert_context_node`**: query and atomically update `.context/` Graph-as-Code nodes (`Module`, `Contract`, `Decision`) with write-through to PostgreSQL.\n\n"
+            "## 3. `.context/` Synchronization Protocol\n"
+            "1. Read `.context/index.md` first to locate relevant `Module`, `Contract`, and `Decision` nodes.\n"
+            "2. Whenever project source files or contracts change, update the matching node in `.context/entities/`, "
+            "append an entry to `## Логи контекста (AI Traces)`, and refresh `.context/index.md` before finishing."
+        ),
+        metadata={
+            "execution_mode": ScriptExecutionMode.ALWAYS.value,
+        },
     ),
     HarnessComponentSeed(
         slug="context-graph-steward",
@@ -396,6 +452,9 @@ DEFAULT_HARNESS_SEEDS: tuple[HarnessComponentSeed, ...] = (
             "3. Update `.context/index.md` (`updated_at` and node summary if files changed) so "
             "the `Stop` hook (`enforce-context-sync`) passes cleanly."
         ),
+        metadata={
+            "execution_mode": ScriptExecutionMode.SEMANTIC.value,
+        },
     ),
     HarnessComponentSeed(
         slug="inject-context-map",
@@ -533,6 +592,7 @@ async def seed_default_components(db: PostgresDatabase) -> int:
                 seed.title,
                 seed.description,
                 seed.content,
+                compute_component_content_hash(seed.content),
                 json.dumps(seed.metadata, ensure_ascii=True),
                 seed.status.value,
                 seed.score,
@@ -556,10 +616,12 @@ __all__ = [
     "DEFAULT_COMPONENT_VERSION",
     "DEFAULT_HARNESS_SEEDS",
     "DESTRUCTIVE_COMMANDS_PATTERN",
+    "HARNESS_ORCHESTRATOR_SLUG",
     "NPM_TO_BUN_PATTERN",
     "NPM_TO_BUN_REPLACEMENT",
     "SHELL_TOOL_MATCHER",
     "HarnessComponentSeed",
+    "compute_component_content_hash",
     "filter_seed_components",
     "resolve_seed_components_with_overrides",
     "seed_default_components",

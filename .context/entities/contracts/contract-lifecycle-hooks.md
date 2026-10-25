@@ -10,6 +10,7 @@ files:
   - src/core/api/routes_hooks.py
   - src/core/decision/transcript.py
   - src/core/decision/hook_dialects.py
+  - src/core/harness/dynamic_rag.py
   - src/core/harness/script_runner.py
   - src/cli/hook_runner.ts
 depends_on:
@@ -67,6 +68,10 @@ governed_by:
    * Если активный промпт пользователя содержит триггеры планирования (`/plan`, `implementation_plan`, `архитектурный план`, `пошаговый план`), функция `_build_plan_best_practices_hint()` выбирает до 3 активных компонентов `Harness²` (`MAX_PLAN_PATTERNS_INJECTED = 3`), до 2 релевантных записей из `memories` (`MAX_PLAN_MEMORIES_INJECTED = 2`) и до 1 релевантной сводки прошлых сессий из `session_compactions` (`MAX_PLAN_COMPACTIONS_INJECTED = 1`) под стек проекта, инжектируя их вместе с правилом `[Plan Guardrail]` через транзиентный `ephemeralMessage`.
 3. **Сценарий В — Подсказка решения при ошибке (`Error Recovery RAG`):**
    * Если в Redis (`session:{id}:last_error`) числится неразрешённый сбой инструмента с предыдущего шага, ядро выполняет 3-way гибридный поиск `engine.search_memories(last_err.error_text, stack_tags)` и передаёт найденное решение из прошлого опыта в `ephemeralMessage`.
+4. **Сценарий Г — Двухступенчатый Progressive Disclosure семантических правил и скиллов (`Dynamic Prompt RAG`, `SPEC-002`):**
+   * На каждом шаге `PreInvocation` при непустом запросе пользователя функция `select_dynamic_components_for_prompt()` (`src/core/harness/dynamic_rag.py`) отбирает компоненты `harness_components` с `execution_mode = 'semantic'`, не входящие в статический Bootstrap на диске:
+     * **Top-3 доменных правил** (`system_prompt`, `tool_guidance`, `guardrail`) при гибридной релевантности `relevance >= 0.25` инжектируются в секцию `[Dynamic Harness² Rules]`.
+     * **Top-2 прикладных скиллов** (`skill`): при `relevance >= 0.45` (`MIN_SKILL_BLUEPRINT_RELEVANCE`) инжектируется полный чертёж `[Active Skill Blueprint: <slug>]`, а при `0.22 <= relevance < 0.45` (`MIN_SKILL_INDEX_RELEVANCE`) — компактный однострочный индекс-намёк `[Available Skill Hint]: <slug> — <description>`.
 
 ### 3.2. Двухступенчатая воронка скриптов (`HookScriptDispatcher`)
 Диспетчер `HookScriptDispatcher` (`src/core/harness/script_runner.py`) превращает жизненные хуки в декаплированную шину событий:
@@ -88,3 +93,4 @@ governed_by:
 ## Логи контекста (AI Traces)
 - 2026-10-25: Зафиксирован контракт жизненных хуков `contract-lifecycle-hooks` (5 событий, таблица трансляции 3 диалектов с учётом ограничения `ANTIGRAVITY_PROTOJSON` в `PreToolUse`, 3 сценария `PreInvocation`, двухступенчатая воронка `HookScriptDispatcher` и тройной контур принуждения `.context/`).
 - 2026-10-25: Обновлён Сценарий А и Сценарий Б `PreInvocation` под `SPEC-003` (`src/core/decision/transcript.py`, `src/core/api/routes_hooks.py`: окно хвоста 64 КБ, дедупликация чекпоинтов `/compact` через `last_compact_hash` в Redis, архивация `<summary>` в `session_compactions` и инъекция прошлых сводок при `/plan`).
+- 2026-10-25: Добавлен Сценарий Г в `PreInvocation` (`src/core/harness/dynamic_rag.py`, `SPEC-002`): двухступенчатый Progressive Disclosure семантических правил (`relevance >= 0.25`) и скиллов (`relevance >= 0.45` для полного blueprint, `0.22 <= relevance < 0.45` для индекс-намёка).

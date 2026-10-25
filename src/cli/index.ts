@@ -18,16 +18,19 @@ import {
 } from "./detector.ts";
 import {
   checkCoreHealth,
+  consolidateHarnessComponents,
   deleteTier2Provider,
   ensureGlobalStackUp,
   fetchHarnessCatalog,
   healProjectContext,
+  ingestWorkspaceComponents,
   listTier2Providers,
   patchGlobalComponentStatus,
   patchTier2Provider,
   registerProjectWithCore,
   stopGlobalStackDown,
   syncGlobalFactoryStackFiles,
+  syncWorkspaceContextNodes,
   upsertTier2Provider,
   type CatalogComponentItem,
   type ContextHealResponse,
@@ -55,6 +58,7 @@ import {
   createPipelineProgress,
   renderCliBanner,
   renderCliError,
+  renderConsolidationView,
   renderDownCommand,
   renderHarnessCatalogView,
   renderHelpScreen,
@@ -66,6 +70,11 @@ import {
   renderUpCommand,
   runInitWizard,
 } from "./wizard.ts";
+import {
+  applyContextSyncResults,
+  collectWorkspaceContextNodes,
+  scanCustomWorkspaceComponents,
+} from "./workspace_sync.ts";
 
 export const CLI_NAME = "mcp-coop-agentic-factory" as const;
 export const CLI_VERSION = "0.1.0" as const;
@@ -91,6 +100,7 @@ export const HARNESS_SUBCOMMANDS = [
   "hook-disable",
   "tag-add",
   "tag-exclude",
+  "consolidate",
 ] as const;
 
 export const PROVIDERS_SUBCOMMANDS = [
@@ -108,7 +118,7 @@ const DEFAULT_PROVIDER_URL = "https://api.openai.com/v1/decisions" as const;
 const DEFAULT_PROVIDER_MODEL = "gpt-6-luna" as const;
 const DEFAULT_PROVIDER_PRIORITY = 100 as const;
 const OFFLINE_BUNDLE_SOURCE = "seed_fallback" as const;
-const STEWARD_SKILL_SLUG = "context-graph-steward" as const;
+export const HARNESS_ORCHESTRATOR_SLUG = "harness-orchestrator" as const;
 
 export interface ParsedCliContext {
   command?: CliCommand;
@@ -119,6 +129,7 @@ export interface ParsedCliContext {
   version: boolean;
   all: boolean;
   global: boolean;
+  dryRun: boolean;
   typeFilter?: string;
   tagFilter?: string;
   dialect?: string;
@@ -152,6 +163,7 @@ export function parseCliArgs(rawArgs: string[]): ParsedCliContext {
       agent: { type: "string", short: "a", default: AUTO_AGENT_OPTION },
       all: { type: "boolean", default: false },
       global: { type: "boolean", short: "g", default: false },
+      "dry-run": { type: "boolean", default: false },
       type: { type: "string", short: "t" },
       tag: { type: "string" },
       dialect: { type: "string" },
@@ -180,6 +192,7 @@ export function parseCliArgs(rawArgs: string[]): ParsedCliContext {
     version: Boolean(values.version),
     all: Boolean(values.all),
     global: Boolean(values.global),
+    dryRun: Boolean(values["dry-run"]),
     typeFilter: typeof values.type === "string" ? values.type : undefined,
     tagFilter: typeof values.tag === "string" ? values.tag : undefined,
     dialect: typeof values.dialect === "string" ? values.dialect : undefined,
@@ -246,20 +259,20 @@ export async function syncWorkspaceArtifacts(
         : "core_compiler";
   } else {
     files = [...buildOfflineFallbackFiles(manifest.agent, effectiveTags)];
-    if (!manifest.overrides.disabled_components.includes(STEWARD_SKILL_SLUG)) {
+    if (!manifest.overrides.disabled_components.includes(HARNESS_ORCHESTRATOR_SLUG)) {
       files.push({
         relative_path: resolveOfflineSkillPath(
           manifest.agent,
-          STEWARD_SKILL_SLUG,
+          HARNESS_ORCHESTRATOR_SLUG,
         ),
         content: [
           "---",
-          `name: ${STEWARD_SKILL_SLUG}`,
+          `name: ${HARNESS_ORCHESTRATOR_SLUG}`,
           "description: >-",
-          "  Read, validate, and synchronize .context/ Graph-as-Code knowledge nodes.",
+          "  Read, validate, and synchronize .context/ Graph-as-Code knowledge nodes and dynamic Harness² skills.",
           "---",
           "",
-          "# Context Graph Steward (`context-graph-steward`)",
+          "# Harness² Orchestrator & Context Graph Steward (`harness-orchestrator`)",
           "",
           "Keep `.context/index.md` and `.context/entities/` synchronized with repository files.",
           "",
@@ -320,6 +333,25 @@ async function handleHarnessCommand(
       items,
       manifest,
       showAll: ctx.all,
+    });
+    return;
+  }
+
+  if (subcmd === "consolidate") {
+    const consolidateReport = await consolidateHarnessComponents({
+      stack_tags: profile.stackTags,
+      component_type: ctx.typeFilter,
+      dry_run: ctx.dryRun,
+    });
+    if (!consolidateReport) {
+      throw new Error(
+        "Failed to execute Harness² consolidation on Core API.",
+      );
+    }
+    renderConsolidationView({
+      version: CLI_VERSION,
+      runtime,
+      report: consolidateReport,
     });
     return;
   }
@@ -597,6 +629,44 @@ export async function dispatchCommand(ctx: ParsedCliContext): Promise<void> {
         profile,
         manifest,
       );
+      const customCandidates = scanCustomWorkspaceComponents(
+        profile.workspacePath,
+        manifest,
+        profile.stackTags,
+      );
+      const ingestReport = await ingestWorkspaceComponents({
+        workspace_path: profile.workspacePath,
+        stack_tags: profile.stackTags,
+        components: customCandidates,
+      });
+      const localContextNodes = collectWorkspaceContextNodes(
+        profile.workspacePath,
+        manifest.context_base_hashes,
+      );
+      const contextSyncReport = await syncWorkspaceContextNodes({
+        workspace_path: profile.workspacePath,
+        nodes: localContextNodes,
+      });
+      if (contextSyncReport) {
+        const appliedCtx = applyContextSyncResults(
+          profile.workspacePath,
+          contextSyncReport.items,
+          manifest.context_base_hashes,
+        );
+        manifest.context_base_hashes = appliedCtx.nextBaseHashes;
+        for (const writtenCtxPath of appliedCtx.writtenPaths) {
+          if (!report.written.includes(writtenCtxPath)) {
+            report.written.push(writtenCtxPath);
+          }
+        }
+        await registerProjectWithCore({
+          workspace_path: profile.workspacePath,
+          project_name: profile.projectName,
+          agent_type: manifest.agent,
+          stack_tags: profile.stackTags,
+          profile_overrides: buildProfileOverridesPayload(manifest),
+        });
+      }
       let healReport: ContextHealResponse | null = null;
       if (manifest.agent === "antigravity") {
         healReport = await healProjectContext({
@@ -604,7 +674,15 @@ export async function dispatchCommand(ctx: ParsedCliContext): Promise<void> {
           agent_type: manifest.agent,
         });
       }
-      renderSyncSummary({ profile, manifest, report, source, healReport });
+      renderSyncSummary({
+        profile,
+        manifest,
+        report,
+        source,
+        healReport,
+        ingestReport,
+        contextSyncReport,
+      });
       break;
     }
     case "harness":

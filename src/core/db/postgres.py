@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS harness_components (
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL,
+    content_hash TEXT NOT NULL DEFAULT '',
     metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
     embedding vector(768),
     search_tsv tsvector GENERATED ALWAYS AS (
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS harness_components (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE harness_components ADD COLUMN IF NOT EXISTS content_hash TEXT NOT NULL DEFAULT '';
 ALTER TABLE harness_components ADD COLUMN IF NOT EXISTS embedding vector(768);
 ALTER TABLE harness_components ADD COLUMN IF NOT EXISTS search_tsv tsvector GENERATED ALWAYS AS (
     to_tsvector('simple', coalesce(slug, '') || ' ' || coalesce(title, '') || ' ' || coalesce(description, ''))
@@ -144,6 +146,29 @@ CREATE INDEX IF NOT EXISTS idx_compactions_summary_trgm
 CREATE INDEX IF NOT EXISTS idx_compactions_embedding_hnsw
     ON session_compactions USING hnsw (embedding vector_cosine_ops)
     WHERE embedding IS NOT NULL;
+
+-- 7. Версионированные узлы графа .context/ для 3-Way Hash Sync (SPEC-002)
+CREATE TABLE IF NOT EXISTS project_context_nodes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+    workspace_path TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    entity_class TEXT NOT NULL DEFAULT 'Module',
+    content TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    base_hash TEXT NOT NULL DEFAULT '',
+    file_updated_at TIMESTAMPTZ DEFAULT NOW(),
+    embedding vector(768),
+    search_tsv tsvector GENERATED ALWAYS AS (
+        to_tsvector('simple', coalesce(node_id, '') || ' ' || coalesce(content, ''))
+    ) STORED,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (workspace_path, relative_path)
+);
+CREATE INDEX IF NOT EXISTS idx_context_nodes_tsv ON project_context_nodes USING GIN (search_tsv);
+CREATE INDEX IF NOT EXISTS idx_context_nodes_content_trgm ON project_context_nodes USING GIN (content gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_context_nodes_embedding_hnsw ON project_context_nodes USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
 """
 
 
