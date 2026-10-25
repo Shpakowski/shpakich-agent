@@ -32,6 +32,7 @@ from src.core.harness import (
     resolve_effective_stack_tags,
 )
 from src.core.services import AntigravitySDKService, EmbeddingClient
+from src.core.visualizer import VisualizerGraphService
 
 logger = logging.getLogger("mcp_coop.core")
 
@@ -238,6 +239,39 @@ def _get_consolidator(request: Request) -> HarnessConsolidator:
     return consolidator
 
 
+def _get_visualizer_service(request: Request) -> VisualizerGraphService:
+    """Возвращает или лениво создаёт экземпляр `VisualizerGraphService` в `request.app.state`.
+
+    Зачем:
+    - Предоставляет HTTP-эндпоинтам визуализатора (`routes_visualizer.py`) доступ к фасадному
+      сервису построения топологии графа знаний и выполнения гибридного семантического поиска.
+    - Обеспечивает корректную ре-инициализацию сервиса при смене или переподключении пула БД PostgreSQL.
+    """
+    settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
+    db: PostgresDatabase | None = getattr(request.app.state, "db", None)
+    embedding_client: EmbeddingClient = getattr(
+        request.app.state,
+        "embedding_client",
+        None,
+    ) or EmbeddingClient(settings)
+    request.app.state.embedding_client = embedding_client
+
+    service: VisualizerGraphService | None = getattr(
+        request.app.state,
+        "visualizer_service",
+        None,
+    )
+    if service is not None:
+        if db is not None and service._db is not db:
+            service = VisualizerGraphService(db=db, embedding_client=embedding_client)
+            request.app.state.visualizer_service = service
+        return service
+
+    service = VisualizerGraphService(db=db, embedding_client=embedding_client)
+    request.app.state.visualizer_service = service
+    return service
+
+
 async def _resolve_project_context(
     db: PostgresDatabase | None,
     workspace_path: str,
@@ -351,6 +385,7 @@ __all__ = [
     "_get_engine",
     "_get_script_dispatcher",
     "_get_sync_engine",
+    "_get_visualizer_service",
     "_log_hook_event",
     "_resolve_project_context",
     "_resolve_project_stack_tags",

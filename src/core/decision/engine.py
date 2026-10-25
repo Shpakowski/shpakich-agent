@@ -158,6 +158,7 @@ class DecisionEngine:
     ) -> None:
         self._db: PostgresDatabase | None = db
         self._redis: RedisSessionStore | None = redis
+        self._compiler: HarnessCompiler | None = compiler
         self._embedding_client: EmbeddingClient | None = embedding_client
         self._antigravity_sdk: AntigravitySDKService | None = antigravity_sdk
         self._provider_pool: RuntimeProviderPool = provider_pool or RuntimeProviderPool(

@@ -311,6 +311,37 @@ class AntigravityAgentRole(StrEnum):
     E2E_RUNNER = "e2e_runner"
 
 
+class VisualizerNodeKind(StrEnum):
+    """Типы узлов интерактивного графа визуализации RAG и Harness² компонентов."""
+
+    PROJECT = "project"
+    STACK_TAG = "stack_tag"
+    GROUP_CONTAINER = "group_container"
+    HARNESS_COMPONENT = "harness_component"
+    MEMORY = "memory"
+    COMPACTION = "compaction"
+    CONTEXT_NODE = "context_node"
+
+
+class VisualizerEdgeKind(StrEnum):
+    """Типы связей (рёбер) между сущностями в графе визуализатора."""
+
+    HAS_STACK_TAG = "has_stack_tag"
+    COMPILED_INTO = "compiled_into"
+    ORIGINATED_FROM = "originated_from"
+    BELONGS_TO_GROUP = "belongs_to_group"
+    CONTEXT_RELATION = "context_relation"
+    SEMANTIC_SIMILARITY = "semantic_similarity"
+
+
+class VisualizerLayoutMode(StrEnum):
+    """Режимы пространственной раскладки графа в UI визуализатора Cytoscape.js."""
+
+    FCOSE = "fcose"
+    DAGRE = "dagre"
+    CONCENTRIC = "concentric"
+
+
 __all__ = [
     "AgentType",
     "AntigravityAgentRole",
@@ -345,4 +376,7 @@ __all__ = [
     "SessionMetaField",
     "TierStepStatus",
     "VerdictAction",
+    "VisualizerEdgeKind",
+    "VisualizerLayoutMode",
+    "VisualizerNodeKind",
 ]

@@ -14,6 +14,7 @@ files:
   - src/core/api/routes_management.py
   - src/core/api/routes_hooks.py
   - src/core/api/routes_sync.py
+  - src/core/api/routes_visualizer.py
   - src/cli/docker.ts
   - src/cli/workspace_sync.ts
 depends_on:
@@ -102,7 +103,18 @@ governed_by:
 ### 2.6. Шлюз жизненных хуков (`/api/hooks/*`)
 Пять эндпоинтов перехвата (`POST /api/hooks/session-start`, `POST /api/hooks/pre-tool-use`, `POST /api/hooks/post-tool-use`, `POST /api/hooks/pre-invocation`, `POST /api/hooks/stop`) детально специфицированы в контракте [[contract-lifecycle-hooks]].
 
+### 2.7. Интерактивный визуализатор графа RAG и топологии Harness² (`src/core/api/routes_visualizer.py`)
+* **`GET /ui`**
+  * **Назначение:** Отдача монолитного Cytoscape.js SPA-дашборда в тёмной дизайн-системе (`HTMLResponse`).
+* **`GET /api/visualizer/graph`**
+  * **Параметры запроса:** `workspace_path: str | None`, `since_minutes: int` (1..43200), `include_semantic: bool`, `min_similarity: float` (0.50..0.99).
+  * **Ответ (`200 OK`, `VisualizerGraphSnapshot`):** Полный снимок топологии Cytoscape.js (`elements: {nodes, edges}`), агрегированная статистика `stats` и лента недавних изменений `recent_changes`.
+* **`GET /api/visualizer/search`**
+  * **Параметры запроса:** `q: str` (min_length=1), `workspace_path: str | None`, `top_k: int` (1..50).
+  * **Ответ (`200 OK`, `VisualizerSearchResponse`):** Результаты гибридного (pgvector + tsvector + trigram) поиска `results: list[VisualizerSearchHit]`.
+
 ## Логи контекста (AI Traces)
 - 2026-10-25: Сформирован контракт `contract-mcp-and-http-api`, специфицирующий 8 инструментов локального шлюза `FastMCP` (`Streamable HTTP /mcp`) и управляющие REST API эндпоинты `FastAPI` (`/health`, `/api/projects/register`, `/api/harness/components`, `/api/providers`, `/api/decisions/evaluate`, `/api/context/heal`).
 - 2026-10-25: Отражена декомпозиция `src/core/main.py` в пакет `src/core/api/*` (`models.py`, `deps.py`, `routes_management.py`, `routes_hooks.py`), а также расширение `coop_search_memory` (`include_compactions`, `workspace_path`) и `coop_get_factory_status` (`database_counts.session_compactions`) в рамках `SPEC-003`.
 - 2026-10-25: Добавлены контракты эндпоинтов `POST /api/sync/ingest`, `POST /api/sync/context`, `POST /api/harness/consolidate` (`src/core/api/routes_sync.py`) и Write-Through зеркалирование в `coop_upsert_context_node` (`SPEC-002`).
+- 2026-10-25: Специфицированы маршруты визуализатора `GET /ui`, `GET /api/visualizer/graph`, `GET /api/visualizer/search` (`src/core/api/routes_visualizer.py`).

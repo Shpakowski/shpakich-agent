@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MCP-COOP Agentic Factory — Interactive RAG &amp; Harness² Graph Visualizer</title>
+
+  <!-- Cytoscape Core and Graph Layout Engines via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/layout-base@2.0.1/layout-base.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cose-base@2.2.0/cose-base.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape-fcose@2.2.0/cytoscape-fcose.js"></script>
+
+  <!-- Injected Visualizer Dark Theme Stylesheet -->
+  <style>/* __INJECT_STYLES_CSS__ */</style>
+</head>
+<body>
+  <div id="app-shell">
+    <!-- Top Header -->
+    <header id="app-header">
+      <div class="header-left">
+        <div class="brand-badge">
+          <div class="brand-logo-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </div>
+          <span>MCP-COOP Factory</span>
+          <span class="brand-sub">Visualizer</span>
+        </div>
+
+        <div id="db-status-badge" class="status-pill" title="PostgreSQL &amp; Redis Core Status">
+          <span class="status-dot"></span>
+          <span class="status-text">Connected</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <!-- Workspace Input -->
+        <div class="input-group workspace-input-wrap">
+          <input
+            type="text"
+            id="workspace-input"
+            class="header-input"
+            placeholder="Workspace Path / Scope..."
+            title="Active Project Workspace Scope"
+          />
+        </div>
+
+        <!-- Hybrid Search Input -->
+        <div class="input-group search-input-wrap">
+          <input
+            type="text"
+            id="search-input"
+            class="header-input"
+            placeholder="Search knowledge (hybrid: pgvector + fts + trgm)..."
+            title="Semantic &amp; Lexical Search across Harness² &amp; Context Graph"
+          />
+          <button id="search-clear-btn" class="input-clear-btn" title="Clear Search Query">&times;</button>
+        </div>
+
+        <!-- Layout Selector -->
+        <select id="layout-select" class="header-select" title="Graph Layout Engine">
+          <option value="fcose" selected>fCoSE Force</option>
+          <option value="dagre">Dagre Hierarchical</option>
+          <option value="concentric">Concentric Rings</option>
+        </select>
+
+        <!-- Time Window Filter -->
+        <select id="since-select" class="header-select" title="Filter Recent Changes Window">
+          <option value="15">Last 15m</option>
+          <option value="60" selected>Last 1h</option>
+          <option value="360">Last 6h</option>
+          <option value="1440">Last 24h</option>
+          <option value="10080">Last 7d</option>
+        </select>
+      </div>
+
+      <div class="header-right">
+        <!-- Semantic Similarity Controls -->
+        <label class="control-toggle-label" title="Toggle Semantic pgvector Edges">
+          <input type="checkbox" id="semantic-toggle" checked />
+          <span>Semantic</span>
+        </label>
+
+        <div class="range-slider-wrap" title="Minimum Cosine Similarity Threshold">
+          <input type="range" id="similarity-range" min="0.5" max="1.0" step="0.01" value="0.78" />
+          <span id="similarity-val" class="similarity-val-badge">0.78</span>
+        </div>
+
+        <!-- Live Polling Toggle -->
+        <label class="control-toggle-label" title="Auto-refresh graph when changes detected">
+          <input type="checkbox" id="live-poll-toggle" />
+          <span>Live Poll</span>
+        </label>
+
+        <!-- Action Buttons -->
+        <button id="diff-last-view-btn" class="btn btn-sm btn-cyan" title="Toggle Diff Highlighting Since Last Viewed Snapshot">Diff Last View</button>
+        <button id="consolidate-btn" class="btn btn-sm btn-amber" title="Trigger Harness Probing Consolidation">Consolidate</button>
+        <button id="refresh-btn" class="btn btn-sm btn-emerald" title="Reload Graph Snapshot">Refresh</button>
+      </div>
+    </header>
+
+    <!-- KPI Stats Strip -->
+    <section id="stats-strip">
+      <div class="kpi-chip" title="Registered Projects">
+        <span class="kpi-chip-label">Projects:</span>
+        <span id="stat-projects" class="kpi-chip-val">0</span>
+      </div>
+      <div class="kpi-chip" title="Total Harness² Components">
+        <span class="kpi-chip-label">Components:</span>
+        <span id="stat-components" class="kpi-chip-val">0</span>
+      </div>
+      <div class="kpi-chip" title="Active Skills">
+        <span class="kpi-chip-label">Skills:</span>
+        <span id="stat-skills" class="kpi-chip-val">0</span>
+      </div>
+      <div class="kpi-chip" title="Hook Scripts">
+        <span class="kpi-chip-label">Scripts:</span>
+        <span id="stat-scripts" class="kpi-chip-val">0</span>
+      </div>
+      <div class="kpi-chip" title="Guardrails Enforced">
+        <span class="kpi-chip-label">Guardrails:</span>
+        <span id="stat-guardrails" class="kpi-chip-val">0</span>
+      </div>
+      <div class="kpi-chip" title="Learned Memories">
+        <span class="kpi-chip-label">Memories:</span>
+        <span id="stat-memories" class="kpi-chip-val">0</span>
+      </div>
+      <div class="kpi-chip" title="Session Compactions">
+        <span class="kpi-chip-label">Compactions:</span>
+        <span id="stat-compactions" class="kpi-chip-val">0</span>
+      </div>
+      <div class="kpi-chip" title="Context Graph Entities">
+        <span class="kpi-chip-label">Context Nodes:</span>
+        <span id="stat-context" class="kpi-chip-val">0</span>
+      </div>
+      <div class="kpi-chip kpi-highlight-purple" title="Embedded Entities (768-dim Vector Embeddings)">
+        <span class="kpi-chip-label">Embedded:</span>
+        <span id="stat-embedded" class="kpi-chip-val">0</span>
+      </div>
+      <div class="kpi-chip kpi-highlight-emerald" title="New Entities Since Selected Window">
+        <span class="kpi-chip-label">New (Sync):</span>
+        <span id="stat-new-sync" class="kpi-chip-val">0</span>
+      </div>
+      <div class="kpi-chip kpi-highlight-amber" title="Updated Entities Since Selected Window">
+        <span class="kpi-chip-label">Updated (Sync):</span>
+        <span id="stat-updated-sync" class="kpi-chip-val">0</span>
+      </div>
+      <div class="kpi-chip" title="Lifecycle Hooks &amp; Decision Providers">
+        <span class="kpi-chip-label">Hooks / Providers:</span>
+        <span id="stat-hooks-providers" class="kpi-chip-val">0 / 0</span>
+      </div>
+    </section>
+
+    <!-- Main 3-Column Workspace -->
+    <main id="main-workspace">
+      <!-- Left Sidebar (300px, scrollable) -->
+      <aside id="left-sidebar">
+        <!-- Node Kind Filters -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-header">
+            <span class="sidebar-title">Node Kinds</span>
+          </div>
+          <div id="kind-filters" class="filter-grid">
+            <label class="filter-item-label">
+              <span class="filter-item-left">
+                <input type="checkbox" data-kind="project" checked />
+                <span class="kind-dot kind-dot-project"></span>
+                <span class="filter-name">Projects</span>
+              </span>
+            </label>
+            <label class="filter-item-label">
+              <span class="filter-item-left">
+                <input type="checkbox" data-kind="stack_tag" checked />
+                <span class="kind-dot kind-dot-stack_tag"></span>
+                <span class="filter-name">Stack Tags</span>
+              </span>
+            </label>
+            <label class="filter-item-label">
+              <span class="filter-item-left">
+                <input type="checkbox" data-kind="harness_component" checked />
+                <span class="kind-dot kind-dot-harness_component"></span>
+                <span class="filter-name">Harness Components</span>
+              </span>
+            </label>
+            <label class="filter-item-label">
+              <span class="filter-item-left">
+                <input type="checkbox" data-kind="memory" checked />
+                <span class="kind-dot kind-dot-memory"></span>
+                <span class="filter-name">Memories</span>
+              </span>
+            </label>
+            <label class="filter-item-label">
+              <span class="filter-item-left">
+                <input type="checkbox" data-kind="compaction" checked />
+                <span class="kind-dot kind-dot-compaction"></span>
+                <span class="filter-name">Compactions</span>
+              </span>
+            </label>
+            <label class="filter-item-label">
+              <span class="filter-item-left">
+                <input type="checkbox" data-kind="context_node" checked />
+                <span class="kind-dot kind-dot-context_node"></span>
+                <span class="filter-name">Context Nodes</span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Lifecycle Status Filters -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-header">
+            <span class="sidebar-title">Lifecycle Statuses</span>
+          </div>
+          <div id="status-filters" class="filter-grid">
+            <label class="filter-item-label">
+              <span class="filter-item-left">
+                <input type="checkbox" data-status="composed" checked />
+                <span class="kind-dot status-dot-composed"></span>
+                <span class="filter-name">Composed</span>
+              </span>
+            </label>
+            <label class="filter-item-label">
+              <span class="filter-item-left">
+                <input type="checkbox" data-status="probing" checked />
+                <span class="kind-dot status-dot-probing"></span>
+                <span class="filter-name">Probing</span>
+              </span>
+            </label>
+            <label class="filter-item-label">
+              <span class="filter-item-left">
+                <input type="checkbox" data-status="candidate" checked />
+                <span class="kind-dot status-dot-candidate"></span>
+                <span class="filter-name">Candidate</span>
+              </span>
+            </label>
+            <label class="filter-item-label">
+              <span class="filter-item-left">
+                <input type="checkbox" data-status="active" checked />
+                <span class="kind-dot status-dot-active"></span>
+                <span class="filter-name">Active</span>
+              </span>
+            </label>
+            <label class="filter-item-label">
+              <span class="filter-item-left">
+                <input type="checkbox" data-status="synced" checked />
+                <span class="kind-dot status-dot-synced"></span>
+                <span class="filter-name">Synced</span>
+              </span>
+            </label>
+            <label class="filter-item-label">
+              <span class="filter-item-left">
+                <input type="checkbox" data-status="archived" checked />
+                <span class="kind-dot status-dot-archived"></span>
+                <span class="filter-name">Archived</span>
+              </span>
+            </label>
+            <label class="filter-item-label">
+              <span class="filter-item-left">
+                <input type="checkbox" data-status="disabled" checked />
+                <span class="kind-dot status-dot-disabled"></span>
+                <span class="filter-name">Disabled</span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Search Results Panel -->
+        <div id="search-results-panel" class="sidebar-section">
+          <div class="sidebar-section-header">
+            <span class="sidebar-title">Search Results</span>
+          </div>
+          <div id="search-meta">Type to perform hybrid search...</div>
+          <div id="search-results-list"></div>
+        </div>
+
+        <!-- Recent Changes Feed -->
+        <div class="sidebar-section" style="flex: 1;">
+          <div class="sidebar-section-header">
+            <span class="sidebar-title">Recent Changes</span>
+            <span id="recent-changes-count" class="badge-tag badge-new">0</span>
+          </div>
+          <div id="recent-changes-list"></div>
+        </div>
+      </aside>
+
+      <!-- Center Graph Workspace -->
+      <section id="center-workspace">
+        <!-- Cytoscape Canvas Container -->
+        <div id="cy"></div>
+
+        <!-- Floating Zoom / Fit Toolbar -->
+        <div class="canvas-floating-toolbar">
+          <button id="zoom-in-btn" class="toolbar-btn" title="Zoom In">+</button>
+          <button id="zoom-out-btn" class="toolbar-btn" title="Zoom Out">&minus;</button>
+          <button id="fit-graph-btn" class="toolbar-btn" title="Fit to Viewport">&#x2922;</button>
+        </div>
+
+        <!-- Floating Toast Notification Pill -->
+        <div id="canvas-toast"></div>
+
+        <!-- Graph Edge &amp; Node Legend Bar -->
+        <div id="graph-legend">
+          <div class="legend-group">
+            <span class="legend-line legend-line-semantic"></span>
+            <span>Semantic Similarity (pgvector)</span>
+          </div>
+          <div class="legend-group">
+            <span class="legend-line legend-line-context"></span>
+            <span>Context Relation</span>
+          </div>
+          <div class="legend-group">
+            <span class="legend-line legend-line-hierarchy"></span>
+            <span>Hierarchy</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Inspector Drawer (380px, scrollable) -->
+      <aside id="inspector-drawer">
+        <!-- Empty Selection Placeholder -->
+        <div id="inspector-empty">
+          <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 16v-4"></path>
+            <path d="M12 8h.01"></path>
+          </svg>
+          <div class="empty-title">No Node Selected</div>
+          <div class="empty-hint">Click on any node in the graph, recent changes list, or search results to view details.</div>
+        </div>
+
+        <!-- Selected Node Inspector Content -->
+        <div id="inspector-content">
+          <div class="inspector-header">
+            <h2 id="insp-title">Node Title</h2>
+            <code id="insp-id">node:id:example</code>
+          </div>
+
+          <div id="insp-badges"></div>
+
+          <!-- Status Mutation Actions -->
+          <div>
+            <div class="insp-section-title">Promote / Demote Status</div>
+            <div id="insp-actions">
+              <button class="btn btn-sm btn-emerald" data-set-status="composed">Composed</button>
+              <button class="btn btn-sm btn-amber" data-set-status="probing">Probing</button>
+              <button class="btn btn-sm btn-cyan" data-set-status="candidate">Candidate</button>
+              <button class="btn btn-sm btn-rose" data-set-status="disabled">Disabled</button>
+            </div>
+          </div>
+
+          <!-- Stack Tags -->
+          <div>
+            <div class="insp-section-title">Stack Tags</div>
+            <div id="insp-tags"></div>
+          </div>
+
+          <!-- Metrics Grid -->
+          <div>
+            <div class="insp-section-title">Telemetry &amp; Metrics</div>
+            <div id="insp-metrics"></div>
+          </div>
+
+          <!-- Monospace Content Viewer -->
+          <div class="body-viewer-container">
+            <div class="insp-section-title">Content &amp; Rules</div>
+            <pre id="insp-body"></pre>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Injected Client-Side JavaScript Application Modules -->
+  <script>/* __INJECT_GRAPH_CANVAS_JS__ */
+/* __INJECT_APP_JS__ */</script>
+</body>
+</html>

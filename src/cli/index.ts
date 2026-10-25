@@ -6,6 +6,7 @@
  * файлов адаптеров (`materializer.ts`), выполнение жизненных хуков (`hook_runner.ts`) и TUI-вывод (`wizard.ts`).
  */
 
+import { spawn } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 import { parseArgs, styleText } from "node:util";
@@ -28,6 +29,7 @@ import {
   patchGlobalComponentStatus,
   patchTier2Provider,
   registerProjectWithCore,
+  resolveCoreBaseUrl,
   stopGlobalStackDown,
   syncGlobalFactoryStackFiles,
   syncWorkspaceContextNodes,
@@ -67,6 +69,7 @@ import {
   renderQuickMutationResult,
   renderStatusCommand,
   renderSyncSummary,
+  renderUiCommand,
   renderUpCommand,
   runInitWizard,
 } from "./wizard.ts";
@@ -85,12 +88,18 @@ export const SUPPORTED_COMMANDS = [
   "harness",
   "providers",
   "status",
+  "ui",
   "up",
   "down",
   "hook",
 ] as const;
 
 export type CliCommand = (typeof SUPPORTED_COMMANDS)[number];
+
+export const UI_ENDPOINT = "/ui" as const;
+const OPEN_BROWSER_DARWIN = "open" as const;
+const OPEN_BROWSER_LINUX = "xdg-open" as const;
+const OPEN_BROWSER_WIN32 = "cmd" as const;
 
 export const HARNESS_SUBCOMMANDS = [
   "list",
@@ -130,6 +139,7 @@ export interface ParsedCliContext {
   all: boolean;
   global: boolean;
   dryRun: boolean;
+  noOpen: boolean;
   typeFilter?: string;
   tagFilter?: string;
   dialect?: string;
@@ -164,6 +174,7 @@ export function parseCliArgs(rawArgs: string[]): ParsedCliContext {
       all: { type: "boolean", default: false },
       global: { type: "boolean", short: "g", default: false },
       "dry-run": { type: "boolean", default: false },
+      "no-open": { type: "boolean", default: false },
       type: { type: "string", short: "t" },
       tag: { type: "string" },
       dialect: { type: "string" },
@@ -193,6 +204,7 @@ export function parseCliArgs(rawArgs: string[]): ParsedCliContext {
     all: Boolean(values.all),
     global: Boolean(values.global),
     dryRun: Boolean(values["dry-run"]),
+    noOpen: Boolean(values["no-open"]),
     typeFilter: typeof values.type === "string" ? values.type : undefined,
     tagFilter: typeof values.tag === "string" ? values.tag : undefined,
     dialect: typeof values.dialect === "string" ? values.dialect : undefined,
@@ -532,8 +544,40 @@ async function handleProvidersCommand(
   );
 }
 /**
+ * Открывает указанный URL в системном браузере пользователя по умолчанию.
+ * Использует платформо-зависимые команды (`open` на macOS, `cmd /c start` на Windows, `xdg-open` на Linux)
+ * в фоновом (detached) процессе с `.unref()`, чтобы CLI не блокировался.
+ */
+function openUrlInBrowser(url: string): boolean {
+  try {
+    let child;
+    if (process.platform === "darwin") {
+      child = spawn(OPEN_BROWSER_DARWIN, [url], {
+        detached: true,
+        stdio: "ignore",
+      });
+    } else if (process.platform === "win32") {
+      child = spawn(OPEN_BROWSER_WIN32, ["/c", "start", "", url], {
+        detached: true,
+        stdio: "ignore",
+      });
+    } else {
+      child = spawn(OPEN_BROWSER_LINUX, [url], {
+        detached: true,
+        stdio: "ignore",
+      });
+    }
+    child.on("error", () => {});
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Диспетчер команд верхнего уровня.
- * Пользовательские команды (`init`, `sync`, `harness`, `providers`, `status`, `down`) рендерятся
+ * Пользовательские команды (`init`, `sync`, `harness`, `providers`, `status`, `ui`, `up`, `down`) рендерятся
  * через единую TUI дизайн-систему `@clack/prompts`, тогда как техническая команда `hook` сохраняет
  * чистый поток `stdout` для JSON-протокола жизненных хуков IDE.
  */
@@ -713,6 +757,25 @@ export async function dispatchCommand(ctx: ParsedCliContext): Promise<void> {
         health,
         providers,
         manifest,
+      });
+      break;
+    }
+    case "ui": {
+      const profile = inspectWorkspace(process.cwd(), ctx.agent);
+      const health = await checkCoreHealth();
+      const baseUrl = resolveCoreBaseUrl();
+      const targetUrl = `${baseUrl}${UI_ENDPOINT}?workspace=${encodeURIComponent(profile.workspacePath)}`;
+      let openedBrowser = false;
+      if (!ctx.noOpen && health.reachable) {
+        openedBrowser = openUrlInBrowser(targetUrl);
+      }
+      renderUiCommand({
+        version: CLI_VERSION,
+        runtime,
+        url: targetUrl,
+        openedBrowser,
+        coreReachable: health.reachable,
+        postgresConnected: health.postgres_connected,
       });
       break;
     }

@@ -1,8 +1,9 @@
 """Пакет маршрутизаторов, моделей запросов и зависимостей HTTP-шлюза (Layer 2: FastAPI Core API).
 
 Объединяет контракты запросов и SQL-константы (`models.py`), резолверы состояния `app.state`
-(`deps.py`), маршрутизатор управляющих эндпоинтов (`routes_management.py`) и шлюз 5 жизненных
-хуков ИИ-агентов с архивацией сводок `/compact` (`routes_hooks.py`).
+(`deps.py`), маршрутизатор управляющих эндпоинтов (`routes_management.py`), шлюз 5 жизненных
+хуков ИИ-агентов (`routes_hooks.py`), маршруты синхронизации (`routes_sync.py`) и визуализатор
+графа RAG и компонентной топологии (`routes_visualizer.py`).
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from src.core.api.deps import (
     _get_engine,
     _get_script_dispatcher,
     _get_sync_engine,
+    _get_visualizer_service,
     _log_hook_event,
     _resolve_project_context,
     _resolve_project_stack_tags,
@@ -62,6 +64,15 @@ from src.core.api.routes_sync import (
     sync_router,
     sync_workspace_context_nodes,
 )
+from src.core.api.routes_visualizer import (
+    UI_ROUTE_PATH,
+    VISUALIZER_GRAPH_ROUTE_PATH,
+    VISUALIZER_SEARCH_ROUTE_PATH,
+    get_visualizer_graph,
+    search_visualizer_knowledge,
+    serve_visualizer_ui,
+    visualizer_router,
+)
 
 __all__ = [
     "HARNESS_CONFIG_REL_PATH",
@@ -69,8 +80,11 @@ __all__ = [
     "MAX_PLAN_MEMORIES_INJECTED",
     "MAX_PLAN_PATTERNS_INJECTED",
     "PLAN_KEYWORDS",
+    "UI_ROUTE_PATH",
     "UPDATE_COMPONENT_STATUS_SQL",
     "UPSERT_PROJECT_SQL",
+    "VISUALIZER_GRAPH_ROUTE_PATH",
+    "VISUALIZER_SEARCH_ROUTE_PATH",
     "ComponentPatchRequest",
     "ContextHealRequest",
     "HarnessConsolidateRequest",
@@ -85,12 +99,14 @@ __all__ = [
     "_get_engine",
     "_get_script_dispatcher",
     "_get_sync_engine",
+    "_get_visualizer_service",
     "_log_hook_event",
     "_resolve_project_context",
     "_resolve_project_stack_tags",
     "consolidate_harness_components",
     "delete_provider",
     "evaluate_decision",
+    "get_visualizer_graph",
     "heal_project_context",
     "health_check",
     "hook_post_tool_use",
@@ -106,7 +122,10 @@ __all__ = [
     "patch_harness_component",
     "patch_provider",
     "register_project",
+    "search_visualizer_knowledge",
+    "serve_visualizer_ui",
     "sync_router",
     "sync_workspace_context_nodes",
     "upsert_provider",
+    "visualizer_router",
 ]

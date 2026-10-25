@@ -36,12 +36,14 @@ from src.core.api import (
     _get_engine,
     _get_script_dispatcher,
     _get_sync_engine,
+    _get_visualizer_service,
     _log_hook_event,
     _resolve_project_context,
     _resolve_project_stack_tags,
     hooks_router,
     management_router,
     sync_router,
+    visualizer_router,
 )
 from src.core.config import CoreSettings, get_settings
 from src.core.db import CompactionArchiveStore, PostgresDatabase, RedisSessionStore
@@ -55,6 +57,7 @@ from src.core.harness import (
 )
 from src.core.mcp import CoopMCPGateway, CoopMCPToolService
 from src.core.services import AntigravitySDKService, EmbeddingClient
+from src.core.visualizer import VisualizerGraphService
 
 logger = logging.getLogger("mcp_coop.core")
 
@@ -136,6 +139,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine=app.state.decision_engine,
         embedding_client=embedding_client,
     )
+    app.state.visualizer_service = VisualizerGraphService(
+        db=db,
+        embedding_client=embedding_client,
+    )
 
     mcp_gateway: CoopMCPGateway | None = getattr(app.state, "mcp_gateway", None)
 
@@ -181,6 +188,10 @@ def create_app() -> FastAPI:
         db=None,
         embedding_client=embedding_client,
     )
+    application.state.visualizer_service = VisualizerGraphService(
+        db=None,
+        embedding_client=embedding_client,
+    )
     mcp_service = CoopMCPToolService(application)
     mcp_gateway = CoopMCPGateway(application, mcp_service)
     application.state.mcp_service = mcp_service
@@ -189,6 +200,7 @@ def create_app() -> FastAPI:
     application.include_router(management_router)
     application.include_router(sync_router)
     application.include_router(hooks_router)
+    application.include_router(visualizer_router)
     mcp_gateway.mount(application)
     return application
 
@@ -217,10 +229,12 @@ __all__ = [
     "_get_engine",
     "_get_script_dispatcher",
     "_get_sync_engine",
+    "_get_visualizer_service",
     "_log_hook_event",
     "_resolve_project_context",
     "_resolve_project_stack_tags",
     "app",
     "create_app",
     "lifespan",
+    "visualizer_router",
 ]

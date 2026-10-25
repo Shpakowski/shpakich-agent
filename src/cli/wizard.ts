@@ -1,6 +1,6 @@
 /**
  * Слой 1 (Host CLI Injector): интерактивный TUI-визард и дизайн-система терминального вывода CLI.
- * Реализует единый визуальный стиль команд (`init`, `sync`, `harness`, `providers`, `status`, `down`, `--help`)
+ * Реализует единый визуальный стиль команд (`init`, `sync`, `harness`, `providers`, `status`, `ui`, `up`, `down`, `--help`)
  * на базе `@clack/prompts` и встроенного ANSI-форматтера `node:util.styleText`. Поддерживает стрелочную навигацию
  * (`select`), чекбоксы технологических тегов (`multiselect`) и автоматический переход в безблокирующий режим при `--yes` или отсутствии TTY.
  */
@@ -876,6 +876,56 @@ export function renderQuickMutationResult(
 }
 
 /**
+ * Отображает панель команды `ui` для интерактивного RAG & Harness² веб-визуализатора.
+ * Выводит URL веб-интерфейса, статус доступности Core API и PostgreSQL 18,
+ * а также статус автоматического запуска браузера.
+ */
+export function renderUiCommand(params: {
+  version: string;
+  runtime: string;
+  url: string;
+  openedBrowser: boolean;
+  coreReachable: boolean;
+  postgresConnected: boolean;
+}): void {
+  intro(
+    renderCliBanner(
+      params.version,
+      params.runtime,
+      "RAG & Harness² Graph Visualizer",
+    ),
+  );
+
+  const coreBadge = params.coreReachable
+    ? styleText("green", "● online")
+    : styleText("yellow", "○ offline (start with `up`)");
+  const pgBadge = params.postgresConnected
+    ? styleText("green", "● connected")
+    : styleText("yellow", "○ offline fallback (.context + Seed)");
+  const browserBadge = params.openedBrowser
+    ? styleText("green", "● launched automatically")
+    : styleText("dim", "○ skipped (--no-open or headless)");
+
+  const lines = [
+    `${styleText("dim", "Dashboard URL ")}  ${styleText(["bold", "cyan"], params.url)}`,
+    `${styleText("dim", "Core Engine   ")}  ${coreBadge}`,
+    `${styleText("dim", "PostgreSQL 18 ")}  ${pgBadge}`,
+    `${styleText("dim", "Browser       ")}  ${browserBadge}`,
+  ];
+
+  note(lines.join("\n"), "Visualizer Web UI");
+
+  outro(
+    styleText(
+      params.coreReachable ? "green" : "yellow",
+      params.coreReachable
+        ? `✔ Graph Visualizer ready at ${params.url}`
+        : `⚠ Core API is offline. Run "mcp-coop-agentic-factory up" and open ${params.url}`,
+    ),
+  );
+}
+
+/**
  * Отображает стилизованное справочное руководство CLI (`--help`).
  */
 export function renderHelpScreen(
@@ -900,6 +950,7 @@ export function renderHelpScreen(
     `  ${styleText(["bold", "cyan"], "providers")}  Manage Tier 2 Decision API providers (list, add, enable, disable,`,
     `             ${styleText("dim", "priority, remove, reset)")}`,
     `  ${styleText(["bold", "cyan"], "status   ")}  Inspect workspace profile, PostgreSQL 18 Core, Docker & Tier 2 health`,
+    `  ${styleText(["bold", "cyan"], "ui       ")}  Open interactive RAG & Harness² Graph Visualizer in default browser`,
     `  ${styleText(["bold", "green"], "up       ")}  Start global ~/.mcp-coop-agentic-factory/ Docker Compose stack`,
     `  ${styleText(["bold", "yellow"], "down     ")}  Gracefully stop global ~/.mcp-coop-agentic-factory/ stack`,
     `  ${styleText("dim", "hook     ")}  Lifecycle hook bridge (session-start, pre-tool-use, post-tool-use, pre-invocation, stop)`,
@@ -910,6 +961,7 @@ export function renderHelpScreen(
     `  ${styleText("cyan", "-g, --global       ")}  Toggle component globally in PostgreSQL (for harness enable/disable)`,
     `  ${styleText("cyan", "--all              ")}  Include unmatched stack components in harness list`,
     `  ${styleText("cyan", "--dry-run          ")}  Preview semantic duplicate clusters in harness consolidate without DB mutation`,
+    `  ${styleText("cyan", "--no-open          ")}  Print Visualizer URL without launching browser (for ui command)`,
     `  ${styleText("cyan", "-t, --type <type>  ")}  Filter component type in harness list (system_prompt, guardrail, tool_guidance, skill)`,
     `  ${styleText("cyan", "--tag <tag>        ")}  Filter stack tag in harness list`,
     `  ${styleText("cyan", "--dialect <id>     ")}  Provider dialect for providers add [default: "openai_decisions"]`,
