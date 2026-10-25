@@ -1,6 +1,6 @@
-# Техническая спецификация задачи (TASK_SPEC v0.2): Динамический Харнес, Двусторонний `sync` и Консолидация Знаний `Harness²`
+# SPEC-002: Динамический Харнес, Двусторонний `sync` и Консолидация Знаний `Harness²` (v0.2)
 
-> **Статус:** Draft v0.2 (Spec-Driven Development)  
+> **Статус:** Draft (В очереди на реализацию — v0.2)  
 > **Проект:** `mcp-coop-agentic-factory` (`shpakich-agent`)  
 > **Назначение:** Архитектурная спецификация перехода от статической выгрузки правил/скиллов к динамической RAG-инъекции через хуки, двусторонней синхронизации (`Workspace <-> PostgreSQL`) и векторной дедупликации/слиянию знаний на сервере.
 
@@ -9,7 +9,7 @@
 ## 1. Суть архитектурного перехода (От статики к динамическому Харнесу)
 
 ### 1.1. Что было в версии `v0.1` и почему это ограничивает масштаб
-1. **Статическая материализация всех правил и скиллов:** компилятор [`src/core/harness/compiler.py`](src/core/harness/compiler.py) собирал все подходящие проекту правила (`system_prompt`, `tool_guidance`, `guardrail`) в физический файл `rules/AGENTS.md` и каждый навык (`skill`) — в отдельный файл `skills/<slug>/SKILL.md` внутри папки плагина проекта.
+1. **Статическая материализация всех правил и скиллов:** компилятор [`src/core/harness/compiler.py`](../src/core/harness/compiler.py) собирал все подходящие проекту правила (`system_prompt`, `tool_guidance`, `guardrail`) в физический файл `rules/AGENTS.md` и каждый навык (`skill`) — в отдельный файл `skills/<slug>/SKILL.md` внутри папки плагина проекта.
 2. **Проблема масштабирования (1000+ правил и скиллов):** когда в базе накапливаются сотни правил и скиллов со всех проектов, их невозможно выгружать на диск — контекстное окно агента переполняется на каждом шаге, срабатывает жёсткое усечение (`MAX_RULES_MARKDOWN_BYTES = 24 KB`), а в проектах плодятся сотни дублирующихся файлов.
 3. **Односторонний `sync`:** команда `mcp-coop-agentic-factory sync` работала только в режиме `Docker -> Workspace` (перезаписывая файлы плагина из БД), но не умела забирать локально созданные в проекте скиллы, правила, хуки и узлы `.context/` обратно в глобальную базу.
 
@@ -80,7 +80,7 @@ mcp-coop-agentic-factory sync
 выполняется **двусторонняя синхронизация**:
 
 #### Шаг 1. Сканирование локальных артефактов проекта (`Workspace Scanner` в CLI)
-В [`src/cli/materializer.ts`](src/cli/materializer.ts) добавляется функция `scanCustomWorkspaceComponents(workspaceRoot, agent)`:
+В [`src/cli/materializer.ts`](../src/cli/materializer.ts) добавляется функция `scanCustomWorkspaceComponents(workspaceRoot, agent)`:
 * Сканирует папки правил, скиллов и скриптов проекта (игнорируя два системных bootstrap-файла: базовый `rules/AGENTS.md` и `skills/harness-orchestrator/SKILL.md` по их системной сигнатуре).
 * Извлекает из каждого найденного файла:
   - `slug` (по имени папки скилла или имени файла правила/скрипта),
@@ -104,7 +104,7 @@ CLI отправляет найденные локальные компонен�
 
 Чтобы граф знаний проекта `.context/` (`index.md`, `schema.md`, `entities/modules/*.md`, `entities/contracts/*.md`, `entities/decisions/*.md`) хранился и в Git проекта, и в PostgreSQL фабрики, причём при `sync` никогда не перетирался более старой версией:
 
-#### 3.1. Новая таблица в PostgreSQL (`project_context_nodes` в [`src/core/db/postgres.py`](src/core/db/postgres.py))
+#### 3.1. Новая таблица в PostgreSQL (`project_context_nodes` в [`src/core/db/postgres.py`](../src/core/db/postgres.py))
 ```sql
 CREATE TABLE IF NOT EXISTS project_context_nodes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -167,11 +167,11 @@ CREATE TABLE IF NOT EXISTS project_context_nodes (
 ## 3. План реализации по этапам (для следующей сессии)
 
 1. **Этап 1 (Минимальный Bootstrap + Динамический `PreInvocation` RAG для скиллов и правил):**
-   - Перевести `HarnessCompiler` ([`src/core/harness/compiler.py`](src/core/harness/compiler.py)) на генерацию только базового Bootstrap-протокола (`rules/AGENTS.md`) и единого скилла-оркестратора (`skills/harness-orchestrator/SKILL.md`).
-   - Расширить `hook_pre_invocation` ([`src/core/main.py`](src/core/main.py)) векторно-лексическим отбором релевантных `skill`, `system_prompt` и `tool_guidance` из `harness_components` под промпт пользователя.
+   - Перевести `HarnessCompiler` ([`src/core/harness/compiler.py`](../src/core/harness/compiler.py)) на генерацию только базового Bootstrap-протокола (`rules/AGENTS.md`) и единого скилла-оркестратора (`skills/harness-orchestrator/SKILL.md`).
+   - Расширить `hook_pre_invocation` ([`src/core/main.py`](../src/core/main.py)) векторно-лексическим отбором релевантных `skill`, `system_prompt` и `tool_guidance` из `harness_components` под промпт пользователя.
 2. **Этап 2 (Двусторонний `sync`: Ingestion локальных скиллов/рулов + синхронизация `.context/` по дате):**
-   - Добавить таблицу `project_context_nodes` в [`src/core/db/postgres.py`](src/core/db/postgres.py).
-   - Реализовать эндпоинты `POST /api/sync/ingest` и `POST /api/sync/context` в [`src/core/main.py`](src/core/main.py).
-   - Обновить команду `mcp-coop-agentic-factory sync` в [`src/cli/index.ts`](src/cli/index.ts) и [`src/cli/materializer.ts`](src/cli/materializer.ts) для сканирования кастомных скиллов/правил проекта и двустороннего мержа `.context/` по `updated_at` и `content_hash`.
+   - Добавить таблицу `project_context_nodes` в [`src/core/db/postgres.py`](../src/core/db/postgres.py).
+   - Реализовать эндпоинты `POST /api/sync/ingest` и `POST /api/sync/context` в [`src/core/main.py`](../src/core/main.py).
+   - Обновить команду `mcp-coop-agentic-factory sync` в [`src/cli/index.ts`](../src/cli/index.ts) и [`src/cli/materializer.ts`](../src/cli/materializer.ts) для сканирования кастомных скиллов/правил проекта и двустороннего мержа `.context/` по `updated_at` и `content_hash`.
 3. **Этап 3 (Консолидация и слияние похожих скиллов/рулов на сервере):**
    - Реализовать сервис кластеризации и слияния `HarnessConsolidator` (`src/core/harness/consolidator.py`), эндпоинт `POST /api/harness/consolidate` и подкоманду CLI `mcp-coop-agentic-factory harness consolidate`.

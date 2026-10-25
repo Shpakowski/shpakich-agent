@@ -21,6 +21,7 @@ export const HEALTH_ENDPOINT = "/health" as const;
 export const REGISTER_PROJECT_ENDPOINT = "/api/projects/register" as const;
 export const PROVIDERS_ENDPOINT = "/api/providers" as const;
 export const HARNESS_COMPONENTS_ENDPOINT = "/api/harness/components" as const;
+export const CONTEXT_HEAL_ENDPOINT = "/api/context/heal" as const;
 export const HOOKS_BASE_ENDPOINT = "/api/hooks" as const;
 export const HOOK_LAUNCHER_REL_PATH = "bin/run-hook.sh" as const;
 
@@ -33,6 +34,7 @@ const DOCKER_PROGRESS_TICK_MS = 1000 as const;
 const MAX_ERROR_SUMMARY_LENGTH = 140 as const;
 const DEFAULT_REGISTER_TIMEOUT_MS = 4000 as const;
 const DEFAULT_API_TIMEOUT_MS = 3000 as const;
+const DEFAULT_CONTEXT_HEAL_TIMEOUT_MS = 20_000 as const;
 
 const DOCKER_BINARY = "docker" as const;
 const COMPOSE_REL_PATH = "docker/docker-compose.yml" as const;
@@ -107,6 +109,15 @@ export interface ProviderStatusItem {
   health_status: string;
   cooldown_remaining_seconds: number;
   last_error?: string | null;
+}
+
+export interface ContextHealResponse {
+  workspace_path: string;
+  executed: boolean;
+  applied_nodes: string[];
+  skipped_reason: string;
+  summary: string;
+  validation_passed: boolean;
 }
 
 /**
@@ -809,5 +820,33 @@ export async function deleteTier2Provider(
     return response.ok;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Запускает фоновое самоисцеление графа `.context/` через микро-агента `AntigravitySDKService` (`POST /api/context/heal`).
+ */
+export async function healProjectContext(
+  payload: {
+    workspace_path: string;
+    agent_type?: string;
+    changed_files?: string[];
+    diff_summary?: string;
+  },
+  timeoutMs: number = DEFAULT_CONTEXT_HEAL_TIMEOUT_MS,
+): Promise<ContextHealResponse | null> {
+  try {
+    const response = await fetch(`${resolveCoreBaseUrl()}${CONTEXT_HEAL_ENDPOINT}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as ContextHealResponse;
+  } catch {
+    return null;
   }
 }

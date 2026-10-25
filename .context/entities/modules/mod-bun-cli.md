@@ -16,8 +16,12 @@ files:
   - src/cli/materializer.ts
   - src/cli/hook_runner.ts
 depends_on: []
-implements: []
-governed_by: []
+implements:
+  - "[[contract-lifecycle-hooks]]"
+  - "[[contract-mcp-and-http-api]]"
+governed_by:
+  - "[[adr-001-clean-host-global-docker]]"
+  - "[[adr-002-harness2-evolution-loop]]"
 ---
 
 # Dual-Runtime CLI-инжектор и оркестратор (`mod-bun-cli`)
@@ -49,4 +53,6 @@ governed_by: []
 - 2026-10-24: Добавлена команда `up` (`mcp-coop-agentic-factory up`, `renderUpCommand`) для быстрого запуска глобального Docker-стека после `down` без повторного визарда `init`; команды `sync` и `harness` защищены от перезаписи файлов проекта дефолтным оффлайн-фолбэком при выключенном Docker-ядре.
 - 2026-10-24: Выполнена полная декомпозиция `src/cli/hook_runner.ts` (удалены захардкоженные функции Контура 3 и временные файлы `/tmp/mcp-coop-session-*`), модуль переведён в режим чистого HTTP-прокси к `HookScriptDispatcher` в Docker.
 - 2026-10-25: В `src/cli/docker.ts` (`DEFAULT_ENV_TEMPLATE` и `CoreHealthStatus`) добавлены опциональные переменные `GEMINI_API_KEY` / `ANTIGRAVITY_API_KEY` и поле `antigravity_sdk_configured`.
+- 2026-10-25: В `src/cli/docker.ts`, `src/cli/index.ts` и `src/cli/wizard.ts` добавлен вызов `healProjectContext` (`POST /api/context/heal`) при выполнении команды `sync` для агента `antigravity` с отображением статуса `Context Heal` в `renderSyncSummary`.
+- 2026-10-25: Связаны направленные рёбра `implements` (`contract-lifecycle-hooks`, `contract-mcp-and-http-api`) и `governed_by` (`adr-001-clean-host-global-docker`, `adr-002-harness2-evolution-loop`) после декомпозиции `SPEC.md` v1.0 в граф `.context/`.
 

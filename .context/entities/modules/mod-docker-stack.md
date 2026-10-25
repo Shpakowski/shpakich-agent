@@ -13,7 +13,8 @@ files:
 depends_on:
   - "[[mod-python-core]]"
 implements: []
-governed_by: []
+governed_by:
+  - "[[adr-001-clean-host-global-docker]]"
 ---
 
 # Инфраструктура контейнеризации и изоляции (`mod-docker-stack`)
@@ -39,3 +40,4 @@ governed_by: []
 - 2026-10-24: Имена контейнеров, томов, сети и директории рантайма приведены к полному префиксу `mcp-coop-agentic-factory-*`, а `vendor` в `Dockerfile` изменён на `MCP-COOP` для исключения конфликтов с другими проектами.
 - 2026-10-24: Выполнено обновление до `pgvector/pgvector:pg18` (с адаптацией маунта тома `/var/lib/postgresql` под структуру PostgreSQL 18+) и перенос дефолтных хост-портов БД и кэша на неконфликтующие значения (`54329:5432` и `63799:6379`).
 - 2026-10-25: В `docker/docker-compose.yml` включён `init: true` (`tini`) для защиты от процессов-зомби при запуске подпроцессов микро-агентов и проброшены опциональные переменные окружения `ANTIGRAVITY_*`.
+- 2026-10-25: Проставлена связь `governed_by: ["[[adr-001-clean-host-global-docker]]"]` после декомпозиции `SPEC.md` v1.0 в граф `.context/`.

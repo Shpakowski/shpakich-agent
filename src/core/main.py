@@ -34,7 +34,9 @@ from src.core.decision import (
 )
 from src.core.enums import (
     AgentType,
+    ComponentEffectiveState,
     ComponentStatus,
+    ComponentType,
     DecisionDomain,
     HookEventType,
     RedisFlag,
@@ -58,6 +60,9 @@ from src.core.services import AntigravitySDKService, EmbeddingClient
 logger = logging.getLogger("mcp_coop.core")
 
 HARNESS_CONFIG_REL_PATH: str = ".context/harness.json"
+MAX_PLAN_PATTERNS_INJECTED: int = 3
+MAX_PLAN_MEMORIES_INJECTED: int = 2
+PLAN_KEYWORDS: tuple[str, ...] = ("/plan", "implementation_plan", "архитектурный план", "пошаговый план")
 
 UPSERT_PROJECT_SQL: str = """
 INSERT INTO projects (workspace_path, name, agent_type, stack_tags, profile_overrides, last_synced_at)
@@ -271,6 +276,63 @@ async def _resolve_project_stack_tags(
     """Определяет эффективные стековые теги проекта из пэйлоада хука или таблицы `projects` PostgreSQL."""
     stack_tags, _ = await _resolve_project_context(db, workspace_path, raw_payload)
     return stack_tags
+
+
+async def _build_plan_best_practices_hint(
+    compiler: HarnessCompiler,
+    engine: DecisionEngine,
+    active_prompt: str,
+    stack_tags: tuple[str, ...],
+    profile_overrides: dict[str, Any],
+) -> str:
+    """Формирует транзиентную подсказку для `/plan`, выбирая проверенные паттерны из `harness_components` и `memories`."""
+    lines: list[str] = [
+        (
+            "[Plan Guardrail]: Break the implementation plan into small Learning-First iterations "
+            "and include a `.context/` graph synchronization step in every iteration."
+        )
+    ]
+    try:
+        catalog = await compiler.list_catalog_components(
+            stack_tags,
+            profile_overrides=profile_overrides,
+        )
+        active_states = {
+            ComponentEffectiveState.ACTIVE_AUTO.value,
+            ComponentEffectiveState.ACTIVE_FORCED.value,
+        }
+        plan_types = {
+            ComponentType.SYSTEM_PROMPT.value,
+            ComponentType.TOOL_GUIDANCE.value,
+            ComponentType.SKILL.value,
+        }
+        active_patterns = [
+            item
+            for item in catalog
+            if item.get("effective_state") in active_states
+            and item.get("component_type") in plan_types
+        ][:MAX_PLAN_PATTERNS_INJECTED]
+        if active_patterns:
+            pattern_items = "; ".join(
+                f"{item.get('slug')} ({item.get('title')})" for item in active_patterns
+            )
+            lines.append(f"[Stack Harness² Patterns ({', '.join(stack_tags)})]: {pattern_items}")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Plan catalog pattern lookup failed: %s", exc)
+
+    try:
+        query_text = active_prompt.strip() or "architecture design plan best practices"
+        memories = await engine.search_memories(query_text, stack_tags)
+        if memories:
+            mem_items = "; ".join(
+                f"{m.get('title')}: {str(m.get('solution') or '')[:140]}"
+                for m in memories[:MAX_PLAN_MEMORIES_INJECTED]
+            )
+            lines.append(f"[Prior Architectural Memories]: {mem_items}")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Plan memory lookup failed: %s", exc)
+
+    return "\n".join(lines)
 
 
 async def _log_hook_event(
@@ -933,10 +995,23 @@ def create_app() -> FastAPI:
                 rehydrated_msg = f"{rehydrated_msg}\n\n[Active Context Graph (.context/index.md)]:\n{idx_text}"
             sys_parts.append(rehydrated_msg)
 
-        if "/plan" in active_prompt.lower():
+        prompt_lower = active_prompt.lower()
+        if any(kw in prompt_lower for kw in PLAN_KEYWORDS):
+            active_settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
+            compiler: HarnessCompiler = getattr(request.app.state, "compiler", None) or HarnessCompiler(
+                db=db,
+                redis=redis_store,
+                mcp_url=_build_local_mcp_url(active_settings),
+                plugin_version=active_settings.version,
+            )
             hints.append(
-                "[Plan Guardrail]: Break the implementation plan into small Learning-First iterations "
-                "and include a `.context/` graph synchronization step in every iteration."
+                await _build_plan_best_practices_hint(
+                    compiler=compiler,
+                    engine=engine,
+                    active_prompt=active_prompt,
+                    stack_tags=stack_tags,
+                    profile_overrides=profile_overrides,
+                )
             )
 
         if redis_store is not None and redis_store.is_connected:

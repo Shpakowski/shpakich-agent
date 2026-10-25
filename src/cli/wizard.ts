@@ -31,6 +31,7 @@ import {
 } from "./detector.ts";
 import type {
   CatalogComponentItem,
+  ContextHealResponse,
   CoreHealthStatus,
   DockerBootstrapResult,
   ProviderStatusItem,
@@ -418,8 +419,9 @@ export function renderSyncSummary(params: {
   manifest: ProjectHarnessManifest;
   report: MaterializationReport;
   source: string;
+  healReport?: ContextHealResponse | null;
 }): void {
-  const { profile, manifest, report, source } = params;
+  const { profile, manifest, report, source, healReport } = params;
   const effectiveTags = resolveEffectiveStackTags(manifest);
   const filesSummary = [
     styleText("green", `${report.written.length} written`),
@@ -429,14 +431,29 @@ export function renderSyncSummary(params: {
       : styleText("dim", "0 pruned"),
   ].join(styleText("dim", " · "));
 
+  const lines: string[] = [
+    `${styleText("dim", "Target Agent  ")}  ${styleText(["bold", "cyan"], AGENT_DISPLAY_NAMES[profile.agent])}`,
+    `${styleText("dim", "Bundle Source ")}  ${styleText("white", source)}`,
+    `${styleText("dim", "Overrides     ")}  ${formatManifestOverridesSummary(manifest)}`,
+    `${styleText("dim", "Effective Tags")}  ${formatStackTagsGrid(effectiveTags)}`,
+    `${styleText("dim", "Materialized  ")}  ${filesSummary}`,
+  ];
+
+  if (healReport) {
+    const healBadge = healReport.executed
+      ? styleText(
+          "green",
+          `● applied ${healReport.applied_nodes.length} node(s) (${healReport.summary || "validated"})`,
+        )
+      : styleText(
+          "dim",
+          `◆ standby (${healReport.skipped_reason || "SDK key not configured"})`,
+        );
+    lines.push(`${styleText("dim", "Context Heal  ")}  ${healBadge}`);
+  }
+
   note(
-    [
-      `${styleText("dim", "Target Agent  ")}  ${styleText(["bold", "cyan"], AGENT_DISPLAY_NAMES[profile.agent])}`,
-      `${styleText("dim", "Bundle Source ")}  ${styleText("white", source)}`,
-      `${styleText("dim", "Overrides     ")}  ${formatManifestOverridesSummary(manifest)}`,
-      `${styleText("dim", "Effective Tags")}  ${formatStackTagsGrid(effectiveTags)}`,
-      `${styleText("dim", "Materialized  ")}  ${filesSummary}`,
-    ].join("\n"),
+    lines.join("\n"),
     "Synchronized Workspace (PostgreSQL 18 Core)",
   );
 

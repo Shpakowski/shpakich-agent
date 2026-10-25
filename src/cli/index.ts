@@ -21,6 +21,7 @@ import {
   deleteTier2Provider,
   ensureGlobalStackUp,
   fetchHarnessCatalog,
+  healProjectContext,
   listTier2Providers,
   patchGlobalComponentStatus,
   patchTier2Provider,
@@ -29,6 +30,7 @@ import {
   syncGlobalFactoryStackFiles,
   upsertTier2Provider,
   type CatalogComponentItem,
+  type ContextHealResponse,
 } from "./docker.ts";
 import {
   executeHookCommand,
@@ -595,7 +597,14 @@ export async function dispatchCommand(ctx: ParsedCliContext): Promise<void> {
         profile,
         manifest,
       );
-      renderSyncSummary({ profile, manifest, report, source });
+      let healReport: ContextHealResponse | null = null;
+      if (manifest.agent === "antigravity") {
+        healReport = await healProjectContext({
+          workspace_path: profile.workspacePath,
+          agent_type: manifest.agent,
+        });
+      }
+      renderSyncSummary({ profile, manifest, report, source, healReport });
       break;
     }
     case "harness":

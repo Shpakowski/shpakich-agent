@@ -38,8 +38,14 @@ files:
   - src/core/mcp/tools.py
   - src/core/mcp/server.py
 depends_on: []
-implements: []
-governed_by: []
+implements:
+  - "[[contract-storage-schema]]"
+  - "[[contract-lifecycle-hooks]]"
+  - "[[contract-mcp-and-http-api]]"
+governed_by:
+  - "[[adr-001-clean-host-global-docker]]"
+  - "[[adr-002-harness2-evolution-loop]]"
+  - "[[adr-003-isolated-antigravity-sdk-tier]]"
 ---
 
 # Базовый каркас Python-ядра, слой хранения и движок Контекстного Графа (`mod-python-core`)
@@ -90,4 +96,6 @@ governed_by: []
 - 2026-10-25: Выполнен Шаг 1.1 интеграции `google-antigravity` SDK — добавлены перечисления `AntigravityAuthMode` и `AntigravityAgentRole` в `src/core/enums.py`, настройки `antigravity_*` и свойства `antigravity_auth_mode` / `antigravity_sdk_configured` в `src/core/config.py`, а также опциональная группа зависимостей `antigravity` в `pyproject.toml`.
 - 2026-10-25: Завершена Итерация 1 интеграции `google-antigravity` SDK — вместо монолитного файла создан модульный пакет `src/core/services/antigravity/` (`models.py`, `sandbox.py`, `runtime.py`, `service.py`, `__init__.py`) и ре-экспортирован в `src/core/services/__init__.py` (`0 errors` в `ruff` и `pyright`).
 - 2026-10-25: Завершена сквозная интеграция `AntigravitySDKService` в ядро (`SPEC.md` §6.3) — добавлен тир `AntigravityProbeDecisionTier` в `src/core/decision/engine.py`, эндпоинт `POST /api/context/heal` и поля диагностики SDK в `GET /health` (`src/core/main.py`), а также диагностика `antigravity_sdk` в `coop_get_factory_status` (`src/core/mcp/tools.py`); пройден сквозной E2E-тест `FULL_E2E_SDK_INTEGRATION_PASSED`.
+- 2026-10-25: В `hook_pre_invocation` (`src/core/main.py`) добавлена динамическая выборка архитектурных паттернов из `harness_components` и `memories` при запросах `/plan` (`_build_plan_best_practices_hint`), а в `src/core/decision/hook_dialects.py` исключено поле `ephemeralMessage` из ответа `PreToolUse` для `ANTIGRAVITY_PROTOJSON`.
+- 2026-10-25: Связаны направленные рёбра `implements` (`contract-storage-schema`, `contract-lifecycle-hooks`, `contract-mcp-and-http-api`) и `governed_by` (`adr-001-clean-host-global-docker`, `adr-002-harness2-evolution-loop`, `adr-003-isolated-antigravity-sdk-tier`) после полной декомпозиции `SPEC.md` v1.0 в граф `.context/`.
 

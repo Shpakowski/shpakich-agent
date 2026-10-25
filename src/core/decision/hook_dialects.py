@@ -285,10 +285,10 @@ def format_hook_response(
             )
             if reason:
                 payload["reason"] = reason
+            elif eph_msg and action != VerdictAction.ALLOW:
+                payload["reason"] = eph_msg
             if action == VerdictAction.OVERWRITE and overwrite_args is not None:
                 payload["overwrite"] = overwrite_args
-            if eph_msg:
-                payload["ephemeralMessage"] = eph_msg
             return payload
 
         if dialect == HookDialect.CLAUDE_CODEX_V1:

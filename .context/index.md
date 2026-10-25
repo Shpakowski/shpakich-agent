@@ -11,13 +11,16 @@ updated_at: "2026-10-25"
 
 ---
 
-## 0. Базовые документы корня репозитория (Active)
+## 0. Базовые документы и спецификации репозитория (Active)
 
 * [`AGENTS.md`](../AGENTS.md) — Инженерные правила работы агента, режим менторства, предметный стиль комментариев, стандарты `KISS / DRY / SOLID / YAGNI / Zero-Hardcode` и протокол обновления `.context/`.
-* [`SPEC.md`](../SPEC.md) — Полная техническая спецификация системы (4 слоя, БД, MCP, `Harness²`, перехват `/compact` и `/plan` в хуках, опциональный контур `google-antigravity` SDK).
-* [`TASK_SPEC.md`](../TASK_SPEC.md) — Спецификация развития v0.2: минимальный Bootstrap в плагине, динамическая RAG-инъекция скиллов/рулов через хук `PreInvocation`, двусторонний `sync` (`Ingestion` кастомных скиллов/рулов + мерж графа `.context/` по `updated_at`) и серверная консолидация похожих скиллов по векторам `pgvector`.
 * [`README.md`](../README.md) — Краткий обзор проекта и команд CLI.
 * [`.context/schema.md`](./schema.md) — Формальная онтология и правила валидации графа (`Graph-as-Code`, классы `Module | Contract | Decision`, рёбра `nx.DiGraph`, инварианты `No Phantom Nodes` и `No Broken Links`).
+* **Каталог спецификаций (`specs/`):**
+  * [`specs/001-core-factory-v1.md`](../specs/001-core-factory-v1.md) — **[IMPLEMENTED]** Короткая выжимка (Executive Summary) реализованной базовой архитектуры v1.0 с картой декомпозиции в узлы `.context/entities/`.
+  * [`specs/002-dynamic-harness-v0.2.md`](../specs/002-dynamic-harness-v0.2.md) — **[DRAFT]** Спецификация v0.2: минимальный Bootstrap, динамический RAG на `PreInvocation`, двусторонний `sync` и серверная консолидация скиллов по `pgvector`.
+  * [`specs/003-compact-archive.md`](../specs/003-compact-archive.md) — **[DRAFT]** Спецификация долгосрочной архивации `<summary>` чекпоинтов после `/compact` в PostgreSQL.
+  * [`specs/004-e2e-test-suite.md`](../specs/004-e2e-test-suite.md) — **[DRAFT]** Спецификация тестового контура (`pytest` unit/integration + E2E Verification Suite через `google-antigravity` SDK).
 
 ---
 
@@ -29,7 +32,13 @@ updated_at: "2026-10-25"
 * **[[mod-docker-stack]]** ([`entities/modules/mod-docker-stack.md`](./entities/modules/mod-docker-stack.md)) — Инфраструктурный Docker Compose стек (`mcp-coop-agentic-factory-core`, `pgvector:pg18`, `redis:7-alpine`) и правила исключений: `.gitignore`, `.dockerignore`, `docker/Dockerfile`, `docker/docker-compose.yml`.
 
 ## 2. Контракты и интерфейсы (`.context/entities/contracts/`)
-*(Пока пусто — узлы создаются по мере реализации контрактов)*
+
+* **[[contract-storage-schema]]** ([`entities/contracts/contract-storage-schema.md`](./entities/contracts/contract-storage-schema.md)) — Схема 5 таблиц PostgreSQL 18 (`projects`, `harness_components`, `memories`, `hook_events`, `decision_providers`), индексов `pgvector` HNSW + `tsvector` + `pg_trgm` и 4 контуров оперативной памяти Redis 7 (паттерны Redis Iris + Circuit Breaker).
+* **[[contract-lifecycle-hooks]]** ([`entities/contracts/contract-lifecycle-hooks.md`](./entities/contracts/contract-lifecycle-hooks.md)) — Контракт входов/выходов 5 жизненных хуков (`SessionStart`, `PreToolUse`, `PostToolUse`, `PreInvocation`, `Stop`), матрицы трансляции 3 диалектов (`ANTIGRAVITY_PROTOJSON`, `CLAUDE_CODEX_V1`, `CURSOR_V1`), сценариев `/compact` и `/plan`, воронки `HookScriptDispatcher` и тройного контура принуждения `.context/`.
+* **[[contract-mcp-and-http-api]]** ([`entities/contracts/contract-mcp-and-http-api.md`](./entities/contracts/contract-mcp-and-http-api.md)) — Контракт 8 инструментов локального шлюза `FastMCP` (`http://127.0.0.1:8787/mcp` Streamable HTTP) и управляющих REST API эндпоинтов `FastAPI` (`/health`, `/api/projects/register`, `/api/harness/components`, `/api/providers`, `/api/decisions/evaluate`, `/api/context/heal`).
 
 ## 3. Архитектурные решения (`.context/entities/decisions/`)
-*(Пока пусто — узлы создаются по мере фиксации ADR)*
+
+* **[[adr-001-clean-host-global-docker]]** ([`entities/decisions/adr-001-clean-host-global-docker.md`](./entities/decisions/adr-001-clean-host-global-docker.md)) — Чистая хост-машина (тонкий Dual-Runtime CLI на Bun/Node) и изолированное глобальное Docker-ядро (`~/.mcp-coop-agentic-factory/`) без локальных ML-весов (`PyTorch`/`CUDA`) с автономным фолбэком на `tsvector + pg_trgm`.
+* **[[adr-002-harness2-evolution-loop]]** ([`entities/decisions/adr-002-harness2-evolution-loop.md`](./entities/decisions/adr-002-harness2-evolution-loop.md)) — Эволюция окружения агента по методологии `Harness²` (8 компонентов, `invariant` vs `domain-specific`, стейт-машина `Propose -> Probe -> Compose`) и декаплированная шина хуков `HookScriptDispatcher`.
+* **[[adr-003-isolated-antigravity-sdk-tier]]** ([`entities/decisions/adr-003-isolated-antigravity-sdk-tier.md`](./entities/decisions/adr-003-isolated-antigravity-sdk-tier.md)) — Модульная изоляция `google-antigravity` SDK во втором контуре микро-агентов (`src/core/services/antigravity/`), строгий гейтинг для `AgentType.ANTIGRAVITY` и защита песочницы `/tmp` от симлинков и Prompt Injection.
