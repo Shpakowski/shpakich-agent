@@ -372,6 +372,9 @@ class VisualizerTopologyBuilder:
                 )
             )
 
+        tag_usage_projects: dict[str, list[str]] = {}
+        tag_usage_components: dict[str, list[str]] = {}
+
         def _register_stack_tag(tag: str) -> str:
             """Регистрирует узел тега стека в графе и возвращает очищенное имя тега."""
             cleaned = str(tag).strip().lower()
@@ -384,6 +387,9 @@ class VisualizerTopologyBuilder:
                         id=tag_node_id,
                         label=f"#{cleaned}",
                         kind=VisualizerNodeKind.STACK_TAG,
+                        subtype="stack_tag",
+                        status=DEFAULT_PROJECT_STATUS,
+                        stack_tags=[cleaned],
                     )
                 )
             return cleaned
@@ -399,11 +405,22 @@ class VisualizerTopologyBuilder:
             raw_tags = row.get("stack_tags") or []
             cleaned_tags = [_register_stack_tag(t) for t in raw_tags if str(t).strip()]
             cleaned_tags = [t for t in cleaned_tags if t]
+            for t in cleaned_tags:
+                tag_usage_projects.setdefault(t, []).append(name)
 
             dt_created = _to_utc_datetime(row.get("created_at"))
             dt_last_synced = _to_utc_datetime(row.get("last_synced_at"))
             is_new = bool(dt_created and dt_created >= since_cutoff)
             is_updated = bool(not is_new and dt_last_synced and dt_last_synced >= since_cutoff)
+
+            tags_str = ", ".join(f"#{t}" for t in cleaned_tags) if cleaned_tags else "global"
+            proj_summary = (
+                f"### Project: {name}\n"
+                f"- **Workspace Path:** `{ws_path}`\n"
+                f"- **Target Agent:** `{agent_type}`\n"
+                f"- **Active Stack Tags ({len(cleaned_tags)}):** {tags_str}\n"
+                f"- **Context Graph Nodes:** {len(context_rows)}"
+            )
 
             nodes_by_id[project_node_id] = VisualizerNodeElement(
                 data=VisualizerNodeData(
@@ -413,7 +430,14 @@ class VisualizerTopologyBuilder:
                     subtype=agent_type,
                     status=DEFAULT_PROJECT_STATUS,
                     stack_tags=cleaned_tags,
-                    metrics={"workspace_path": ws_path, "agent_type": agent_type},
+                    content_preview=truncate_preview(f"Workspace: {ws_path} | Agent: {agent_type} | Stack: {tags_str}"),
+                    content_full=proj_summary,
+                    metrics={
+                        "workspace_path": ws_path,
+                        "agent_type": agent_type,
+                        "stack_tags_count": len(cleaned_tags),
+                        "context_nodes_count": len(context_rows),
+                    },
                     created_at=_format_iso(dt_created),
                     updated_at=_format_iso(dt_last_synced),
                     is_new=is_new,
@@ -436,6 +460,8 @@ class VisualizerTopologyBuilder:
             raw_tags = row.get("stack_tags") or []
             cleaned_tags = [_register_stack_tag(t) for t in raw_tags if str(t).strip()]
             cleaned_tags = [t for t in cleaned_tags if t]
+            for t in cleaned_tags:
+                tag_usage_components.setdefault(t, []).append(title)
 
             meta_dict = _parse_metadata(row.get("metadata"))
             execution_mode = meta_dict.get("execution_mode")
@@ -495,6 +521,8 @@ class VisualizerTopologyBuilder:
             raw_tags = row.get("stack_tags") or []
             cleaned_tags = [_register_stack_tag(t) for t in raw_tags if str(t).strip()]
             cleaned_tags = [t for t in cleaned_tags if t]
+            for t in cleaned_tags:
+                tag_usage_components.setdefault(t, []).append(title)
 
             helpful_count = int(row.get("helpful_count") or 0)
             has_embedding = bool(row.get("has_embedding"))
@@ -552,6 +580,8 @@ class VisualizerTopologyBuilder:
                 if conversation_id
                 else f"Compaction #{step_idx}"
             )
+            for t in cleaned_tags:
+                tag_usage_components.setdefault(t, []).append(label)
             preview = truncate_preview(summary_text)
 
             nodes_by_id[comp_node_id] = VisualizerNodeElement(
@@ -615,20 +645,56 @@ class VisualizerTopologyBuilder:
                 )
             )
 
+        # Обогащение узлов тегов стека аналитической сводкой по проектам и компонентам
+        for node_id_key, node_elem in list(nodes_by_id.items()):
+            if node_elem.data.kind != VisualizerNodeKind.STACK_TAG:
+                continue
+            tag_name = node_id_key.removeprefix("tag:")
+            proj_list = tag_usage_projects.get(tag_name, [])
+            comp_list = tag_usage_components.get(tag_name, [])
+            proj_lines = "\n".join(f"- {p}" for p in proj_list) if proj_list else "- None"
+            comp_lines = "\n".join(f"- {c}" for c in comp_list) if comp_list else "- None (Project-level stack tag)"
+            tag_summary = (
+                f"### Stack Tag: `#{tag_name}`\n\n"
+                f"#### Registered Projects ({len(proj_list)})\n{proj_lines}\n\n"
+                f"#### Linked Components & Knowledge ({len(comp_list)})\n{comp_lines}"
+            )
+            nodes_by_id[node_id_key] = VisualizerNodeElement(
+                data=VisualizerNodeData(
+                    id=node_id_key,
+                    label=f"#{tag_name}",
+                    kind=VisualizerNodeKind.STACK_TAG,
+                    subtype="stack_tag",
+                    status=DEFAULT_PROJECT_STATUS,
+                    stack_tags=[tag_name],
+                    content_preview=truncate_preview(
+                        f"Projects ({len(proj_list)}), Components ({len(comp_list)})"
+                    ),
+                    content_full=tag_summary,
+                    metrics={
+                        "projects_count": len(proj_list),
+                        "components_count": len(comp_list),
+                    },
+                )
+            )
+
         # =========================================================================
         # ВТОРОЙ ПРОХОД: Построение ориентированных связей (Edges) между узлами
         # =========================================================================
 
         # Связи проектов со стековыми тегами (project -> tag)
+        project_tags_by_ws: dict[str, set[str]] = {}
         for row in project_rows:
             ws_path = str(row.get("workspace_path") or "").strip()
             if not ws_path:
                 continue
             project_node_id = f"project:{ws_path}"
             raw_tags = row.get("stack_tags") or []
+            ws_tag_set: set[str] = { DEFAULT_FALLBACK_SCOPE }
             for tag in raw_tags:
                 cleaned_tag = str(tag).strip().lower()
                 if cleaned_tag:
+                    ws_tag_set.add(cleaned_tag)
                     _add_edge(
                         edges_by_id,
                         nodes_by_id,
@@ -636,21 +702,34 @@ class VisualizerTopologyBuilder:
                         target=f"tag:{cleaned_tag}",
                         kind=VisualizerEdgeKind.HAS_STACK_TAG,
                     )
+            project_tags_by_ws[ws_path] = ws_tag_set
 
-        # Связи компонентов: компиляция из тегов (tag -> component) и происхождение из проектов
+        # Связи компонентов: компиляция из тегов (tag -> component), привязка к проекту и происхождение
         for row in component_rows:
             slug = str(row.get("slug") or "").strip()
             if not slug:
                 continue
             comp_node_id = f"component:{slug}"
             raw_tags = row.get("stack_tags") or []
+            comp_tag_set: set[str] = set()
             for tag in raw_tags:
                 cleaned_tag = str(tag).strip().lower()
                 if cleaned_tag:
+                    comp_tag_set.add(cleaned_tag)
                     _add_edge(
                         edges_by_id,
                         nodes_by_id,
                         source=f"tag:{cleaned_tag}",
+                        target=comp_node_id,
+                        kind=VisualizerEdgeKind.COMPILED_INTO,
+                    )
+
+            for ws_path, ws_tags in project_tags_by_ws.items():
+                if comp_tag_set & ws_tags:
+                    _add_edge(
+                        edges_by_id,
+                        nodes_by_id,
+                        source=f"project:{ws_path}",
                         target=comp_node_id,
                         kind=VisualizerEdgeKind.COMPILED_INTO,
                     )
@@ -727,7 +806,8 @@ class VisualizerTopologyBuilder:
                         kind=VisualizerEdgeKind.ORIGINATED_FROM,
                     )
 
-        # Связи контекстных узлов: (context -> project) и wiki-ссылки онтологии (context -> context)
+        # Связи контекстных узлов: (context:index <-> project) и иерархия wiki-ссылок онтологии (.context/)
+        has_context_index = "context:index" in nodes_by_id
         for row in context_rows:
             node_id = str(row.get("node_id") or "").strip()
             if not node_id:
@@ -735,14 +815,14 @@ class VisualizerTopologyBuilder:
             ctx_node_id = f"context:{node_id}"
 
             ws_p = row.get("workspace_path") or resolved_workspace
-            if ws_p:
+            if ws_p and (not has_context_index or node_id == "index"):
                 proj_node_id = f"project:{ws_p}"
                 if proj_node_id in nodes_by_id:
                     _add_edge(
                         edges_by_id,
                         nodes_by_id,
-                        source=ctx_node_id,
-                        target=proj_node_id,
+                        source=proj_node_id,
+                        target=ctx_node_id,
                         kind=VisualizerEdgeKind.ORIGINATED_FROM,
                     )
 
@@ -756,6 +836,8 @@ class VisualizerTopologyBuilder:
                 wiki_targets.extend(extract_wiki_links(local_ctx.frontmatter.governed_by))
 
             for target_id in dict.fromkeys(wiki_targets):
+                if node_id != "index" and target_id in ("index", "schema"):
+                    continue
                 target_node_id = f"context:{target_id}"
                 if target_node_id in nodes_by_id and target_node_id != ctx_node_id:
                     _add_edge(

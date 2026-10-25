@@ -136,14 +136,18 @@ const buildCytoscapeStyles = () => {
         "font-family": "ui-sans-serif, system-ui, -apple-system, sans-serif",
         "text-valign": "bottom",
         "text-halign": "center",
-        "text-margin-y": 5,
-        "text-max-width": "120px",
-        "text-wrap": "ellipsis",
+        "text-margin-y": 6,
+        "text-max-width": "155px",
+        "text-wrap": "wrap",
+        "text-background-color": "#0b0f19",
+        "text-background-opacity": 0.88,
+        "text-background-padding": "3px",
+        "text-background-shape": "roundrectangle",
         "background-color": COLOR_TOKENS.COLOR_STACK_TAG,
-        "border-width": 1.5,
-        "border-color": "#1f2937",
-        "width": 32,
-        "height": 32,
+        "border-width": 2,
+        "border-color": "#1e293b",
+        "width": 36,
+        "height": 36,
         "transition-property": "background-color, border-color, border-width, opacity",
         "transition-duration": "0.2s",
       },
@@ -154,21 +158,21 @@ const buildCytoscapeStyles = () => {
       selector: `node[kind = "${NODE_KINDS.GROUP_CONTAINER}"]`,
       style: {
         "background-color": COLOR_TOKENS.BG_CONTAINER,
-        "background-opacity": 0.65,
+        "background-opacity": 0.72,
         "border-width": 1.5,
         "border-style": "dashed",
         "border-color": COLOR_TOKENS.BORDER_CONTAINER,
         "shape": "round-rectangle",
-        "padding": 18,
+        "padding": 26,
         "label": "data(label)",
-        "color": COLOR_TOKENS.TEXT_MUTED,
+        "color": "#cbd5e1",
         "text-valign": "top",
         "text-halign": "center",
-        "text-margin-y": -8,
-        "font-size": "11px",
+        "text-margin-y": -10,
+        "font-size": "12px",
         "font-weight": "bold",
         "text-transform": "uppercase",
-        "letter-spacing": "0.05em",
+        "text-max-width": "260px",
       },
     },
 
@@ -177,22 +181,33 @@ const buildCytoscapeStyles = () => {
       selector: `node[kind = "${NODE_KINDS.PROJECT}"]`,
       style: {
         "background-color": COLOR_TOKENS.COLOR_PROJECT,
+        "border-color": "#e0f2fe",
+        "border-width": 2.5,
         "shape": "hexagon",
-        "width": 42,
-        "height": 42,
+        "width": 52,
+        "height": 52,
+        "font-size": "13px",
         "font-weight": "bold",
       },
     },
 
-    // Теги стека проекта
+    // Теги стека проекта (компактные пилюли с текстом внутри)
     {
       selector: `node[kind = "${NODE_KINDS.STACK_TAG}"]`,
       style: {
-        "background-color": COLOR_TOKENS.COLOR_STACK_TAG,
+        "background-color": "#1e293b",
+        "border-color": "#475569",
+        "border-width": 1.5,
         "shape": "round-rectangle",
-        "width": 34,
+        "width": "label",
         "height": 22,
-        "font-size": "9px",
+        "padding": "8px",
+        "font-size": "10px",
+        "color": "#cbd5e1",
+        "text-valign": "center",
+        "text-halign": "center",
+        "text-margin-y": 0,
+        "text-background-opacity": 0,
       },
     },
 
@@ -201,7 +216,8 @@ const buildCytoscapeStyles = () => {
       selector: `node[kind = "${NODE_KINDS.HARNESS_COMPONENT}"][status = "${COMPONENT_STATUSES.COMPOSED}"]`,
       style: {
         "background-color": COLOR_TOKENS.COLOR_COMPOSED,
-        "shape": "ellipse",
+        "border-color": "#a7f3d0",
+        "shape": "round-rectangle",
       },
     },
 
@@ -210,7 +226,8 @@ const buildCytoscapeStyles = () => {
       selector: `node[kind = "${NODE_KINDS.HARNESS_COMPONENT}"][status = "${COMPONENT_STATUSES.PROBING}"]`,
       style: {
         "background-color": COLOR_TOKENS.COLOR_PROBING,
-        "shape": "ellipse",
+        "border-color": "#fde68a",
+        "shape": "round-rectangle",
       },
     },
 
@@ -219,7 +236,8 @@ const buildCytoscapeStyles = () => {
       selector: `node[kind = "${NODE_KINDS.HARNESS_COMPONENT}"][status = "${COMPONENT_STATUSES.CANDIDATE}"]`,
       style: {
         "background-color": COLOR_TOKENS.COLOR_CANDIDATE,
-        "shape": "ellipse",
+        "border-color": "#a5f3fc",
+        "shape": "round-rectangle",
       },
     },
 
@@ -228,16 +246,34 @@ const buildCytoscapeStyles = () => {
       selector: `node[kind = "${NODE_KINDS.HARNESS_COMPONENT}"][status = "${COMPONENT_STATUSES.DISABLED}"]`,
       style: {
         "background-color": COLOR_TOKENS.COLOR_DISABLED,
-        "shape": "ellipse",
+        "border-color": "#fecdd3",
+        "shape": "round-rectangle",
       },
     },
 
-    // Дефолтный стиль компонентов Harness² без явного совпадения по статусу
+    // Формы по подтипам компонентов Harness²
     {
-      selector: `node[kind = "${NODE_KINDS.HARNESS_COMPONENT}"]`,
+      selector: `node[kind = "${NODE_KINDS.HARNESS_COMPONENT}"][subtype = "skill"]`,
       style: {
-        "background-color": COLOR_TOKENS.COLOR_CANDIDATE,
-        "shape": "ellipse",
+        "shape": "round-rectangle",
+        "width": 40,
+        "height": 34,
+      },
+    },
+    {
+      selector: `node[kind = "${NODE_KINDS.HARNESS_COMPONENT}"][subtype = "script"]`,
+      style: {
+        "shape": "hexagon",
+        "width": 38,
+        "height": 38,
+      },
+    },
+    {
+      selector: `node[kind = "${NODE_KINDS.HARNESS_COMPONENT}"][subtype = "guardrail"], node[kind = "${NODE_KINDS.HARNESS_COMPONENT}"][subtype = "tool_guidance"]`,
+      style: {
+        "shape": "octagon",
+        "width": 38,
+        "height": 38,
       },
     },
 
@@ -246,9 +282,10 @@ const buildCytoscapeStyles = () => {
       selector: `node[kind = "${NODE_KINDS.MEMORY}"]`,
       style: {
         "background-color": COLOR_TOKENS.COLOR_MEMORY,
+        "border-color": "#fbcfe8",
         "shape": "diamond",
-        "width": 32,
-        "height": 32,
+        "width": 36,
+        "height": 36,
       },
     },
 
@@ -257,20 +294,57 @@ const buildCytoscapeStyles = () => {
       selector: `node[kind = "${NODE_KINDS.COMPACTION}"]`,
       style: {
         "background-color": COLOR_TOKENS.COLOR_COMPACTION,
+        "border-color": "#ddd6fe",
         "shape": "barrel",
-        "width": 34,
-        "height": 34,
+        "width": 36,
+        "height": 36,
       },
     },
 
-    // Сущности графа архитектурного контекста (.context/)
+    // Сущности графа архитектурного контекста (.context/) — базовый стиль (Module)
     {
       selector: `node[kind = "${NODE_KINDS.CONTEXT_NODE}"]`,
       style: {
         "background-color": COLOR_TOKENS.COLOR_CONTEXT,
+        "border-color": "#93c5fd",
         "shape": "round-rectangle",
-        "width": 34,
-        "height": 30,
+        "width": 38,
+        "height": 32,
+      },
+    },
+    // Точка входа графа .context/ (index.md -> GraphIndex)
+    {
+      selector: `node[kind = "${NODE_KINDS.CONTEXT_NODE}"][subtype = "GraphIndex"]`,
+      style: {
+        "background-color": "#f59e0b",
+        "border-color": "#fef3c7",
+        "border-width": 2.5,
+        "shape": "hexagon",
+        "width": 46,
+        "height": 46,
+        "font-weight": "bold",
+      },
+    },
+    // Архитектурные контракты (.context/entities/contracts/)
+    {
+      selector: `node[kind = "${NODE_KINDS.CONTEXT_NODE}"][subtype = "Contract"]`,
+      style: {
+        "background-color": "#06b6d4",
+        "border-color": "#cffafe",
+        "shape": "diamond",
+        "width": 38,
+        "height": 38,
+      },
+    },
+    // Архитектурные решения ADR (.context/entities/decisions/)
+    {
+      selector: `node[kind = "${NODE_KINDS.CONTEXT_NODE}"][subtype = "Decision"]`,
+      style: {
+        "background-color": "#a855f7",
+        "border-color": "#f3e8ff",
+        "shape": "octagon",
+        "width": 36,
+        "height": 36,
       },
     },
 
@@ -538,9 +612,9 @@ class CoopGraphCanvas {
       this._cy.elements().remove();
       this._cy.add(nodeElements);
       this._cy.add(edgeElements);
-      this.applyFilters(this._activeKinds, this._activeStatuses);
     });
 
+    this.applyFilters(this._activeKinds, this._activeStatuses);
     this._lastNodeCount = nodeElements.length;
 
     if (shouldPreserveCamera && savedPan && savedZoom) {
@@ -557,10 +631,12 @@ class CoopGraphCanvas {
    */
   runLayout(layoutName) {
     this._currentLayoutName = layoutName || this._currentLayoutName;
+    const activeElements = this._cy.elements().filter((el) => el.style("display") !== "none");
+    const targetEles = activeElements.length > 0 ? activeElements : this._cy.elements();
 
     if (this._currentLayoutName === LAYOUT_NAMES.FCOSE) {
       try {
-        const layout = this._cy.layout({
+        const layout = targetEles.layout({
           name: LAYOUT_NAMES.FCOSE,
           animate: true,
           animationDuration: CANVAS_TIMINGS.LAYOUT_ANIMATION_MS,
@@ -569,19 +645,23 @@ class CoopGraphCanvas {
           nodeDimensionsIncludeLabels: true,
           uniformNodeDimensions: false,
           packComponents: true,
-          randomize: false,
+          randomize: true,
           quality: "default",
+          idealEdgeLength: 135,
+          nodeRepulsion: 9500,
+          nestingFactor: 0.85,
         });
         layout.run();
         return;
       } catch (_) {
         // Fallback на встроенный алгоритм CoSE при недоступности расширения fCoSE
-        this._cy.layout({
+        targetEles.layout({
           name: LAYOUT_NAMES.COSE,
           animate: true,
           animationDuration: CANVAS_TIMINGS.LAYOUT_ANIMATION_MS,
           fit: true,
           padding: CANVAS_TIMINGS.FIT_PADDING,
+          nodeDimensionsIncludeLabels: true,
         }).run();
         return;
       }
@@ -589,7 +669,7 @@ class CoopGraphCanvas {
 
     if (this._currentLayoutName === LAYOUT_NAMES.DAGRE) {
       try {
-        const layout = this._cy.layout({
+        const layout = targetEles.layout({
           name: LAYOUT_NAMES.DAGRE,
           rankDir: "LR",
           animate: true,
@@ -597,13 +677,13 @@ class CoopGraphCanvas {
           fit: true,
           padding: CANVAS_TIMINGS.FIT_PADDING,
           nodeDimensionsIncludeLabels: true,
-          spacingFactor: 1.25,
+          spacingFactor: 1.3,
         });
         layout.run();
         return;
       } catch (_) {
         // Fallback на встроенный CoSE при отсутствии Dagre
-        this._cy.layout({
+        targetEles.layout({
           name: LAYOUT_NAMES.COSE,
           animate: true,
           animationDuration: CANVAS_TIMINGS.LAYOUT_ANIMATION_MS,
@@ -615,13 +695,14 @@ class CoopGraphCanvas {
     }
 
     if (this._currentLayoutName === LAYOUT_NAMES.CONCENTRIC) {
-      const layout = this._cy.layout({
+      const layout = targetEles.layout({
         name: LAYOUT_NAMES.CONCENTRIC,
         animate: true,
         animationDuration: CANVAS_TIMINGS.LAYOUT_ANIMATION_MS,
         fit: true,
         padding: CANVAS_TIMINGS.FIT_PADDING,
         nodeDimensionsIncludeLabels: true,
+        minNodeSpacing: 42,
         concentric: (node) => {
           const kind = node.data("kind");
           if (kind === NODE_KINDS.PROJECT) return 10;
@@ -637,7 +718,7 @@ class CoopGraphCanvas {
     }
 
     // Дефолтный фолбэк для любого неизвестного имени раскладки
-    this._cy.layout({
+    targetEles.layout({
       name: LAYOUT_NAMES.COSE,
       animate: true,
       animationDuration: CANVAS_TIMINGS.LAYOUT_ANIMATION_MS,
@@ -673,20 +754,24 @@ class CoopGraphCanvas {
         }
       });
 
-      // 2. Управление видимостью compound-контейнеров на основе их дочерних элементов
+      // 2. Управление видимостью compound-контейнеров по style("display") дочерних элементов
       const groupNodes = this._cy.nodes(`[kind = "${NODE_KINDS.GROUP_CONTAINER}"]`);
       groupNodes.forEach((group) => {
-        const visibleChildren = group.children(":visible");
-        if (visibleChildren.length > 0) {
+        const hasDisplayedChildren = group
+          .children()
+          .some((child) => child.style("display") !== "none");
+        if (hasDisplayedChildren) {
           group.show();
         } else {
           group.hide();
         }
       });
 
-      // 3. Синхронизация видимости связей
+      // 3. Синхронизация видимости связей по style("display") концов ребра
       this._cy.edges().forEach((edge) => {
-        if (edge.source().visible() && edge.target().visible()) {
+        const srcDisplayed = edge.source().style("display") !== "none";
+        const tgtDisplayed = edge.target().style("display") !== "none";
+        if (srcDisplayed && tgtDisplayed) {
           if (edge.data("kind") !== EDGE_KINDS.BELONGS_TO_GROUP) {
             edge.show();
           }
