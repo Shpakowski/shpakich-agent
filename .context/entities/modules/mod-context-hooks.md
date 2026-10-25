@@ -2,30 +2,31 @@
 type: Entity
 class: Module
 id: mod-context-hooks
-name: Локальные хуки управления Контекстным Графом (.context/)
-status: Active
+name: Базовые скрипты контроля Контекстного Графа (.context/)
+status: Deprecated
 stack: [python, antigravity-hooks]
 files:
-  - .agents/hooks.json
-  - .agents/hooks/inject_context_map.py
-  - .agents/hooks/track_file_changes.py
-  - .agents/hooks/enforce_context_sync.py
-depends_on: []
+  - src/core/harness/seed.py
+  - src/core/harness/script_runner.py
+depends_on:
+  - mod-python-core
 implements: []
 governed_by: []
 ---
 
-# Локальные хуки управления Контекстным Графом (`mod-context-hooks`)
+# Базовые скрипты контроля Контекстного Графа (`mod-context-hooks`)
 
-Модуль реализует **Контур 2** (авто-инъекция карты графа на старте чата) и **Контур 3** (контроль обязательного обновления `.context/` при изменении файлов проекта) для нативного агента Antigravity.
+> **Статус:** Мигрирован в централизованный реестр PostgreSQL `harness_components` (`ComponentType.SCRIPT`) и диспетчер [`src/core/harness/script_runner.py`](../../../src/core/harness/script_runner.py) внутри **[[mod-python-core]]**.
 
-## Состав модуля (1 скрипт = 1 действие)
-1. **`inject_context_map.py`** (`SessionStart` / `PreInvocation`): читает `.context/index.md` и впрыскивает карту в чат через `injectSteps` (а если файл отсутствует или не читается — отправляет `build_warning_response`, обязывая агента предупредить пользователя на его языке).
-2. **`track_file_changes.py`** (`PostToolUse` для `write_file|edit_file`): отслеживает модификацию файлов проекта и `.context/`, сохраняя флаги сессии в `/tmp/mcp-coop-session-<id>.json`.
-3. **`enforce_context_sync.py`** (`Stop`): блокирует завершение хода (`decision: "continue"`), если файлы проекта были изменены, а `.context/` не синхронизирован.
+Модуль определял прототипные Python-скрипты **Контура 2** (авто-инъекция карты `.context/index.md` на старте сессии) и **Контура 3** (контроль обязательного обновления `.context/` при модификации исходного кода проекта).
+
+## Текущее расположение и исполнение (внутри Docker Core)
+Все 3 скрипта хранятся как независимые записи `component_type = 'script'` в таблице `harness_components` PostgreSQL (см. [`src/core/harness/seed.py`](../../../src/core/harness/seed.py)) и динамически запускаются внутри контейнера `mcp-coop-agentic-factory-core` через `HookScriptDispatcher`:
+1. **`inject-context-map`** (`hook_events: ["session-start"]`, `execution_mode: "always"`): получает содержимое `.context/index.md` и возвращает `system_message` с актуальной картой графа.
+2. **`track-file-changes`** (`hook_events: ["post-tool-use"]`, `execution_mode: "always"`): отслеживает вызовы инструментов модификации файлов (`write_file`, `edit_file` и др.) и обновляет флаги `code_modified`, `context_updated`, `modified_files` в Redis (`session:{conversation_id}:meta`).
+3. **`enforce-context-sync`** (`hook_events: ["stop"]`, `execution_mode: "always"`): проверяет флаги сессии в Redis на событии `stop` и возвращает `action: "continue"`, если код проекта менялся без синхронизации `.context/`.
 
 ## Логи контекста (AI Traces)
-- 2026-10-24: Реализованы и подключены через `.agents/hooks.json` 3 локальных Python-скрипта контроля `.context/`.
-- 2026-10-24: В `inject_context_map.py` и `enforce_context_sync.py` все строковые литералы в коде переведены на английский с защитой от Language Drift (ответ пользователю на его языке), комментарии сохранены на русском.
-- 2026-10-24: Уточнён перехват исключений (`OSError`, `json.JSONDecodeError`, `ValueError` вместо слепого `Exception`) для прохождения строгих проверок `pyright` и `ruff`.
-
+- 2026-10-24: Реализованы 3 прототипных локальных Python-скрипта контроля `.context/`.
+- 2026-10-24: Все строковые литералы переведены на английский с защитой от Language Drift, комментарии сохранены на русском.
+- 2026-10-25: Выполнена полная декомпозиция: все 3 скрипта перенесены в таблицу `harness_components` PostgreSQL (`ComponentType.SCRIPT`) с хранением состояния в Redis (`session:{id}:meta`) и динамическим отбором/исполнением через `HookScriptDispatcher` (`src/core/harness/script_runner.py`).
