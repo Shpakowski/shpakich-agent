@@ -155,6 +155,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("PostgreSQL is unavailable at startup (%s); running in degraded mode", exc)
         try:
             await redis_store.connect()
+            await redis_store.invalidate_rules_cache()
         except Exception as exc:  # noqa: BLE001
             logger.warning("Redis is unavailable at startup (%s); running in degraded mode", exc)
 

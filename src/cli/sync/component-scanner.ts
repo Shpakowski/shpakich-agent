@@ -38,6 +38,7 @@ export {
 };
 
 export const SYSTEM_BOOTSTRAP_SLUGS = [
+  "coop-orchestrator",
   "harness-orchestrator",
   "core-engineering-mentor",
   "block-destructive-commands",

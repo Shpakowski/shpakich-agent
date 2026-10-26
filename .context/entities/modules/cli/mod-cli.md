@@ -49,3 +49,4 @@ governed_by:
 
 ## Логи контекста (AI Traces)
 - 2026-10-26: Реализован рантайм-агностичный оркестратор и точка входа хостового CLI (`src/cli/index.ts`, `package.json`, `tsconfig.json`) с универсальным shebang `#!/usr/bin/env node` для прямого исполнения через `npx` (Node.js Type Stripping) и `bunx`, строгой конфигурацией `rewriteRelativeImportExtensions: true`, публичным Barrel API над 10 доменными подпакетами (`Layer 0..4`) и маршрутизацией вызовов `runCli` к контроллерам 9 команд (`init`, `sync`, `harness`, `providers`, `status`, `ui`, `up`, `down`, `hook`).
+- 2026-10-26: В `package.json` актуализирован скрипт `typecheck` (`ruff check src/core tests/unit` без удалённой директории `.agents/hooks`) и пересобран `dist/`.

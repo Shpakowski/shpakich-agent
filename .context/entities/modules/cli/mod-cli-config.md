@@ -31,3 +31,4 @@ governed_by:
 
 ## Логи контекста (AI Traces)
 - 2026-10-26: Сформирован единый `Zero-Hardcode` реестр конфигурации хостового CLI (`src/cli/config/`): декларативные дескрипторы 5 ИИ-агентов (`SUPPORTED_AGENTS`, `AGENT_DISPLAY_NAMES`, `AGENT_CONFIG_HINTS`, маркеры окружения и пути сканирования кастомных правил/скиллов в `agents.ts`), сетевые порты и пути глобального рантайма `~/.mcp-coop-agentic-factory/` с шаблоном `DEFAULT_ENV_TEMPLATE` (`GEMINI_API_KEY` / `ANTIGRAVITY_API_KEY`) и универсальным POSIX-лаунчером `bin/run-hook.sh` (`ports-and-paths.ts`), таймауты HTTP/Docker/stdin и фильтр `SYSTEM_BOOTSTRAP_SLUGS` (`limits-and-timeouts.ts`), а также табличные сигнатуры автоопределения технологического стека (`stack-signatures.ts`).
+- 2026-10-26: В `src/cli/config/ports-and-paths.ts` константа `OFFLINE_ORCHESTRATOR_SLUG` переведена на единый слаг `"coop-orchestrator"`.

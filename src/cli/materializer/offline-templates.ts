@@ -9,7 +9,7 @@ import {
   OFFLINE_ORCHESTRATOR_SLUG,
   resolveMcpEndpointUrl,
 } from "../config/index.ts";
-import { type AgentId, GLOBAL_STACK_TAG } from "../detector/index.ts";
+import { type AgentId } from "../detector/index.ts";
 import {
   FACTORY_HOOK_SIGNATURE,
   type HookEventName,
@@ -20,53 +20,78 @@ export const DEFAULT_OFFLINE_MCP_URL = "http://127.0.0.1:8787/mcp" as const;
 export const DEFAULT_MCP_SERVER_KEY = "mcp-coop-factory" as const;
 export const CODEX_MCP_SERVER_KEY = "mcp_coop_factory" as const;
 export const DEFAULT_HOOK_TIMEOUT_SECONDS = 15 as const;
+export const DEFAULT_PLUGIN_DISPLAY_NAME = "MCP-COOP Agentic Factory" as const;
+export const DEFAULT_PLUGIN_DESCRIPTION =
+  "Adaptive engineering workspace plugin providing project context management, cross-session memory, and automated workflow guardrails." as const;
 
 function buildHookCommand(event: HookEventName, agent: AgentId): string {
   return `"$HOME/${GLOBAL_FACTORY_DIR_NAME}/bin/run-hook.sh" hook ${event} --agent ${agent}`;
 }
 
 /**
- * Генерирует автономный Markdown-файл инженерных правил `Harness²` с активными тегами стека.
+ * Генерирует автономный Markdown-файл универсальных инженерных правил.
  */
 export function buildOfflineRulesMarkdown(
-  stackTags: readonly string[],
+  _stackTags: readonly string[] = [],
 ): string {
-  const normalizedTags =
-    stackTags.length > 0 ? stackTags.join(", ") : GLOBAL_STACK_TAG;
   return [
-    "# MCP-COOP Agentic Factory — Active Engineering Rules (`Harness²` Offline Seed)",
+    "# Universal Engineering Rules",
     "",
-    `> **Compiled Stack Tags:** \`${normalizedTags}\``,
+    "---",
     "",
-    "- Keep `.context/index.md` and `.context/entities/` synchronized with architectural changes.",
-    "- Enforce KISS, DRY, SOLID, YAGNI, and Zero-Hardcode across all modules.",
-    "- Query cross-project memory and the Context Graph via FastMCP tools when Core is online.",
+    "## 1. Deliberate & Incremental Execution",
+    "- Work in small, verifiable iterations (`Plan -> Step -> Review`) rather than dumping large, multi-module changes at once.",
+    "- Before writing code, briefly state **WHAT** is changing and **WHY**; after modifying code, summarize the resulting data flow.",
+    "",
+    "## 2. Engineering Rigor & Anti-Sycophancy",
+    "- Treat user questions (`Why is it done this way?`, `What if we use X?`) as an engineering discussion, **never** as an automatic order to delete and rewrite code.",
+    "- Explain trade-offs first, propose alternatives with a `(Recommended)` option, and modify code only after explicit user confirmation.",
+    "- Verify unfamiliar APIs, schemas, and file paths via context or documentation instead of guessing.",
+    "",
+    "## 3. Code Quality & Language Standard",
+    "- Maintain a Single Source of Truth (`DRY`), clear single responsibility (`SRP`), and `KISS / SOLID / YAGNI`.",
+    "- **Zero-Hardcode**: never scatter magic numbers or raw string literals across modules; extract constants, enums, and typed settings.",
+    "- **Language**: write all code, identifiers, and system literals in **English**; write architectural comments/docstrings (`Why & How`) and chat responses in the **user's language**.",
+    "",
+    "## 4. Operational Safety & Orchestration",
+    "- Never run destructive commands (`rm -rf /`, force-push to main branches, or unconfirmed `git reset --hard`).",
+    "- Apply the `coop-orchestrator` skill for task decomposition, context hygiene, subagent delegation, and verification loops.",
     "",
   ].join("\n");
 }
 
 /**
- * Генерирует автономный бутстрап-скилл `harness-orchestrator` (`SKILL.md`) для навигации
- * по графу `.context/` и инструментам `FastMCP`.
+ * Генерирует автономный бутстрап-скилл `coop-orchestrator` (`SKILL.md`) для оркестрации задач,
+ * гигиены контекста, делегирования субагентам и верификации изменений.
  */
 export function buildOfflineBootstrapSkillMarkdown(
-  stackTags: readonly string[] = [],
+  _stackTags: readonly string[] = [],
 ): string {
-  const normalizedTags =
-    stackTags.length > 0 ? stackTags.join(", ") : GLOBAL_STACK_TAG;
   return [
     "---",
     `name: ${OFFLINE_ORCHESTRATOR_SLUG}`,
-    'description: "Unified bootstrap skill for navigating the MCP-COOP Agentic Factory, querying dynamic skills and error memories, and synchronizing the .context/ knowledge graph."',
+    "description: >-",
+    "  Universal task orchestration, context window hygiene, subagent delegation, and verification loop workflow. Apply when decomposing multi-step tasks, coordinating research or subagents, and verifying code changes.",
     "---",
     "",
-    "# Harness² Bootstrap Orchestrator (Offline Seed)",
+    "# Cooperative Task Orchestrator (`coop-orchestrator`)",
     "",
-    `> **Active Stack Tags:** \`${normalizedTags}\``,
+    "## 1. Task Decomposition & Single-Loop First",
+    "- Break ambiguous or multi-step goals into small, atomic, independently verifiable steps before editing code.",
+    "- Default to a direct single-agent loop for localized tasks; avoid over-engineering workflows when a direct edit and check is sufficient.",
     "",
-    "1. Read `.context/index.md` before running broad filesystem searches.",
-    "2. Keep `.context/entities/` synchronized whenever source files or contracts change.",
-    "3. Use FastMCP tools (`coop_search_memory`, `coop_query_context_graph`, `coop_upsert_context_node`) when the Docker Core is online.",
+    "## 2. Context Hygiene & Subagent Delegation",
+    "- Protect the primary context window from noise and large raw outputs.",
+    "- Spawn subagents only for broad codebase exploration, heavy documentation research, or independent parallel workstreams.",
+    "- Because a subagent has an isolated context, always provide a self-contained brief:",
+    "  1. **Objective**: exact question to answer or artifact to produce.",
+    "  2. **Scope & Constraints**: target directories, files, or boundaries.",
+    "  3. **Expected Output**: concise structured summary with exact file/line references, never raw file dumps.",
+    "",
+    "## 3. Execution-Verification Loop (Evaluator-Optimizer)",
+    "- Never ship code blind: validate every atomic change with targeted typechecks, linters, or unit tests.",
+    "- **Root-Cause First**: when a test or command fails, read the exact error and identify the root cause before making another edit.",
+    "- **Bounded Retries**: never repeat a failing command blindly. If an issue is not resolved after 2–3 reasoned attempts, stop, summarize the findings, and align with the user.",
     "",
   ].join("\n");
 }
@@ -289,14 +314,10 @@ export function buildOfflineFallbackFiles(
         content: `${JSON.stringify(
           {
             name: FACTORY_HOOK_SIGNATURE,
-            displayName: "MCP-COOP Agentic Factory",
+            displayName: DEFAULT_PLUGIN_DISPLAY_NAME,
             version: "0.1.0",
-            description:
-              "Self-evolving Harness² engineering rules, PreToolUse guardrails, and .context/ Graph-as-Code sync.",
+            description: DEFAULT_PLUGIN_DESCRIPTION,
             disabled: false,
-            suggestedPrompts: [
-              "Inspect the .context/ knowledge graph and validate all nodes",
-            ],
           },
           null,
           2,

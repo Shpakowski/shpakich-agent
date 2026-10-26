@@ -54,8 +54,8 @@ MAX_COMPONENT_DOC_CHARS: int = 500
 MAX_CONTEXT_NODE_DOC_CHARS: int = 1500
 SLUG_TOKEN_SPLIT_REGEX: re.Pattern[str] = re.compile(r"[-_]+")
 SYSTEM_BOOTSTRAP_SLUGS: frozenset[str] = frozenset({
-    "harness-orchestrator", "core-engineering-mentor", "block-destructive-commands",
-    "context-graph-discipline", "inject-context-map", "track-file-changes", "enforce-context-sync",
+    "coop-orchestrator", "harness-orchestrator", "core-engineering-mentor", "block-destructive-commands",
+    "context-graph-discipline", "context-graph-steward", "inject-context-map", "track-file-changes", "enforce-context-sync",
 })
 SELECT_COMPONENT_HASH_SQL: str = "SELECT id, content_hash, version FROM harness_components WHERE slug = $1"
 UPSERT_INGESTED_COMPONENT_SQL: str = (

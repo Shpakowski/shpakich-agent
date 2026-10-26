@@ -9,6 +9,7 @@ import { registerProjectWithCore } from "../core-api/index.ts";
 import { type AgentId, type WorkspaceProfile } from "../detector/index.ts";
 import { syncGlobalFactoryStackFiles } from "../docker/index.ts";
 import {
+  buildOfflineBootstrapSkillMarkdown,
   buildOfflineFallbackFiles,
   buildProfileOverridesPayload,
   ensureContextGraphScaffold,
@@ -94,18 +95,7 @@ export async function syncWorkspaceArtifacts(
           manifest.agent,
           HARNESS_ORCHESTRATOR_SLUG,
         ),
-        content: [
-          "---",
-          `name: ${HARNESS_ORCHESTRATOR_SLUG}`,
-          "description: >-",
-          "  Read, validate, and synchronize .context/ Graph-as-Code knowledge nodes and dynamic Harness² skills.",
-          "---",
-          "",
-          "# Harness² Orchestrator & Context Graph Steward (`harness-orchestrator`)",
-          "",
-          "Keep `.context/index.md` and `.context/entities/` synchronized with repository files.",
-          "",
-        ].join("\n"),
+        content: buildOfflineBootstrapSkillMarkdown(effectiveTags),
         write_strategy: "overwrite",
       });
     }

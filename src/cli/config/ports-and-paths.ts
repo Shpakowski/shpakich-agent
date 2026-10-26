@@ -56,7 +56,7 @@ export const DOCKER_CONTAINER_NAMES = {
   REDIS: "mcp-coop-redis",
 } as const;
 
-export const OFFLINE_ORCHESTRATOR_SLUG = "harness-orchestrator" as const;
+export const OFFLINE_ORCHESTRATOR_SLUG = "coop-orchestrator" as const;
 export const HARNESS_CONSOLIDATION_THRESHOLD_HOURS = 24 as const;
 export const MANIFEST_SCHEMA_VERSION = "1.0.0" as const;
 export const CLI_VERSION = "0.1.0" as const;

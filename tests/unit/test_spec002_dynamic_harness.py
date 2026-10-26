@@ -161,19 +161,19 @@ async def test_contour1_minimal_bootstrap_and_progressive_disclosure() -> None:
     bundle = await compiler.build_canonical_bundle(stack_tags=["bun", "python"])
 
     skill_slugs = {skill.slug for skill in bundle.skills}
-    assert HARNESS_ORCHESTRATOR_SLUG in skill_slugs
-    assert STEWARD_SLUG not in skill_slugs
+    assert skill_slugs == {HARNESS_ORCHESTRATOR_SLUG}
 
     guardrail_slugs = {gr.slug for gr in bundle.guardrails}
     assert DESTRUCTIVE_GUARDRAIL_SLUG in guardrail_slugs
     assert BUN_GUARDRAIL_SLUG in guardrail_slugs
     assert "### Guardrail: Bun Package Manager Enforcement" not in bundle.rules_markdown
+    assert "### Guardrail: Destructive Command Prevention" not in bundle.rules_markdown
 
     forced_bundle = await compiler.build_canonical_bundle(
         stack_tags=["python"],
-        profile_overrides={"enabled_components": [STEWARD_SLUG]},
+        profile_overrides={"enabled_components": [BUN_GUARDRAIL_SLUG]},
     )
-    assert STEWARD_SLUG in {skill.slug for skill in forced_bundle.skills}
+    assert "### Guardrail: Bun Package Manager Enforcement" in forced_bundle.rules_markdown
 
     fake_db = FakeSpec002Database()
     fake_db.pool.rag_rows = [

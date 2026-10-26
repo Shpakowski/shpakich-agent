@@ -523,13 +523,7 @@ class HarnessCompiler:
 
         components, source = await self._load_components(effective_tags, overrides)
 
-        rules_sections: list[str] = [
-            (
-                "# MCP-COOP Agentic Factory — Active Engineering Rules (`Harness²`)\n\n"
-                f"> **Compiled Stack Tags:** `{', '.join(effective_tags)}`  \n"
-                f"> **Stack Hash:** `{stack_hash}`"
-            )
-        ]
+        rules_sections: list[str] = ["# Universal Engineering Rules"]
         guardrails: list[CompiledGuardrail] = []
         script_map: dict[str, dict[str, str]] = {}
 
@@ -698,15 +692,16 @@ class HarnessCompiler:
         return items
 
     def _render_plugin_manifest(self, spec: PluginManifestSpec) -> RenderedFile:
-        """Генерирует манифест плагина Antigravity 2.0 строго со списком из 6 разрешённых ключей."""
+        """Генерирует манифест плагина Antigravity 2.0 со списком разрешённых ключей."""
         payload: dict[str, Any] = {
             "name": spec.name,
             "displayName": spec.display_name,
             "version": self._plugin_version,
             "description": spec.description,
             "disabled": False,
-            "suggestedPrompts": list(spec.suggested_prompts),
         }
+        if spec.suggested_prompts:
+            payload["suggestedPrompts"] = list(spec.suggested_prompts)
         return RenderedFile(
             relative_path=spec.relative_path,
             content=json.dumps(payload, indent=2, ensure_ascii=False) + "\n",

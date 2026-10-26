@@ -36,3 +36,4 @@ governed_by:
 
 ## Логи контекста (AI Traces)
 - 2026-10-26: Реализован хостовый контур двусторонней синхронизации (`src/cli/sync/`): сканирование пользовательских скиллов и правил (`scanCustomWorkspaceComponents` в `component-scanner.ts` с фильтром `Anti-Self-Ingest` по `SYSTEM_BOOTSTRAP_SLUGS` / `manifest.managed_files` и извлечением `stack_tags` из `slug`), клиентский движок 3-Way Hash Sync графа `.context/` с рекурсивным обходом поддиректорий `.context/entities/**` и атомарной записью при `pulled_from_db` / `merged` (`collectWorkspaceContextNodes`, `applyContextSyncResults` в `context-sync.ts`), а также сквозной оркестратор `syncWorkspaceArtifacts` (`sync-orchestrator.ts`) с вызовом `healProjectContext` для агента `antigravity`.
+- 2026-10-26: В `src/cli/sync/component-scanner.ts` и `src/cli/sync/sync-orchestrator.ts` подключён единый бутстрап-скилл `coop-orchestrator` (`buildOfflineBootstrapSkillMarkdown`).

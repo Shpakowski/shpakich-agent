@@ -34,7 +34,12 @@ DEFAULT_COMPONENT_VERSION: int = 1
 DEFAULT_SCRIPT_PRIORITY: int = 10
 DEFAULT_SCRIPT_TIMEOUT_MS: int = 500
 BUN_STACK_TAG: str = "bun"
-HARNESS_ORCHESTRATOR_SLUG: str = "harness-orchestrator"
+HARNESS_ORCHESTRATOR_SLUG: str = "coop-orchestrator"
+LEGACY_SYSTEM_SLUGS: tuple[str, ...] = (
+    "harness-orchestrator",
+    "context-graph-steward",
+    "context-graph-discipline",
+)
 
 
 def compute_component_content_hash(content: str) -> str:
@@ -217,6 +222,11 @@ DESTRUCTIVE_COMMANDS_PATTERN: str = (
 NPM_TO_BUN_PATTERN: str = r"^\s*npm\s+(install|i|add|run|test)\b"
 NPM_TO_BUN_REPLACEMENT: str = r"bun \1"
 
+DELETE_LEGACY_SYSTEM_SLUGS_SQL: str = """
+DELETE FROM harness_components
+WHERE slug = ANY($1::text[])
+"""
+
 INSERT_SEED_COMPONENT_SQL: str = """
 INSERT INTO harness_components (
     slug,
@@ -233,7 +243,15 @@ INSERT INTO harness_components (
     version
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12)
-ON CONFLICT (slug) DO NOTHING
+ON CONFLICT (slug) DO UPDATE SET
+    component_type = EXCLUDED.component_type,
+    scope = EXCLUDED.scope,
+    stack_tags = EXCLUDED.stack_tags,
+    title = EXCLUDED.title,
+    description = EXCLUDED.description,
+    content = EXCLUDED.content,
+    content_hash = EXCLUDED.content_hash,
+    metadata = EXCLUDED.metadata
 """
 
 
@@ -266,39 +284,37 @@ DEFAULT_HARNESS_SEEDS: tuple[HarnessComponentSeed, ...] = (
         component_type=ComponentType.SYSTEM_PROMPT,
         scope=ScopeType.GLOBAL,
         stack_tags=(ScopeType.GLOBAL.value,),
-        title="Core Engineering Mentor & Production Standards",
+        title="Universal Engineering Rules & Thinking Discipline",
         description=(
-            "Enforces Learning-First incremental delivery, English code with Russian "
-            "architectural comments, thoughtful code review discussion, anti-sycophancy, "
-            "and KISS/DRY/SOLID/YAGNI with Zero-Hardcode."
+            "Universal, project-agnostic engineering mindset rules: incremental execution, "
+            "anti-sycophancy code review, KISS/DRY/SOLID/YAGNI with Zero-Hardcode, and operational safety."
         ),
         content=(
-            "## 1. Learning-First Incremental Workflow\n"
-            "- Never dump multiple large modules in a single step. Work in small, logically "
-            "complete iterations (`SPEC.md -> Step-by-Step Plan -> Iteration -> User Code Review`).\n"
-            "- Before writing code, briefly explain **WHAT** component is being built and **WHY** "
-            "this pattern was chosen. After writing code, summarize the data flow.\n\n"
-            "## 2. Language Standard\n"
-            "- **Code (`English Only`)**: all identifiers, string literals, log messages, hook "
-            "reasons, and system messages must be written strictly in English.\n"
-            "- **Comments & Docstrings (`Russian Only — Why & How`)**: write module headers "
-            "(2-4 lines on architectural layer and interactions), docstrings, and inline comments "
-            "in Russian, explaining business contracts and algorithmic mechanics rather than "
-            "self-evident syntax.\n"
-            "- **Chat Language**: always reply in the user's language (Russian), even after "
-            "processing English tool outputs or hook payloads.\n\n"
-            "## 3. Code Review & Anti-Sycophancy\n"
+            "## 1. Deliberate & Incremental Execution\n"
+            "- Work in small, verifiable iterations (`Plan -> Step -> Review`) rather than "
+            "dumping large, multi-module changes at once.\n"
+            "- Before writing code, briefly state **WHAT** is changing and **WHY**; after "
+            "modifying code, summarize the resulting data flow.\n\n"
+            "## 2. Engineering Rigor & Anti-Sycophancy\n"
             "- Treat user questions (`Why is it done this way?`, `What if we use X?`) as an "
             "engineering discussion, **never** as an automatic order to delete and rewrite code.\n"
-            "- Explain trade-offs first and modify code only after explicit user confirmation.\n"
-            "- Challenge suboptimal assumptions with reasoned counter-arguments, propose "
-            "alternatives with a clear `(Recommended)` option, and verify unfamiliar APIs "
-            "via research instead of guessing.\n\n"
-            "## 4. Production-Grade Standards (KISS, DRY, SOLID, YAGNI, Zero-Hardcode)\n"
-            "- Maintain a Single Source of Truth (`DRY`) and clear single responsibility (`SRP`).\n"
-            "- **Zero-Hardcode Policy**: never scatter magic numbers or raw string literals across "
-            "modules. Extract all statuses, agent identifiers, key prefixes, TTLs, and limits "
-            "into strict `StrEnum` / `as const` types, top-level constants, or typed settings."
+            "- Explain trade-offs first, propose alternatives with a `(Recommended)` option, "
+            "and modify code only after explicit user confirmation.\n"
+            "- Verify unfamiliar APIs, schemas, and file paths via context or documentation "
+            "instead of guessing.\n\n"
+            "## 3. Code Quality & Language Standard\n"
+            "- Maintain a Single Source of Truth (`DRY`), clear single responsibility (`SRP`), "
+            "and `KISS / SOLID / YAGNI`.\n"
+            "- **Zero-Hardcode**: never scatter magic numbers or raw string literals across "
+            "modules; extract constants, enums, and typed settings.\n"
+            "- **Language**: write all code, identifiers, and system literals in **English**; "
+            "write architectural comments/docstrings (`Why & How`) and chat responses in the "
+            "**user's language**.\n\n"
+            "## 4. Operational Safety & Orchestration\n"
+            "- Never run destructive commands (`rm -rf /`, force-push to main branches, or "
+            "unconfirmed `git reset --hard`).\n"
+            "- Apply the `coop-orchestrator` skill for task decomposition, context hygiene, "
+            "subagent delegation, and verification loops."
         ),
         metadata={
             "execution_mode": ScriptExecutionMode.ALWAYS.value,
@@ -324,7 +340,7 @@ DEFAULT_HARNESS_SEEDS: tuple[HarnessComponentSeed, ...] = (
             "action": GuardrailAction.DENY.value,
             "matcher": SHELL_TOOL_MATCHER,
             "pattern": DESTRUCTIVE_COMMANDS_PATTERN,
-            "execution_mode": ScriptExecutionMode.ALWAYS.value,
+            "execution_mode": ScriptExecutionMode.SEMANTIC.value,
         },
     ),
     HarnessComponentSeed(
@@ -352,108 +368,43 @@ DEFAULT_HARNESS_SEEDS: tuple[HarnessComponentSeed, ...] = (
         },
     ),
     HarnessComponentSeed(
-        slug="context-graph-discipline",
-        component_type=ComponentType.TOOL_GUIDANCE,
-        scope=ScopeType.GLOBAL,
-        stack_tags=(ScopeType.GLOBAL.value,),
-        title="Context Graph (.context/) Exploration & Sync Discipline",
-        description=(
-            "Tool and workflow guidance for navigating .context/index.md and maintaining "
-            "Graph-as-Code integrity before finishing a turn."
-        ),
-        content=(
-            "### Tool Guidance: `.context/` Graph-as-Code Discipline\n"
-            "1. **Start from the Map**: read `.context/index.md` at the beginning of a session "
-            "to locate relevant `Module`, `Contract`, and `Decision` nodes before running broad "
-            "filesystem searches.\n"
-            "2. **No Phantom Nodes**: never register a file in `.context/entities/` until that "
-            "file physically exists on disk.\n"
-            "3. **Atomic Turn Synchronization**: whenever you create, rename, or modify project "
-            "source files or architectural contracts, update the corresponding node in "
-            "`.context/entities/`, append an entry under `## Логи контекста (AI Traces)`, and "
-            "refresh `.context/index.md` before ending your response."
-        ),
-        metadata={
-            "execution_mode": ScriptExecutionMode.ALWAYS.value,
-        },
-    ),
-    HarnessComponentSeed(
         slug=HARNESS_ORCHESTRATOR_SLUG,
         component_type=ComponentType.SKILL,
         scope=ScopeType.GLOBAL,
         stack_tags=(ScopeType.GLOBAL.value,),
-        title="Harness² Dynamic Knowledge & Context Graph Orchestrator",
+        title="Cooperative Task Orchestrator",
         description=(
-            "Unified bootstrap skill for navigating the MCP-COOP Agentic Factory, "
-            "querying dynamic skills and error memories, proposing Harness² rules/skills, "
-            "and synchronizing the .context/ knowledge graph."
+            "Universal task orchestration, context window hygiene, subagent delegation, "
+            "and verification loop workflow. Apply when decomposing multi-step tasks, "
+            "coordinating research or subagents, and verifying code changes."
         ),
         content=(
-            "# Harness² Dynamic Orchestrator (`harness-orchestrator`)\n\n"
-            "This workspace is connected to the global **MCP-COOP Agentic Factory** (`PostgreSQL 18 + pgvector + Redis 7`).\n"
-            "To keep the workspace clean and maximize LLM Prompt Caching, only invariant bootstrap rules and this "
-            "orchestrator skill are materialized on disk.\n\n"
-            "## 1. Two-Stage Progressive Disclosure (`PreInvocation` Hook RAG)\n"
-            "- Domain-specific engineering rules (`system_prompt`, `tool_guidance`) and specialized skills (`skill`) "
-            "are stored in PostgreSQL with `execution_mode = 'semantic'`.\n"
-            "- On every `PreInvocation` hook, the factory computes hybrid vector + lexical relevance against your active task:\n"
-            "  - **Top-3 semantic rules** (`relevance >= 0.25`) are injected automatically into `[Dynamic Harness² Rules]`.\n"
-            "  - **Top-2 matching skills**: full `SKILL.md` blueprints are injected when `relevance >= 0.45` "
-            "(`[Active Skill Blueprint: <slug>]`), or a 1-line index hint when `0.22 <= relevance < 0.45` "
-            "(`[Available Skill Hint]`).\n\n"
-            "## 2. Core MCP Tools (`http://127.0.0.1:8787/mcp`)\n"
-            "- **`coop_search_memory`**: search cross-project error solutions, architectural patterns, and `/compact` summaries.\n"
-            "- **`coop_learn_memory`**: record a verified root cause and fix after resolving a non-trivial bug or tool failure.\n"
-            "- **`coop_propose_harness_edit`**: propose a new rule (`system_prompt`, `tool_guidance`) or `guardrail` into the `Propose -> Probe -> Compose` loop.\n"
-            "- **`coop_publish_skill`**: publish a reusable modular skill (`SKILL.md` + optional companion scripts) into the global catalog.\n"
-            "- **`coop_query_context_graph`** & **`coop_upsert_context_node`**: query and atomically update `.context/` Graph-as-Code nodes (`Module`, `Contract`, `Decision`) with write-through to PostgreSQL.\n\n"
-            "## 3. `.context/` Synchronization Protocol\n"
-            "1. Read `.context/index.md` first to locate relevant `Module`, `Contract`, and `Decision` nodes.\n"
-            "2. Whenever project source files or contracts change, update the matching node in `.context/entities/`, "
-            "append an entry to `## Логи контекста (AI Traces)`, and refresh `.context/index.md` before finishing."
+            "# Cooperative Task Orchestrator (`coop-orchestrator`)\n\n"
+            "## 1. Task Decomposition & Single-Loop First\n"
+            "- Break ambiguous or multi-step goals into small, atomic, independently "
+            "verifiable steps before editing code.\n"
+            "- Default to a direct single-agent loop for localized tasks; avoid over-engineering "
+            "workflows when a direct edit and check is sufficient.\n\n"
+            "## 2. Context Hygiene & Subagent Delegation\n"
+            "- Protect the primary context window from noise and large raw outputs.\n"
+            "- Spawn subagents only for broad codebase exploration, heavy documentation "
+            "research, or independent parallel workstreams.\n"
+            "- Because a subagent has an isolated context, always provide a self-contained brief:\n"
+            "  1. **Objective**: exact question to answer or artifact to produce.\n"
+            "  2. **Scope & Constraints**: target directories, files, or boundaries.\n"
+            "  3. **Expected Output**: concise structured summary with exact file/line "
+            "references, never raw file dumps.\n\n"
+            "## 3. Execution-Verification Loop (Evaluator-Optimizer)\n"
+            "- Never ship code blind: validate every atomic change with targeted typechecks, "
+            "linters, or unit tests.\n"
+            "- **Root-Cause First**: when a test or command fails, read the exact error and "
+            "identify the root cause before making another edit.\n"
+            "- **Bounded Retries**: never repeat a failing command blindly. If an issue is not "
+            "resolved after 2–3 reasoned attempts, stop, summarize the findings, and align "
+            "with the user."
         ),
         metadata={
             "execution_mode": ScriptExecutionMode.ALWAYS.value,
-        },
-    ),
-    HarnessComponentSeed(
-        slug="context-graph-steward",
-        component_type=ComponentType.SKILL,
-        scope=ScopeType.GLOBAL,
-        stack_tags=(ScopeType.GLOBAL.value,),
-        title="Context Graph Steward",
-        description=(
-            "Read, validate, and synchronize the project's .context/ Graph-as-Code knowledge "
-            "nodes (Module, Contract, Decision) and AI Traces whenever source files or "
-            "architectural contracts change."
-        ),
-        content=(
-            "# Context Graph Steward (`context-graph-steward`)\n\n"
-            "Use this skill whenever you need to inspect, validate, or update the repository's "
-            "local `.context/` knowledge graph.\n\n"
-            "## 1. Entity Classes (`.context/schema.md`)\n"
-            "- **`Module`** (`.context/entities/modules/mod-*.md`): cohesive code subsystem mapped "
-            "to real repository paths in `files`.\n"
-            "- **`Contract`** (`.context/entities/contracts/cnt-*.md`): API, MCP, DDL, or JSON-RPC "
-            "interface specification.\n"
-            "- **`Decision`** (`.context/entities/decisions/dec-*.md`): Architectural Decision "
-            "Record (ADR) capturing trade-offs and invariants.\n\n"
-            "## 2. Directed Edge Types (`nx.DiGraph`)\n"
-            "- `depends_on`: runtime or structural dependency on another node.\n"
-            "- `implements`: module realizes a formal `Contract`.\n"
-            "- `governed_by`: node obeys an architectural `Decision`.\n"
-            "- `references`: inline `[[node-id]]` wiki-link inside the Markdown body.\n\n"
-            "## 3. Synchronization Workflow\n"
-            "1. Verify that every path listed in frontmatter `files:` exists on disk "
-            "(**No Phantom Nodes**) and every `[[wiki-link]]` resolves to an existing node ID "
-            "(**No Broken Links**).\n"
-            "2. Update the affected `.context/entities/<folder>/<id>.md` file and record a "
-            "dated entry in `## Логи контекста (AI Traces)`.\n"
-            "3. Update `.context/index.md` (`updated_at` and node summary if files changed) so "
-            "the `Stop` hook (`enforce-context-sync`) passes cleanly."
-        ),
-        metadata={
-            "execution_mode": ScriptExecutionMode.SEMANTIC.value,
         },
     ),
     HarnessComponentSeed(
@@ -582,6 +533,7 @@ async def seed_default_components(db: PostgresDatabase) -> int:
 
     inserted_count = 0
     async with db.pool.acquire() as conn, conn.transaction():
+        await conn.execute(DELETE_LEGACY_SYSTEM_SLUGS_SQL, list(LEGACY_SYSTEM_SLUGS))
         for seed in DEFAULT_HARNESS_SEEDS:
             command_tag: str = await conn.execute(
                 INSERT_SEED_COMPONENT_SQL,

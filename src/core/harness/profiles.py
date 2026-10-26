@@ -22,6 +22,11 @@ from src.core.enums import (
 )
 
 FACTORY_PLUGIN_ID: str = "mcp-coop-agentic-factory"
+DEFAULT_PLUGIN_DISPLAY_NAME: str = "MCP-COOP Agentic Factory"
+DEFAULT_PLUGIN_DESCRIPTION: str = (
+    "Adaptive engineering workspace plugin providing project context "
+    "management, cross-session memory, and automated workflow guardrails."
+)
 DEFAULT_MCP_SERVER_KEY: str = "mcp-coop-factory"
 CODEX_MCP_SERVER_KEY: str = "mcp_coop_factory"
 DEFAULT_RULES_GLOB: str = "*"
@@ -127,15 +132,8 @@ AGENT_PROFILES: dict[AgentType, AgentTargetProfile] = {
         plugin_manifest=PluginManifestSpec(
             relative_path=f"{AGY_PLUGIN_ROOT}/plugin.json",
             name=FACTORY_PLUGIN_ID,
-            display_name="MCP-COOP Agentic Factory",
-            description=(
-                "Self-evolving Harness² engineering rules, PreToolUse guardrails, "
-                "cross-project memory, and .context/ Graph-as-Code synchronization."
-            ),
-            suggested_prompts=(
-                "Inspect the .context/ knowledge graph and validate all nodes",
-                "Search cross-project memory for similar error symptoms",
-            ),
+            display_name=DEFAULT_PLUGIN_DISPLAY_NAME,
+            description=DEFAULT_PLUGIN_DESCRIPTION,
             write_strategy=FileWriteStrategy.OVERWRITE,
         ),
         rules=RulesTargetSpec(
@@ -342,6 +340,8 @@ __all__ = [
     "CODEX_MCP_SERVER_KEY",
     "DEFAULT_HOOK_TIMEOUT_SECONDS",
     "DEFAULT_MCP_SERVER_KEY",
+    "DEFAULT_PLUGIN_DESCRIPTION",
+    "DEFAULT_PLUGIN_DISPLAY_NAME",
     "DEFAULT_RULES_GLOB",
     "DEFAULT_SCRIPTS_SUBDIR",
     "DEFAULT_SKILL_FILENAME",

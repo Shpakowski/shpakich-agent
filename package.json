@@ -15,7 +15,7 @@
     "dev": "node src/cli/index.ts",
     "build": "tsc",
     "start": "node ./dist/index.js",
-    "typecheck": "tsc --noEmit && .venv/bin/pyright && .venv/bin/ruff check src/core .agents/hooks"
+    "typecheck": "tsc --noEmit && .venv/bin/pyright && .venv/bin/ruff check src/core tests/unit"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
