@@ -1,5 +1,5 @@
 /**
- * Слой 1 (Host CLI Materializer): хранилище и нормализатор пер-проектного манифеста `Harness²`.
+ * Слой 1 (Host CLI Materializer): хранилище и нормализатор пер-проектного манифеста `Harness`.
  * Отвечает за структуру `ProjectHarnessManifest`, чтение/очистку `.context/harness.json`, гидратацию
  * оверрайдов из PostgreSQL (`Core API`) и вычисление результирующего набора тегов стека.
  */

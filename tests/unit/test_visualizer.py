@@ -1,4 +1,4 @@
-"""Комплексный набор юнит- и интеграционных тестов интерактивного визуализатора графа RAG и Harness² (SPEC-004).
+"""Комплексный набор юнит- и интеграционных тестов интерактивного визуализатора графа RAG и Harness (SPEC-004).
 
 Проверяет 4 ключевых архитектурных контура:
 1. Автономный режим сборщика топологии (Offline Fallback) с локальной онтологией .context/ и сидами DEFAULT_HARNESS_SEEDS.
@@ -68,7 +68,7 @@ FAKE_PROJECT_ID: str = "proj-00000000-0000-0000-0000-000000000001"
 FAKE_WORKSPACE_PATH: str = "/fake/visualizer/workspace"
 FAKE_PROJECT_NAME: str = "Visualizer Mock Project"
 
-# Именованные константы компонентов Harness²
+# Именованные константы компонентов Harness
 FAKE_SCRIPT_SLUG: str = "pre-tool-guard-script"
 FAKE_SCRIPT_TITLE: str = "Pre Tool Guard Script"
 FAKE_SCRIPT_CONTENT: str = "echo checking guard script"
@@ -181,7 +181,7 @@ class FakeConnection:
         if query == SEARCH_KNOWLEDGE_HYBRID_SQL or "candidates" in query:
             return [dict(r) for r in self.search_rows]
 
-        # 4. Запрос компонентов каталога Harness²
+        # 4. Запрос компонентов каталога Harness
         if query == SELECT_HARNESS_COMPONENTS_SQL or (
             "FROM harness_components" in query and "candidates" not in query
         ):
@@ -657,7 +657,7 @@ def test_fastapi_visualizer_endpoints() -> None:
 
 
 def test_resolve_component_group_id_mappings() -> None:
-    """Проверяет детерминированное сопоставление типов компонентов Harness² с родительскими группами."""
+    """Проверяет детерминированное сопоставление типов компонентов Harness с родительскими группами."""
     assert resolve_component_group_id(ComponentType.SKILL.value) == GROUP_SKILLS_ID
     assert resolve_component_group_id(ComponentType.SCRIPT.value) == GROUP_SCRIPTS_ID
     assert resolve_component_group_id(ComponentType.GUARDRAIL.value) == GROUP_GUARDRAILS_ID

@@ -1,7 +1,7 @@
 """Асинхронный слой доступа к PostgreSQL 18 + pgvector + pg_trgm (Layer 2: Storage Engine).
 
 Отвечает за управление нативным пулом соединений asyncpg, идемпотентную инициализацию
-DDL-схемы (проекты, компоненты Harness², гибридная векторно-полнотекстовая память, аудит хуков,
+DDL-схемы (проекты, компоненты Harness, гибридная векторно-полнотекстовая память, аудит хуков,
 рантайм-реестр провайдеров Tier 2 и архив сводок сжатия контекста SPEC-003) и диагностику БД.
 """
 
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS profile_overrides JSONB NOT NULL DEFAULT '{{}}'::jsonb;
 
--- 2. Компоненты харнеса (Harness²: System Prompt, Guardrails, Skills, Tool Guidance, Scripts, Subagents)
+-- 2. Компоненты харнеса (Harness: System Prompt, Guardrails, Skills, Tool Guidance, Scripts, Subagents)
 CREATE TABLE IF NOT EXISTS harness_components (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     slug TEXT UNIQUE NOT NULL,
@@ -69,7 +69,7 @@ CREATE INDEX IF NOT EXISTS idx_components_tsv ON harness_components USING GIN (s
 CREATE INDEX IF NOT EXISTS idx_components_desc_trgm ON harness_components USING GIN (description gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_components_embedding_hnsw ON harness_components USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
 
--- 3. Сквозная база опыта и решений ошибок (Memory компонент из Harness²)
+-- 3. Сквозная база опыта и решений ошибок (Memory компонент из Harness)
 CREATE TABLE IF NOT EXISTS memories (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,

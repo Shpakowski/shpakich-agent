@@ -2,7 +2,7 @@
 
 Предоставляет диагностический эндпоинт `GET /health`, фоновое самоисцеление графа
 `POST /api/context/heal`, регистрацию и компиляцию проектов `POST /api/projects/register`,
-управление каталогом компонентов `Harness²` (`/api/harness/components`), горячее управление
+управление каталогом компонентов `Harness` (`/api/harness/components`), горячее управление
 пулом провайдеров Tier 2 (`/api/providers`) и прямую точку оценки решений `POST /api/decisions/evaluate`.
 """
 
@@ -155,7 +155,7 @@ async def list_harness_components(
     workspace_path: str = "",
     stack_tags: str = "",
 ) -> dict[str, Any]:
-    """Возвращает каталог всех компонентов `Harness²` с вычисленным статусом для стека/проекта."""
+    """Возвращает каталог всех компонентов `Harness` с вычисленным статусом для стека/проекта."""
     active_settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
     db: PostgresDatabase | None = getattr(request.app.state, "db", None)
     redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
@@ -193,7 +193,7 @@ async def patch_harness_component(
     payload: ComponentPatchRequest,
     request: Request,
 ) -> dict[str, Any]:
-    """Обновляет глобальный статус компонента `Harness²` в PostgreSQL и сбрасывает кэш правил в Redis."""
+    """Обновляет глобальный статус компонента `Harness` в PostgreSQL и сбрасывает кэш правил в Redis."""
     if payload.status is not None:
         target_status = payload.status
     elif payload.enabled is True:

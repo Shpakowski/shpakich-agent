@@ -69,9 +69,9 @@ governed_by:
   * **Действие:** Сохраняет проект в таблицу `projects` (`UPSERT_PROJECT_SQL`) и компилирует целевой артефакт адаптера через `HarnessCompiler.compile_for_project()`.
   * **Ответ (`200 OK`):** `{"status": "ok", "project_id": str | null, "persisted_in_db": bool, "artifact": RenderedHarnessArtifact}` (содержит массив `files: [{path, content, strategy, executable}]` для материализации на диск).
 
-### 2.2. Управление глобальным каталогом компонентов `Harness²`
+### 2.2. Управление глобальным каталогом компонентов `Harness`
 * **`GET /api/harness/components?workspace_path=...&stack_tags=...`**
-  * **Назначение:** Возвращает полный список компонентов `Harness²` с вычисленным эффективным состоянием (`ComponentEffectiveState`: `active_auto`, `active_forced`, `inactive_stack_mismatch`, `disabled_by_project`, `disabled_globally`) для TUI-менеджера `mcp-coop-agentic-factory harness`.
+  * **Назначение:** Возвращает полный список компонентов `Harness` с вычисленным эффективным состоянием (`ComponentEffectiveState`: `active_auto`, `active_forced`, `inactive_stack_mismatch`, `disabled_by_project`, `disabled_globally`) для TUI-менеджера `mcp-coop-agentic-factory harness`.
   * **Ответ (`200 OK`):** `{"status": "ok", "count": int, "stack_tags": list[str], "profile_overrides": dict, "components": list[dict]}`.
 * **`PATCH /api/harness/components/{slug}`**
   * **Тело запроса (`ComponentPatchRequest`):** `{"status": ComponentStatus | null, "enabled": bool | null}`.
@@ -110,7 +110,7 @@ governed_by:
 ### 2.6. Шлюз жизненных хуков (`/api/hooks/*`)
 Пять эндпоинтов перехвата (`POST /api/hooks/session-start`, `POST /api/hooks/pre-tool-use`, `POST /api/hooks/post-tool-use`, `POST /api/hooks/pre-invocation`, `POST /api/hooks/stop`) детально специфицированы в контракте [[contract-lifecycle-hooks]].
 
-### 2.7. Интерактивный визуализатор графа RAG и топологии Harness² (`src/core/api/routes_visualizer.py`)
+### 2.7. Интерактивный визуализатор графа RAG и топологии Harness (`src/core/api/routes_visualizer.py`)
 * **`GET /ui`**
   * **Назначение:** Отдача монолитного Cytoscape.js SPA-дашборда в тёмной дизайн-системе (`HTMLResponse`).
 * **`GET /api/visualizer/graph`**

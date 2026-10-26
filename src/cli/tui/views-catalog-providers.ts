@@ -1,6 +1,6 @@
 /**
  * Слой 1 (Host CLI TUI Presentation): карточки и таблицы команд `harness` и `providers`.
- * Отображает каталог компонентов `Harness²` с бейджами эффективного состояния, отчёт серверной
+ * Отображает каталог компонентов `Harness` с бейджами эффективного состояния, отчёт серверной
  * дедупликации `HarnessConsolidator`, таблицу провайдеров Tier 2 с индикацией Circuit Breaker и быстрые мутации.
  */
 
@@ -66,7 +66,7 @@ export interface QuickMutationViewModel {
 }
 
 /**
- * Отображает панель каталога компонентов `Harness²` (`harness list`) с визуальными бейджами
+ * Отображает панель каталога компонентов `Harness` (`harness list`) с визуальными бейджами
  * эффективного состояния (`● auto`, `● +forced`, `○ -muted (project)`, `○ -disabled (global)`, `· other stack`)
  * и списком активных/отключённых хуков жизненного цикла.
  */
@@ -74,7 +74,7 @@ export function renderHarnessCatalogView(
   params: HarnessCatalogViewModel,
 ): void {
   const { version, runtime, items, manifest, showAll } = params;
-  intro(renderCliBanner(version, runtime, "Harness² Component Catalog"));
+  intro(renderCliBanner(version, runtime, "Harness Component Catalog"));
 
   const visibleItems = showAll
     ? items
@@ -147,8 +147,8 @@ export function renderHarnessCatalogView(
 export function renderConsolidationView(params: ConsolidationViewModel): void {
   const { version, runtime, report } = params;
   const title = report.dry_run
-    ? "Harness² Consolidation (Dry Run)"
-    : "Harness² Consolidation";
+    ? "Harness Consolidation (Dry Run)"
+    : "Harness Consolidation";
   intro(renderCliBanner(version, runtime, title));
 
   if (report.clusters.length === 0) {

@@ -1,7 +1,7 @@
 # ==============================================================================
 # Слой 2 (Глобальное Docker-ядро): Оркестрация контейнеров (docker-compose.yml)
 # Разворачивает изолированный стек из 3 сервисов:
-# 1. mcp-coop-agentic-factory-core     — ASGI-сервер (FastAPI + FastMCP + DecisionEngine + Harness²)
+# 1. mcp-coop-agentic-factory-core     — ASGI-сервер (FastAPI + FastMCP + DecisionEngine + Harness)
 # 2. mcp-coop-agentic-factory-postgres — PostgreSQL 18 + pgvector + pg_trgm (память и компоненты)
 # 3. mcp-coop-agentic-factory-redis    — Redis 7 Alpine (оперативный кэш сессий и анти-зацикливание)
 # ==============================================================================
@@ -64,7 +64,7 @@ services:
       - mcp-coop-agentic-factory-net
 
   # ----------------------------------------------------------------------------
-  # 2. Персистентное хранилище знаний, компонентов Harness² и векторов (PostgreSQL 18 + pgvector)
+  # 2. Персистентное хранилище знаний, компонентов Harness и векторов (PostgreSQL 18 + pgvector)
   # ----------------------------------------------------------------------------
   mcp-coop-agentic-factory-postgres:
     image: pgvector/pgvector:pg18

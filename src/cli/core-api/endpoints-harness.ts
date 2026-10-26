@@ -1,5 +1,5 @@
 /**
- * Слой 1 (Host CLI Core API Adapter): клиентские эндпоинты управления каталогом `Harness²`
+ * Слой 1 (Host CLI Core API Adapter): клиентские эндпоинты управления каталогом `Harness`
  * (`GET/PATCH /api/harness/components`) и семантической консолидации (`POST /api/harness/consolidate`).
  * Обеспечивает типизированное получение эффективного состояния компонентов, правил детекции стека
  * и статуса заполненности скиллов (`has_content` / `is_empty_stub`) из PostgreSQL.
@@ -91,7 +91,7 @@ export interface ConsolidateHarnessRequestPayload {
 }
 
 /**
- * Запрашивает каталог всех компонентов `Harness²` (`GET /api/harness/components`)
+ * Запрашивает каталог всех компонентов `Harness` (`GET /api/harness/components`)
  * с вычисленным статусом (`effective_state`), правилами детекторов и реестром агентов.
  */
 export async function fetchHarnessCatalog(
@@ -166,7 +166,7 @@ export async function fetchHarnessComponents(
 }
 
 /**
- * Переключает глобальный статус компонента `Harness²` (`PATCH /api/harness/components/{slug}`).
+ * Переключает глобальный статус компонента `Harness` (`PATCH /api/harness/components/{slug}`).
  */
 export async function patchGlobalComponentStatus(
   slug: string,

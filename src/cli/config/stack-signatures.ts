@@ -43,7 +43,7 @@ export interface SeedComponentDetectors {
 }
 
 /**
- * Запись компонента `Harness²` в `seeds/harness-seed.json`.
+ * Запись компонента `Harness` в `seeds/harness-seed.json`.
  */
 export interface SeedComponentEntry {
   readonly slug: string;

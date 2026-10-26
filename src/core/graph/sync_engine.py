@@ -1,4 +1,4 @@
-"""Движок двусторонней синхронизации компонентов `Harness²` и узлов `.context/` (`WorkspaceSyncEngine`, Layer 2).
+"""Движок двусторонней синхронизации компонентов `Harness` и узлов `.context/` (`WorkspaceSyncEngine`, Layer 2).
 
 Реализует Контур 2 (инжест пользовательских скиллов и правил с `Content-Hash Gate` и проверкой
 `DecisionDomain.HARNESS_PROBE`) и Контур 3 (алгоритм 3-Way Hash Sync `(local_hash, db_hash, base_hash)`

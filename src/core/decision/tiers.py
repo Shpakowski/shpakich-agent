@@ -432,7 +432,7 @@ class LocalDeterministicTier:
 
     @staticmethod
     def _evaluate_harness_probe(request: DecisionRequest) -> TierStepResult:
-        """Оценивает полноту кандидата `Harness²` перед эскалацией в `SystemOneDecisionTier`."""
+        """Оценивает полноту кандидата `Harness` перед эскалацией в `SystemOneDecisionTier`."""
         content = str(request.payload.get("content", "")).strip()
         has_substance = len(content) >= HARNESS_PROBE_MIN_CONTENT_CHARS
         return TierStepResult(

@@ -99,7 +99,7 @@ export function resolveCoreBaseUrl(overrideUrl?: string): string {
 }
 
 /**
- * Формирует полный URL интерактивного веб-визуализатора топологии `Harness²` и графа `.context/`.
+ * Формирует полный URL интерактивного веб-визуализатора топологии `Harness` и графа `.context/`.
  */
 export function resolveUiDashboardUrl(baseUrl?: string): string {
   return `${resolveCoreBaseUrl(baseUrl)}/ui`;

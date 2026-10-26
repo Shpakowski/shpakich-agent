@@ -53,7 +53,7 @@ TOOL_ANNOTATIONS: dict[MCPToolName, dict[str, Any]] = {
         "openWorldHint": False,
     },
     MCPToolName.PROPOSE_HARNESS_EDIT: {
-        "title": "Propose & Probe Harness² Rule/Guardrail",
+        "title": "Propose & Probe Harness Rule/Guardrail",
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
@@ -104,10 +104,10 @@ TOOL_DESCRIPTIONS: dict[MCPToolName, str] = {
         "Store a verified error symptom and solution into long-term PostgreSQL memory with EmbeddingGemma 2 vectorization."
     ),
     MCPToolName.PROPOSE_HARNESS_EDIT: (
-        "Propose and evaluate a Harness² component (system_prompt, guardrail, tool_guidance, subagent, skill) via Propose -> Probe -> Compose."
+        "Propose and evaluate a Harness component (system_prompt, guardrail, tool_guidance, subagent, skill) via Propose -> Probe -> Compose."
     ),
     MCPToolName.PUBLISH_SKILL: (
-        "Publish a reusable modular skill (SKILL.md + optional helper scripts) into the Harness² registry."
+        "Publish a reusable modular skill (SKILL.md + optional helper scripts) into the Harness registry."
     ),
     MCPToolName.QUERY_CONTEXT_GRAPH: (
         "Query the local .context/ NetworkX directed graph around a target node_id up to radius depth."

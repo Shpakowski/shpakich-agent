@@ -1,4 +1,4 @@
-"""Двухступенчатый динамический RAG-отбор правил и скиллов `Harness²` на хуке `PreInvocation` (SPEC-002).
+"""Двухступенчатый динамический RAG-отбор правил и скиллов `Harness` на хуке `PreInvocation` (SPEC-002).
 
 Реализует Progressive Disclosure: в `PreInvocation` вычисляет гибридную векторно-лексическую
 близость (`pgvector` + `tsvector` + `pg_trgm`) к запросу пользователя и формирует `ephemeralMessage`.

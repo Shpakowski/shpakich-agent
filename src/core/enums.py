@@ -1,6 +1,6 @@
 """Единый реестр доменных перечислений ядра фабрики (Layer 2: Domain Enums).
 
-Определяет типы агентов, эволюционирующих компонентов Harness², областей видимости (scope),
+Определяет типы агентов, эволюционирующих компонентов Harness, областей видимости (scope),
 событий жизненных хуков, пространств ключей Redis, сущностей Контекстного Графа (`.context/`),
 целевых форматов компилятора адаптеров (`HarnessCompiler`) и мульти-тирового конвейера `DecisionEngine`.
 Валидация выполняется на уровне Python/Pydantic, что позволяет сохранять в PostgreSQL гибкий тип TEXT
@@ -23,7 +23,7 @@ class AgentType(StrEnum):
 
 
 class ComponentType(StrEnum):
-    """Типы эволюционирующих компонентов в цикле замкнутого обучения Harness²."""
+    """Типы эволюционирующих компонентов в цикле замкнутого обучения Harness."""
 
     SYSTEM_PROMPT = "system_prompt"
     GUARDRAIL = "guardrail"
@@ -62,7 +62,7 @@ class ContextSyncAction(StrEnum):
 
 
 class ComponentEffectiveState(StrEnum):
-    """Результирующее состояние компонента каталога `Harness²` с учётом стека и локальных оверрайдов проекта."""
+    """Результирующее состояние компонента каталога `Harness` с учётом стека и локальных оверрайдов проекта."""
 
     ACTIVE_FORCED = "active_forced"
     DISABLED_PROJECT = "disabled_project"
@@ -312,7 +312,7 @@ class AntigravityAgentRole(StrEnum):
 
 
 class VisualizerNodeKind(StrEnum):
-    """Типы узлов интерактивного графа визуализации RAG и Harness² компонентов."""
+    """Типы узлов интерактивного графа визуализации RAG и Harness компонентов."""
 
     PROJECT = "project"
     STACK_TAG = "stack_tag"

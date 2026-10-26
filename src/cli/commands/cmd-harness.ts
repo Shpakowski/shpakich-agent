@@ -1,6 +1,6 @@
 /**
  * Слой 1 (Host CLI Commands — Harness Slice): обработчик команды `harness`.
- * Управляет каталогом компонентов `Harness²`, локальными и глобальными оверрайдами
+ * Управляет каталогом компонентов `Harness`, локальными и глобальными оверрайдами
  * скиллов/правил/хуков/тегов и консолидацией дублирующихся компонентов в ядре.
  */
 
@@ -88,7 +88,7 @@ export async function handleHarnessCommand(
       dry_run: ctx.dryRun,
     });
     if (!consolidateReport) {
-      throw new Error("Failed to execute Harness² consolidation on Core API.");
+      throw new Error("Failed to execute Harness consolidation on Core API.");
     }
     renderConsolidationView({
       version: CLI_VERSION,
@@ -113,7 +113,7 @@ export async function handleHarnessCommand(
     renderQuickMutationResult(
       CLI_VERSION,
       runtime,
-      "Global Harness² Update",
+      "Global Harness Update",
       `Global component "${targetArg}" ${enableFlag ? "enabled (composed)" : "disabled"} in PostgreSQL.`,
     );
     return;

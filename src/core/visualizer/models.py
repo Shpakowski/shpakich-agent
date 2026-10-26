@@ -1,4 +1,4 @@
-"""Модели данных и неизменяемые DTO интерактивного визуализатора графа RAG и Harness².
+"""Модели данных и неизменяемые DTO интерактивного визуализатора графа RAG и Harness.
 
 Определяет структуры узлов и рёбер Cytoscape.js, контейнеров группировки, агрегатов
 статистики базы данных, журнала недавних изменений и результатов гибридного поиска.
@@ -127,7 +127,7 @@ class VisualizerStatsSummary(VisualizerImmutableModel):
 
 
 class VisualizerGraphSnapshot(VisualizerImmutableModel):
-    """Полный снимок графа знаний и компонентов Harness² для передачи в веб-интерфейс."""
+    """Полный снимок графа знаний и компонентов Harness для передачи в веб-интерфейс."""
 
     status: str = STATUS_OK
     workspace_path: str | None = None

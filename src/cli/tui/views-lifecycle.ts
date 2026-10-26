@@ -158,7 +158,7 @@ export function renderStatusCommand(
   const labelPg = styleText("dim", "PostgreSQL 18 ");
   const labelRedis = styleText("dim", "Redis 7 Store ");
   const labelTier2 = styleText("dim", "Tier 2 Pool   ");
-  const labelHooks = styleText("dim", "Harness² Sync ");
+  const labelHooks = styleText("dim", "Harness Sync ");
 
   const health = resolvedLiveStatus?.health;
   const coreBadge = health
@@ -331,7 +331,7 @@ export function renderDownCommand(
 }
 
 /**
- * Отображает панель команды `ui` для интерактивного RAG & Harness² веб-визуализатора.
+ * Отображает панель команды `ui` для интерактивного RAG & Harness веб-визуализатора.
  * Выводит URL веб-интерфейса, статус доступности Core API и PostgreSQL 18,
  * а также статус автоматического запуска браузера.
  */
@@ -340,7 +340,7 @@ export function renderUiCommand(params: UiCommandViewModel): void {
     renderCliBanner(
       params.version,
       params.runtime,
-      "RAG & Harness² Graph Visualizer",
+      "RAG & Harness Graph Visualizer",
     ),
   );
 
@@ -419,7 +419,7 @@ export function renderHelpScreen(
     `  ${styleText(["bold", "cyan"], "providers")}  Manage Tier 2 Decision API providers (list, add, enable, disable,`,
     `             ${styleText("dim", "priority, remove, reset)")}`,
     `  ${styleText(["bold", "cyan"], "status   ")}  Inspect workspace profile, PostgreSQL 18 Core, Docker & Tier 2 health`,
-    `  ${styleText(["bold", "cyan"], "ui       ")}  Open interactive RAG & Harness² Graph Visualizer in default browser`,
+    `  ${styleText(["bold", "cyan"], "ui       ")}  Open interactive RAG & Harness Graph Visualizer in default browser`,
     `  ${styleText(["bold", "green"], "up       ")}  Start global ~/${GLOBAL_FACTORY_DIR_NAME}/ Docker Compose stack`,
     `  ${styleText(["bold", "yellow"], "down     ")}  Gracefully stop global ~/${GLOBAL_FACTORY_DIR_NAME}/ stack`,
     `  ${styleText("dim", "hook     ")}  Lifecycle hook bridge (session-start, pre-tool-use, post-tool-use, pre-invocation, stop)`,

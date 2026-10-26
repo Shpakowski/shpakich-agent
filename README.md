@@ -32,7 +32,7 @@ flowchart LR
     CLI["1. CLI Инжектор (Bun / Node.js)\ninit | up | down | sync | status | harness | providers"] -->|Генерирует адаптер| Agent["Нативный ИИ-агент\n(Antigravity / Claude / Cursor / Codex / OpenCode)"]
     Agent <-->|Hooks via run-hook.sh + MCP /mcp| Core["2. Docker-ядро (Python 3.12)\nFastAPI + FastMCP (127.0.0.1:8787)"]
     Core <-->|3. Мульти-тировый арбитр| Decision["DecisionEngine + HookScriptDispatcher\nTier 1 (Local/Redis) -> Tier 2 (Provider Pool)"]
-    Core <-->|4. Самообучение и векторный поиск| Harness["Harness² Engine\nPostgreSQL 18 (pgvector + FTS) + Redis 7"]
+    Core <-->|4. Самообучение и векторный поиск| Harness["Harness Engine\nPostgreSQL 18 (pgvector + FTS) + Redis 7"]
 ```
 
 1. **Слой 1 — Dual-Runtime CLI Инжектор (`src/cli/`):** Работает как под **Bun**, так и под **Node.js**. Управляет жизненным циклом глобального Docker-стека, материализует файлы адаптеров и предоставляет тонкий HTTP-мост хуков (`hook_runner.ts`).
@@ -43,7 +43,7 @@ flowchart LR
 3. **Слой 3 — Шина хуков (`HookScriptDispatcher`) и `DecisionEngine` (`src/core/`):**
    * Хуки (`session-start`, `pre-invocation`, `pre-tool-use`, `post-tool-use`, `stop`) работают как чистая шина событий.
    * Исполняемые Python-скрипты (`component_type = 'script'`: `inject-context-map`, `track-file-changes`, `enforce-context-sync` и любые пользовательские скрипты) хранятся в PostgreSQL (`harness_components`) с векторами `embedding vector(768)` и отбираются под конкретный проект и событие через двухступенчатую воронку (`always` + семантический Top-K `pgvector`).
-4. **Слой 4 — Эволюционирующий `Harness²` и `.context/` Graph-as-Code:** Цикл **Propose → Probe → Compose** с разделением знаний на глобальные (`global`) и стековые (`domain`).
+4. **Слой 4 — Эволюционирующий `Harness` и `.context/` Graph-as-Code:** Цикл **Propose → Probe → Compose** с разделением знаний на глобальные (`global`) и стековые (`domain`).
 
 ---
 
@@ -57,7 +57,7 @@ mcp-coop-agentic-factory down                        # Корректно ост
 mcp-coop-agentic-factory sync                        # Синхронизировать файлы проекта с профилем в PostgreSQL
 mcp-coop-agentic-factory status                      # Статус контейнеров, БД, пула провайдеров и стека проекта из БД
 
-# Управление компонентами, хуками и тегами проекта (Harness²)
+# Управление компонентами, хуками и тегами проекта (Harness)
 mcp-coop-agentic-factory harness list [--all] [--type <t>] [--tag <tag>]
 mcp-coop-agentic-factory harness enable <slug> [-g]  # Включить компонент для проекта (или глобально в БД с -g)
 mcp-coop-agentic-factory harness disable <slug> [-g] # Выключить компонент для проекта (или глобально в БД с -g)
@@ -106,7 +106,7 @@ docker exec -it mcp-coop-agentic-factory-redis redis-cli KEYS "*"
 Нативный агент получает доступ к **8 инструментам** внутри контейнера `mcp-coop-agentic-factory-core`:
 1. `coop_search_memory` — гибридный векторно-полнотекстовый поиск (`pgvector` + `tsvector` + `pg_trgm`) решений ошибок и паттернов.
 2. `coop_learn_memory` — сохранение найденного решения нетривиальной ошибки в долгосрочную память `memories`.
-3. `coop_propose_harness_edit` — создание/обновление любого компонента `Harness²` (`system_prompt`, `guardrail`, `skill`, `tool_guidance`, `script`, `subagent`) с автоматической векторизацией.
+3. `coop_propose_harness_edit` — создание/обновление любого компонента `Harness` (`system_prompt`, `guardrail`, `skill`, `tool_guidance`, `script`, `subagent`) с автоматической векторизацией.
 4. `coop_publish_skill` — публикация переиспользуемого навыка (`SKILL.md` + вспомогательные скрипты).
 5. `coop_query_context_graph` — извлечение локального подграфа окрестности узла из `.context/` (`NetworkX DiGraph`).
 6. `coop_upsert_context_node` — атомарное создание/обновление узла графа `.context/entities/` с проверкой инвариантов `No Phantom Nodes` и `No Broken Links`.

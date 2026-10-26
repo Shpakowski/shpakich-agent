@@ -37,7 +37,7 @@ governed_by:
 * `profile_overrides` (`JSONB NOT NULL DEFAULT '{}'::jsonb`) — пер-проектные оверрайды `ProjectHarnessOverrides` (`enabled_components`, `disabled_components`, `disabled_hooks`, `extra_stack_tags`, `excluded_stack_tags`, `mcp_enabled`).
 * `last_synced_at`, `created_at` (`TIMESTAMPTZ DEFAULT NOW()`) — временные метки синхронизации и регистрации.
 
-### 1.2. Таблица `harness_components` (Каталог компонентов `Harness²`)
+### 1.2. Таблица `harness_components` (Каталог компонентов `Harness`)
 Единый реестр редактируемых компонентов окружения агента в цикле эволюции [[adr-002-harness2-evolution-loop]].
 * `id` (`UUID PRIMARY KEY DEFAULT gen_random_uuid()`) — первичный ключ компонента.
 * `slug` (`TEXT UNIQUE NOT NULL`) — уникальный канонический идентификатор компонента (например, `core-engineering-mentor`, `block-destructive-commands`, `enforce-context-sync`).
@@ -144,7 +144,7 @@ governed_by:
 | **1. Short-Term Working Memory** | `session:{conversation_id}:cmd_fails` | `Hash` (`{cmd_hash: count}`) | `86400` сек (24 ч) | Счётчик последовательных падений пары `(tool_name, command)` по 16-символьному SHA-256 дайджесту `compute_command_hash`. Блокирует зацикливание при достижении `max_consecutive_cmd_failures` (`2`). |
 | **2. Short-to-Long Promotion** | `session:{conversation_id}:promotion` | `String` (JSON `MemoryPromotionCandidate`) | `86400` сек (24 ч) | Карточка успешно преодолённого сбоя `{ tool_name, failed_command, error_text, recovery_command, step_idx }`. Создаётся в `mark_error_resolved()` при успешном шаге после ошибки и служит триггером рефлексии на хуке `Stop`. |
 | **3. LangCache Lite** | `cache:decision:{cmd_hash}` | `String` (JSON) | `3600` сек (1 ч, `redis_cache_ttl_seconds`) | Кэш детерминированных и Tier 2 вердиктов `DecisionEngine` для пары `(tool_name, command)`. |
-| **3. LangCache Lite** | `cache:rules:{stack_hash}` | `String` (JSON `CanonicalHarnessBundle`) | `3600` сек (1 ч) | Кэш скомпилированного бандла компонентов `Harness²` по инвариантному к порядку и регистру SHA-256 дайджесту `compute_stack_hash(stack_tags)`. Принудительно сбрасывается через `invalidate_rules_cache()` при мутациях каталога. |
+| **3. LangCache Lite** | `cache:rules:{stack_hash}` | `String` (JSON `CanonicalHarnessBundle`) | `3600` сек (1 ч) | Кэш скомпилированного бандла компонентов `Harness` по инвариантному к порядку и регистру SHA-256 дайджесту `compute_stack_hash(stack_tags)`. Принудительно сбрасывается через `invalidate_rules_cache()` при мутациях каталога. |
 | **4. Tier 2 Circuit Breaker** | `cache:provider_cb:{provider_name}` | `String` (JSON `ProviderCircuitState`) | Динамический `cooldown_seconds` (`60`–`300` сек) | Состояние разомкнутого прерывателя провайдера Tier 2 (`status`: `rate_limited` \| `quota_exhausted` \| `upstream_error`, `reason`, `cooldown_seconds`). Позволяет мгновенно переключаться на следующий провайдер в пуле или локальный Tier 1. |
 
 ---

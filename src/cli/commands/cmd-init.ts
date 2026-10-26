@@ -46,7 +46,7 @@ export async function handleInitCommand(
   });
 
   progress.update(
-    "[2/3] Fetching live Harness² catalog & detector signatures from PostgreSQL...",
+    "[2/3] Fetching live Harness catalog & detector signatures from PostgreSQL...",
   );
   const catalogRes = await fetchHarnessComponents({
     workspacePath: process.cwd(),
@@ -103,7 +103,7 @@ export async function handleInitCommand(
 
   const compileProgress = createPipelineProgress();
   compileProgress.start(
-    "[3/3] Compiling Harness² bundle & materializing workspace files...",
+    "[3/3] Compiling Harness bundle & materializing workspace files...",
   );
   const { report, persistedInDb } = await syncWorkspaceArtifacts(
     confirmedProfile,

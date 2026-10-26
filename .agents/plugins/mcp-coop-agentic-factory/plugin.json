@@ -1,0 +1,7 @@
+{
+  "name": "mcp-coop-agentic-factory",
+  "displayName": "MCP-COOP Agentic Factory",
+  "version": "0.1.0",
+  "description": "Adaptive engineering workspace plugin providing project context management, cross-session memory, and automated workflow guardrails.",
+  "disabled": false
+}

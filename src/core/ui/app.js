@@ -4,7 +4,7 @@
  * Отвечает за координацию UI дашборда: загрузку снимка графа с бэкенда (`/api/visualizer/graph`),
  * дифференциацию снимков через `localStorage`, фоновый Live Auto-Poll, дебаунсинг гибридного
  * RAG-поиска (`pgvector + fts + trgm`), обновление счетчиков KPI и управление правым инспектором
- * сущностей с возможностью мутации статусов компонентов каталога Harness².
+ * сущностей с возможностью мутации статусов компонентов каталога Harness.
  */
 
 // Селекторы DOM-элементов дашборда для исключения жестко закодированных строковых литералов
@@ -85,7 +85,7 @@ const STATUS_PILL_TEXTS = Object.freeze({
   OFFLINE: "Offline Fallback (.context + Seed)",
 });
 
-// Имя типа сущности компонента Harness² для отображения панели мутации статуса
+// Имя типа сущности компонента Harness для отображения панели мутации статуса
 const HARNESS_COMPONENT_KIND = "harness_component";
 
 /**
@@ -372,7 +372,7 @@ class VisualizerApp {
       });
     }
 
-    // 9. Кнопка консолидации компонентов Harness²
+    // 9. Кнопка консолидации компонентов Harness
     if (this._el.consolidateBtn) {
       this._el.consolidateBtn.addEventListener("click", () => {
         this.handleConsolidate();
@@ -873,7 +873,7 @@ class VisualizerApp {
   }
 
   /**
-   * Отправляет запрос на серверное изменение статуса компонента каталога Harness².
+   * Отправляет запрос на серверное изменение статуса компонента каталога Harness.
    *
    * @param {string} newStatus Новый статус компонента ('composed', 'probing', 'candidate', 'disabled').
    * @param {HTMLButtonElement} triggerBtn Кнопка, инициировавшая мутацию.
@@ -923,7 +923,7 @@ class VisualizerApp {
   }
 
   /**
-   * Запускает процедуру консолидации семантических дубликатов каталога Harness².
+   * Запускает процедуру консолидации семантических дубликатов каталога Harness.
    */
   async handleConsolidate() {
     if (!this._el.consolidateBtn) {

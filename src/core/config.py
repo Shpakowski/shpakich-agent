@@ -122,7 +122,7 @@ class CoreSettings(BaseSettings):
     openai_api_key: str | None = Field(
         default=None,
         validation_alias=AliasChoices("MCP_COOP_OPENAI_API_KEY", "OPENAI_API_KEY"),
-        description="Optional API key for external OpenAI Decisions evaluation in Harness² loop.",
+        description="Optional API key for external OpenAI Decisions evaluation in Harness loop.",
     )
     embedding_api_key: str | None = Field(
         default=None,
@@ -247,7 +247,7 @@ class CoreSettings(BaseSettings):
 
     @property
     def decisions_api_configured(self) -> bool:
-        """Проверяет, активирован ли внешний LLM-арбитр для фильтрации правил в цикле Harness²."""
+        """Проверяет, активирован ли внешний LLM-арбитр для фильтрации правил в цикле Harness."""
         return bool(self.openai_api_key and self.openai_api_key.strip())
 
     @property

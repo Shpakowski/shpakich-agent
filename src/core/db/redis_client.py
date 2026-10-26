@@ -478,7 +478,7 @@ class RedisSessionStore:
         self,
         stack_tags: Sequence[str] | None = None,
     ) -> int:
-        """Инвалидирует закэшированные бандлы правил (`cache:rules:*`) после обновления компонентов `Harness²`."""
+        """Инвалидирует закэшированные бандлы правил (`cache:rules:*`) после обновления компонентов `Harness`."""
         if self._client is None:
             return 0
         pattern = self._cache_key(RedisKeySegment.RULES, "*")

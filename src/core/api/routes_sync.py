@@ -1,4 +1,4 @@
-"""Маршрутизатор двусторонней синхронизации и консолидации знаний `Harness²` (Layer 2: FastAPI Sync Routes).
+"""Маршрутизатор двусторонней синхронизации и консолидации знаний `Harness` (Layer 2: FastAPI Sync Routes).
 
 Предоставляет эндпоинты `POST /api/sync/ingest` (инжест пользовательских скиллов и правил с `Content-Hash Gate`
 и `HARNESS_PROBE`), `POST /api/sync/context` (3-Way Hash Sync и AST-мерж графа `.context/`) и

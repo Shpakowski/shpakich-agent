@@ -1,4 +1,4 @@
-"""Базовый идемпотентный Seed эволюционирующих компонентов Harness² (Layer 2: Knowledge Seed).
+"""Базовый идемпотентный Seed эволюционирующих компонентов Harness (Layer 2: Knowledge Seed).
 
 Загружает единый источник истины (`Single Source of Truth`) из JSON-манифестов
 `seeds/harness-seed.json` и `seeds/prompts-config.json`:
@@ -164,7 +164,7 @@ def compute_component_content_hash(content: str) -> str:
 
 
 class HarnessComponentSeed(BaseModel):
-    """Неизменяемая спецификация стартового компонента Harness² для инициализации БД и оффлайн-фолбэка.
+    """Неизменяемая спецификация стартового компонента Harness для инициализации БД и оффлайн-фолбэка.
 
     Поддерживает как полноценные правила/скиллы/скрипты (`has_content == True`, `status = COMPOSED`),
     так и пустые технологические стабы (`content == ""`, `has_content == False`, `status = DISABLED`),
@@ -213,9 +213,9 @@ class HarnessComponentSeed(BaseModel):
 
         if not patched.get("scope"):
             patched["scope"] = (
-                ScopeType.GLOBAL
-                if ScopeType.GLOBAL.value in tags_tuple
-                else ScopeType.DOMAIN
+                ScopeType.DOMAIN
+                if ScopeType.DOMAIN.value in tags_tuple
+                else ScopeType.GLOBAL
             )
 
         if not raw_content.strip():
@@ -331,7 +331,7 @@ async def seed_default_components(db: PostgresDatabase) -> int:
     получившие контент в `seeds/harness-seed.json` (`composed`), автоматически активировались в БД.
     """
     if not db.is_connected:
-        logger.debug("Skipping Harness² baseline seed because PostgreSQL pool is not connected")
+        logger.debug("Skipping Harness baseline seed because PostgreSQL pool is not connected")
         return 0
 
     inserted_count = 0
@@ -357,7 +357,7 @@ async def seed_default_components(db: PostgresDatabase) -> int:
             inserted_count += rows_affected
 
     logger.info(
-        "Harness² baseline seed verified (upserted=%d, total_defaults=%d)",
+        "Harness baseline seed verified (upserted=%d, total_defaults=%d)",
         inserted_count,
         len(DEFAULT_HARNESS_SEEDS),
     )

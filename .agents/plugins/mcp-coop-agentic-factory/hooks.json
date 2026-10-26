@@ -1,0 +1,50 @@
+{
+  "mcp-coop-agentic-factory": {
+    "enabled": true,
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "\"$HOME/.mcp-coop-agentic-factory/bin/run-hook.sh\" hook session-start --agent antigravity",
+        "timeout": 15
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.mcp-coop-agentic-factory/bin/run-hook.sh\" hook pre-tool-use --agent antigravity",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.mcp-coop-agentic-factory/bin/run-hook.sh\" hook post-tool-use --agent antigravity",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "\"$HOME/.mcp-coop-agentic-factory/bin/run-hook.sh\" hook pre-invocation --agent antigravity",
+        "timeout": 15
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "\"$HOME/.mcp-coop-agentic-factory/bin/run-hook.sh\" hook stop --agent antigravity",
+        "timeout": 15
+      }
+    ]
+  }
+}

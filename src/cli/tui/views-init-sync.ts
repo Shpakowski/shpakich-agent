@@ -191,7 +191,7 @@ export function renderSyncSummary(params: SyncSummaryViewModel): void {
   outro(
     styleText(
       "green",
-      `${TUI_GLYPHS.CHECK} Workspace rules, skills, and hooks synchronized with Harness² compiler.`,
+      `${TUI_GLYPHS.CHECK} Workspace rules, skills, and hooks synchronized with Harness compiler.`,
     ),
   );
 }

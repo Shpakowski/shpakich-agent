@@ -14,7 +14,7 @@ const LAYOUT_NAMES = Object.freeze({
   CONCENTRIC: "concentric",
 });
 
-// Идентификаторы категорий узлов графа знаний и каталога Harness²
+// Идентификаторы категорий узлов графа знаний и каталога Harness
 const NODE_KINDS = Object.freeze({
   PROJECT: "project",
   STACK_TAG: "stack_tag",
@@ -25,7 +25,7 @@ const NODE_KINDS = Object.freeze({
   CONTEXT_NODE: "context_node",
 });
 
-// Жизненные статусы компонентов Harness² для цветовой индикации
+// Жизненные статусы компонентов Harness для цветовой индикации
 const COMPONENT_STATUSES = Object.freeze({
   COMPOSED: "composed",
   PROBING: "probing",
@@ -211,7 +211,7 @@ const buildCytoscapeStyles = () => {
       },
     },
 
-    // Компоненты Harness² со статусом Composed
+    // Компоненты Harness со статусом Composed
     {
       selector: `node[kind = "${NODE_KINDS.HARNESS_COMPONENT}"][status = "${COMPONENT_STATUSES.COMPOSED}"]`,
       style: {
@@ -221,7 +221,7 @@ const buildCytoscapeStyles = () => {
       },
     },
 
-    // Компоненты Harness² со статусом Probing
+    // Компоненты Harness со статусом Probing
     {
       selector: `node[kind = "${NODE_KINDS.HARNESS_COMPONENT}"][status = "${COMPONENT_STATUSES.PROBING}"]`,
       style: {
@@ -231,7 +231,7 @@ const buildCytoscapeStyles = () => {
       },
     },
 
-    // Компоненты Harness² со статусом Candidate
+    // Компоненты Harness со статусом Candidate
     {
       selector: `node[kind = "${NODE_KINDS.HARNESS_COMPONENT}"][status = "${COMPONENT_STATUSES.CANDIDATE}"]`,
       style: {
@@ -241,7 +241,7 @@ const buildCytoscapeStyles = () => {
       },
     },
 
-    // Компоненты Harness² со статусом Disabled
+    // Компоненты Harness со статусом Disabled
     {
       selector: `node[kind = "${NODE_KINDS.HARNESS_COMPONENT}"][status = "${COMPONENT_STATUSES.DISABLED}"]`,
       style: {
@@ -251,7 +251,7 @@ const buildCytoscapeStyles = () => {
       },
     },
 
-    // Формы по подтипам компонентов Harness²
+    // Формы по подтипам компонентов Harness
     {
       selector: `node[kind = "${NODE_KINDS.HARNESS_COMPONENT}"][subtype = "skill"]`,
       style: {

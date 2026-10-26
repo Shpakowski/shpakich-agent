@@ -332,7 +332,7 @@ export function formatManifestOverridesSummary(
 }
 
 /**
- * Формирует бейдж эффективного состояния компонента `Harness²` для табличного вывода `harness list`.
+ * Формирует бейдж эффективного состояния компонента `Harness` для табличного вывода `harness list`.
  */
 export function formatCatalogStateBadge(state: string): string {
   switch (state) {

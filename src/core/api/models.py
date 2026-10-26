@@ -65,7 +65,7 @@ class ProjectRegistrationRequest(BaseModel):
 
 
 class ComponentPatchRequest(BaseModel):
-    """Запрос на переключение глобального статуса компонента `Harness²` в каталоге."""
+    """Запрос на переключение глобального статуса компонента `Harness` в каталоге."""
 
     status: ComponentStatus | None = None
     enabled: bool | None = None

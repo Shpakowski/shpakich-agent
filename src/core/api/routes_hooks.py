@@ -593,7 +593,7 @@ async def hook_stop(
     raw_payload: dict[str, Any],
     request: Request,
 ) -> dict[str, Any]:
-    """Перехватывает завершение хода: исполняет скрипты `stop` (`enforce-context-sync` и др.) и рефлексию `Harness²`."""
+    """Перехватывает завершение хода: исполняет скрипты `stop` (`enforce-context-sync` и др.) и рефлексию `Harness`."""
     hook_in = normalize_hook_payload(HookEventType.STOP, raw_payload)
     db: PostgresDatabase | None = getattr(request.app.state, "db", None)
     redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)

@@ -1,4 +1,4 @@
-"""Компилятор эволюционирующего харнеса в целевые форматы ИИ-агентов (Layer 2 & Layer 4: Harness² Compiler).
+"""Компилятор эволюционирующего харнеса в целевые форматы ИИ-агентов (Layer 2 & Layer 4: Harness Compiler).
 
 Собирает канонический бандл знаний (`CanonicalHarnessBundle`) из PostgreSQL, кэша Redis LangCache
 или базового Seed (`DEFAULT_HARNESS_SEEDS`) по тегам стека проекта и транслирует его через
@@ -421,7 +421,7 @@ def enforce_markdown_byte_budget(
 
 
 class HarnessCompiler:
-    """Двухфазный компилятор знаний `Harness²` (`Storage/Seed -> Canonical IR -> AgentTargetProfile`)."""
+    """Двухфазный компилятор знаний `Harness` (`Storage/Seed -> Canonical IR -> AgentTargetProfile`)."""
 
     def __init__(
         self,
@@ -647,7 +647,7 @@ class HarnessCompiler:
         stack_tags: Sequence[str] | None = None,
         profile_overrides: Mapping[str, Any] | ProjectHarnessOverrides | None = None,
     ) -> list[dict[str, Any]]:
-        """Возвращает полный каталог компонентов `Harness²` с вычисленным `effective_state` для проекта."""
+        """Возвращает полный каталог компонентов `Harness` с вычисленным `effective_state` для проекта."""
         overrides = (
             profile_overrides
             if isinstance(profile_overrides, ProjectHarnessOverrides)
@@ -753,7 +753,7 @@ class HarnessCompiler:
             relative_path=spec.relative_path,
             content=content,
             write_strategy=spec.write_strategy,
-            description=spec.description or "Compiled Harness² engineering rules",
+            description=spec.description or "Compiled Harness engineering rules",
         )
 
     def _render_mcp_file(

@@ -1,7 +1,7 @@
 """Контракты данных и структурные протоколы пакета `src/core/services/antigravity/`.
 
 Отвечает за Layer 2 (Core Services): определяет неизменяемые модели Pydantic v2
-для аудита компонентов `Harness²`, самоисцеления графа `.context/` и E2E-тестов,
+для аудита компонентов `Harness`, самоисцеления графа `.context/` и E2E-тестов,
 а также протоколы `typing.Protocol` для строгой типизации `google-antigravity` SDK без `Any`.
 """
 
@@ -36,7 +36,7 @@ class SandboxExecutionSpec(BaseModel):
 
 
 class ProbeAuditVerdict(BaseModel):
-    """Строгий вердикт Read-Only Probe Auditor для шага `Probe` в цикле `Harness²`."""
+    """Строгий вердикт Read-Only Probe Auditor для шага `Probe` в цикле `Harness`."""
 
     model_config = ConfigDict(extra="forbid")
 

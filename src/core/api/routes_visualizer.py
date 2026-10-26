@@ -1,7 +1,7 @@
 """Маршрутизатор веб-интерфейса и API графового визуализатора (Layer 2: FastAPI Visualizer Routes).
 
 Предоставляет HTTP-эндпоинты для отдачи интерактивного Cytoscape.js SPA-дашборда (`GET /ui`),
-получения полного снимка топологии графа знаний и Harness² (`GET /api/visualizer/graph`) и
+получения полного снимка топологии графа знаний и Harness (`GET /api/visualizer/graph`) и
 выполнения гибридного векторно-полнотекстового поиска (`GET /api/visualizer/search`).
 """
 
@@ -86,7 +86,7 @@ async def search_visualizer_knowledge(
         le=MAX_TOP_K,
     ),
 ) -> VisualizerSearchResponse:
-    """Выполняет гибридный поиск по базе знаний, узлам контекста и компонентам Harness²."""
+    """Выполняет гибридный поиск по базе знаний, узлам контекста и компонентам Harness."""
     cleaned_workspace = workspace_path.strip() if workspace_path and workspace_path.strip() else None
     service = _get_visualizer_service(request)
     return await service.search_knowledge(

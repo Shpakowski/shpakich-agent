@@ -2,7 +2,7 @@
 type: Entity
 class: Decision
 id: adr-002-harness2-evolution-loop
-name: "ADR-002: Эволюция окружения агента по методологии Harness² (Propose -> Probe -> Compose) и декаплированная шина хуков"
+name: "ADR-002: Эволюция окружения агента по методологии Harness (Propose -> Probe -> Compose) и декаплированная шина хуков"
 status: Active
 stack: [python, postgresql, pgvector, redis]
 files:
@@ -16,7 +16,7 @@ implements: []
 governed_by: []
 ---
 
-# ADR-002: Эволюция окружения агента по методологии Harness² (`Propose -> Probe -> Compose`) и декаплированная шина хуков (`adr-002-harness2-evolution-loop`)
+# ADR-002: Эволюция окружения агента по методологии Harness (`Propose -> Probe -> Compose`) и декаплированная шина хуков (`adr-002-harness2-evolution-loop`)
 
 > **Статус:** Active  
 > **Связанные узлы:** `[[adr-001-clean-host-global-docker]]`, `[[mod-python-core]]`, `[[mod-cli]]`, `[[mod-cli-hooks]]`, `[[contract-storage-schema]]`, `[[contract-lifecycle-hooks]]`, `[[contract-mcp-and-http-api]]`
@@ -34,7 +34,7 @@ governed_by: []
 
 ## 2. Принятое архитектурное решение
 
-В развитие архитектуры глобального ядра (`[[adr-001-clean-host-global-docker]]`) мы внедряем замкнутый контур самообучения окружения агента на базе методологии **Google Research `Harness²`** внутри `[[mod-python-core]]`:
+В развитие архитектуры глобального ядра (`[[adr-001-clean-host-global-docker]]`) мы внедряем замкнутый контур самообучения окружения агента на базе методологии **Google Research `Harness`** внутри `[[mod-python-core]]`:
 
 ### 2.1. Моделирование харнеса как 8 типизированных компонентов с разделением Scope
 Окружение ИИ-агента декомпозируется на 8 редактируемых компонентов (`System Prompt`, `Guardrails`, `Memory`, `Skills`, `Tool Guidance`, `Scripts`, `Subagents`, `Middleware Plugin`), хранящихся в таблицах `harness_components` и `memories` PostgreSQL (`[[contract-storage-schema]]`).
@@ -72,5 +72,5 @@ governed_by: []
 ---
 
 ## Логи контекста (AI Traces)
-- 2026-10-25: Зафиксировано архитектурное решение `adr-002-harness2-evolution-loop`, описывающее модель 8 компонентов `Harness²`, цикл `Propose -> Probe -> Compose`, каскадный `DecisionEngine` и перенос скриптов хуков в БД под управление `HookScriptDispatcher`.
+- 2026-10-25: Зафиксировано архитектурное решение `adr-002-harness2-evolution-loop`, описывающее модель 8 компонентов `Harness`, цикл `Propose -> Probe -> Compose`, каскадный `DecisionEngine` и перенос скриптов хуков в БД под управление `HookScriptDispatcher`.
 - 2026-10-26: Синхронизированы ссылки на рантайм-агностичный CLI (`mod-cli`, `mod-cli-hooks`: `src/cli/hooks/hook-executor.ts`).

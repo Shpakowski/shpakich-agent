@@ -1,6 +1,6 @@
-"""Сборщик графовой топологии Cytoscape.js для визуализатора RAG и Harness² (Layer 2: Visualizer Topology).
+"""Сборщик графовой топологии Cytoscape.js для визуализатора RAG и Harness (Layer 2: Visualizer Topology).
 
-Отвечает за извлечение узлов и связей из PostgreSQL (проекты, компоненты Harness², долговременная память,
+Отвечает за извлечение узлов и связей из PostgreSQL (проекты, компоненты Harness, долговременная память,
 чекпоинты сжатия сессий и онтология `.context/`), построение иерархических составных групп (Compound Nodes),
 сборку семантических и структурных рёбер, а также изящную деградацию при оффлайн-работе без базы данных.
 """
@@ -59,7 +59,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("mcp_coop.core.visualizer.topology")
 
 # Названия родительских групп составных узлов Cytoscape.js (Compound Nodes)
-LABEL_GROUP_SKILLS: str = "Skills (Harness²)"
+LABEL_GROUP_SKILLS: str = "Skills (Harness)"
 LABEL_GROUP_SCRIPTS: str = "Hook Scripts"
 LABEL_GROUP_GUARDRAILS: str = "Guardrails & Tool Guidance"
 LABEL_GROUP_PROMPTS: str = "System Prompts & Subagents"
@@ -194,7 +194,7 @@ def _add_edge(
 
 
 class VisualizerTopologyBuilder:
-    """Построитель интерактивного графа топологии RAG и компонентов Harness² для веб-интерфейса.
+    """Построитель интерактивного графа топологии RAG и компонентов Harness для веб-интерфейса.
 
     Объединяет данные PostgreSQL (проекты, компоненты, память, чекпоинты сжатия контекста,
     семантические косинусные расстояния pgvector) и локального графа `.context/` на диске
@@ -445,7 +445,7 @@ class VisualizerTopologyBuilder:
                 )
             )
 
-        # 3. Построение узлов компонентов Harness²
+        # 3. Построение узлов компонентов Harness
         for row in component_rows:
             slug = str(row.get("slug") or "").strip()
             if not slug:

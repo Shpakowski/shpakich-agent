@@ -1,6 +1,6 @@
 """Сервис векторно-полнотекстового поиска визуализатора RAG-графа (Layer 2: Visualizer Search).
 
-Выполняет гибридный поиск по базе знаний (проекты, компоненты Harness², память решений ошибок,
+Выполняет гибридный поиск по базе знаний (проекты, компоненты Harness, память решений ошибок,
 сжатия сессий диалогов и онтология `.context/`) с использованием pgvector и PostgreSQL FTS,
 а также реализует локальный лексический фолбэк при оффлайн-работе или недоступности базы данных.
 """
@@ -163,7 +163,7 @@ class VisualizerSearchService:
         """
         candidates: list[VisualizerSearchHit] = []
 
-        # 1. Поиск по базовым компонентам Harness² (сид по умолчанию)
+        # 1. Поиск по базовым компонентам Harness (сид по умолчанию)
         for seed in DEFAULT_HARNESS_SEEDS:
             title = seed.title
             body = f"{seed.description or ''} {seed.content or ''}".strip()

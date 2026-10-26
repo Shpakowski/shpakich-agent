@@ -2,7 +2,7 @@
 
 Связывает транспортный уровень `FastMCP` (`Streamable HTTP /mcp`) с доменными сервисами ядра:
 - Долгосрочной гибридной памятью опыта (`coop_search_memory`, `coop_learn_memory`).
-- Замкнутым циклом эволюции правил и навыков `Harness²` (`coop_propose_harness_edit`, `coop_publish_skill`).
+- Замкнутым циклом эволюции правил и навыков `Harness` (`coop_propose_harness_edit`, `coop_publish_skill`).
 - Локальным Контекстным Графом `.context/` (`coop_query_context_graph`, `coop_upsert_context_node`).
 - Диагностикой состояния фабрики и горячим управлением пулом провайдеров Tier 2 (`coop_get_factory_status`, `coop_manage_decision_providers`).
 """
@@ -391,7 +391,7 @@ class CoopMCPToolService:
             if (
                 stack_tags
                 and any(
-                    t.strip().lower() != ScopeType.GLOBAL.value
+                    t.strip().lower() == ScopeType.DOMAIN.value
                     for t in stack_tags
                     if t.strip()
                 )
