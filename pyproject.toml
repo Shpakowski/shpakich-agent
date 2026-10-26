@@ -17,8 +17,8 @@ dependencies = [
     # Асинхронный веб-фреймворк и ASGI-сервер для приёма телеметрии и REST API
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
-    # Протокол Model Context Protocol (FastMCP) для предоставления инструментов ИИ-агентам
-    "mcp>=1.9.0",
+    # Протокол Model Context Protocol (MCP SDK v2 MCPServer / FastMCP) для предоставления инструментов ИИ-агентам
+    "mcp>=2.0.0",
     # Асинхронные драйверы персистентного хранилища (PostgreSQL + pgvector) и очередей (Redis)
     "asyncpg>=0.30.0",
     "redis>=5.2.0",

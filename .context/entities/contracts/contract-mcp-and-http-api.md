@@ -126,3 +126,5 @@ governed_by:
 - 2026-10-25: Добавлены контракты эндпоинтов `POST /api/sync/ingest`, `POST /api/sync/context`, `POST /api/harness/consolidate` (`src/core/api/routes_sync.py`) и Write-Through зеркалирование в `coop_upsert_context_node`.
 - 2026-10-25: Специфицированы маршруты визуализатора `GET /ui`, `GET /api/visualizer/graph`, `GET /api/visualizer/search` (`src/core/api/routes_visualizer.py`).
 - 2026-10-26: Обновлены ссылки и пути клиентских адаптеров после декомпозиции CLI в рантайм-агностичные узлы (`mod-cli`, `mod-cli-core-api`, `mod-cli-sync`, `mod-cli-commands`).
+- 2026-10-27: Контракт `CoopMCPGateway` (`src/core/mcp/server.py`) обновлён под стандарт MCP 2025-03-26+ и SDK `mcp>=2.0.0` (`MCPServer`): все 8 схем `TOOL_INPUT_SCHEMAS` снабжены `$schema` (Draft-07), `additionalProperties: false`, детальными `description`, строгими `enum` и явным списком `required`, а шлюз `/mcp` поддерживает `title` в `tools/list`, JSON-RPC 2.0 batch-запросы и методы `resources/list`, `resources/templates/list`, `prompts/list`.
+

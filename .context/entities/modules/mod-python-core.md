@@ -141,6 +141,8 @@ governed_by:
 - 2026-10-26: В `lifespan` (`src/core/main.py`) добавлен автоматический сброс кэша бандлов правил в Redis (`await redis_store.invalidate_rules_cache()`) при старте ядра после `seed_default_components`, чтобы перезапуск контейнера с обновлённым `seed.py` не возвращал устаревший кэш из AOF-тома Redis.
 - 2026-10-26: Реализован единый источник знаний в `seeds/harness-seed.json` и `seeds/prompts-config.json`: все 40 компонентов `Harness` (универсальный статический Bootstrap, динамические семантические скиллы/правила и 27 пустых технологических стабов с `detectors`), профили 5 агентов и системные промпты загружаются через `load_harness_seed_payload()` и `load_prompts_config()` в `src/core/harness/seed.py`, `src/core/harness/profiles.py`, `src/core/harness/compiler.py`, `src/core/harness/dynamic_rag.py`, `src/core/api/routes_hooks.py`, `src/core/api/routes_management.py`, `src/core/decision/tiers.py` и `src/core/services/antigravity/service.py`.
 - 2026-10-26: В `src/core/harness/seed.py` (`_normalize_seed_fields`) и `src/core/mcp/tools.py` (`publish_skill`) инвертировано дефолтное условие вывода `scope`: `ScopeType.DOMAIN` выставляется только при явном наличии `ScopeType.DOMAIN.value` в тегах, а дефолтной веткой (`else`) сделан `ScopeType.GLOBAL`.
+- 2026-10-27: Обновлён `pyproject.toml` (`mcp>=2.0.0`) и `src/core/mcp/server.py` (`CoopMCPGateway` и `TOOL_INPUT_SCHEMAS`): выполнен переход на `mcp.server.mcpserver.MCPServer` (`mcp 2.x`) без легаси-фолбэка на `mcp 1.x`, добавлена синхронизация строгих JSON Schema Draft-07 (`$schema`, `additionalProperties: false`, `description`, `enum`, `required`) во все 8 инструментов, обработка `resources/list`, `resources/templates/list`, `prompts/list` и пакетных JSON-RPC 2.0 запросов.
+
 
 
 

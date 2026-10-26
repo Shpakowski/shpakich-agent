@@ -1,11 +1,12 @@
-"""Транспортный шлюз `FastMCP` (`Streamable HTTP /mcp`, Layer 2: MCP Server).
+"""Транспортный шлюз `MCPServer` (`Streamable HTTP /mcp`, Layer 2: MCP Server).
 
 Обеспечивает:
 - Декларацию 8 инструментов `MCPToolName` с семантическими аннотациями `ToolAnnotations`
-  (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) по спецификации MCP 2025-03-26+.
-- Бесшовную работу через официальный SDK `FastMCP` (`stateless_http=True, json_response=True`) внутри
-  Python 3.12 контейнера и встроенный совместимый обработчик JSON-RPC 2.0 `Streamable HTTP` для
-  хостового окружения и легковесных интеграционных тестов.
+  (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), `title` и
+  строгими JSON Schema (`Draft-07`, `additionalProperties: false`, `description`, `enum`, `required`)
+  по спецификации MCP 2025-03-26+.
+- Нативную интеграцию с официальным SDK `mcp>=2.0` (`mcp.server.mcpserver.MCPServer`)
+  и отказоустойчивым обработчиком JSON-RPC 2.0 `Streamable HTTP`.
 """
 
 from __future__ import annotations
@@ -21,21 +22,38 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from src.core import __version__
-from src.core.enums import MCPToolName, ScopeType
+from src.core.enums import (
+    ComponentType,
+    ContextEntityClass,
+    ContextEntityStatus,
+    MCPToolName,
+    ScopeType,
+)
 from src.core.harness.compiler import MCP_HTTP_PATH
-from src.core.mcp.tools import PROVIDER_ACTION_LIST, CoopMCPToolService
+from src.core.mcp.tools import (
+    PROVIDER_ACTION_LIST,
+    PROVIDER_ACTION_UPDATE,
+    CoopMCPToolService,
+)
 
 logger = logging.getLogger("mcp_coop.core.mcp.server")
 
 MCP_SERVER_NAME: str = "mcp-coop-agentic-factory"
 MCP_PROTOCOL_VERSION: str = "2025-03-26"
 JSONRPC_VERSION: str = "2.0"
+JSON_SCHEMA_DRAFT_07_URI: str = "http://json-schema.org/draft-07/schema#"
 
 JSONRPC_PARSE_ERROR: int = -32700
 JSONRPC_INVALID_REQUEST: int = -32600
 JSONRPC_METHOD_NOT_FOUND: int = -32601
 JSONRPC_INVALID_PARAMS: int = -32602
 JSONRPC_INTERNAL_ERROR: int = -32603
+
+COMPONENT_TYPE_VALUES: list[str] = [item.value for item in ComponentType]
+SCOPE_TYPE_VALUES: list[str] = [item.value for item in ScopeType]
+CONTEXT_ENTITY_CLASS_VALUES: list[str] = [item.value for item in ContextEntityClass]
+CONTEXT_ENTITY_STATUS_VALUES: list[str] = [item.value for item in ContextEntityStatus]
+PROVIDER_ACTION_VALUES: list[str] = [PROVIDER_ACTION_LIST, PROVIDER_ACTION_UPDATE]
 
 TOOL_ANNOTATIONS: dict[MCPToolName, dict[str, Any]] = {
     MCPToolName.SEARCH_MEMORY: {
@@ -125,80 +143,244 @@ TOOL_DESCRIPTIONS: dict[MCPToolName, str] = {
 
 TOOL_INPUT_SCHEMAS: dict[MCPToolName, dict[str, Any]] = {
     MCPToolName.SEARCH_MEMORY: {
+        "$schema": JSON_SCHEMA_DRAFT_07_URI,
         "type": "object",
+        "additionalProperties": False,
         "properties": {
-            "query": {"type": "string"},
-            "stack_tags": {"type": "array", "items": {"type": "string"}},
-            "limit": {"type": "integer", "default": 5},
-            "include_compactions": {"type": "boolean", "default": False},
-            "workspace_path": {"type": "string", "default": ""},
+            "query": {
+                "type": "string",
+                "description": "Natural language search query or error message to match against memories.",
+            },
+            "stack_tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional technology stack tags to filter relevant memories (e.g., ['python', 'fastapi']).",
+            },
+            "limit": {
+                "type": "integer",
+                "default": 5,
+                "description": "Maximum number of top-ranked memory records to return.",
+            },
+            "include_compactions": {
+                "type": "boolean",
+                "default": False,
+                "description": "Whether to also search archived post-compaction session summaries.",
+            },
+            "workspace_path": {
+                "type": "string",
+                "default": "",
+                "description": "Optional workspace directory path used when filtering session compactions.",
+            },
         },
         "required": ["query"],
     },
     MCPToolName.LEARN_MEMORY: {
+        "$schema": JSON_SCHEMA_DRAFT_07_URI,
         "type": "object",
+        "additionalProperties": False,
         "properties": {
-            "title": {"type": "string"},
-            "error_symptom": {"type": "string"},
-            "solution": {"type": "string"},
-            "stack_tags": {"type": "array", "items": {"type": "string"}},
-            "scope": {"type": "string", "default": ScopeType.GLOBAL.value},
-            "source_project_path": {"type": "string"},
+            "title": {
+                "type": "string",
+                "description": "Concise title summarizing the resolved issue or architectural lesson.",
+            },
+            "error_symptom": {
+                "type": "string",
+                "description": "Exact error symptom, stack trace pattern, or failure condition.",
+            },
+            "solution": {
+                "type": "string",
+                "description": "Verified root cause explanation and step-by-step fix.",
+            },
+            "stack_tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Technology stack tags associated with this memory (defaults to ['global']).",
+            },
+            "scope": {
+                "type": "string",
+                "enum": SCOPE_TYPE_VALUES,
+                "default": ScopeType.GLOBAL.value,
+                "description": "Visibility scope of the memory ('global' or 'domain').",
+            },
+            "source_project_path": {
+                "type": "string",
+                "description": "Optional absolute path of the workspace where the fix was discovered.",
+            },
         },
         "required": ["title", "error_symptom", "solution"],
     },
     MCPToolName.PROPOSE_HARNESS_EDIT: {
+        "$schema": JSON_SCHEMA_DRAFT_07_URI,
         "type": "object",
+        "additionalProperties": False,
         "properties": {
-            "component_type": {"type": "string"},
-            "slug": {"type": "string"},
-            "title": {"type": "string"},
-            "description": {"type": "string"},
-            "content": {"type": "string"},
-            "scope": {"type": "string", "default": ScopeType.GLOBAL.value},
-            "stack_tags": {"type": "array", "items": {"type": "string"}},
-            "metadata": {"type": "object"},
-            "source_project_path": {"type": "string"},
+            "component_type": {
+                "type": "string",
+                "enum": COMPONENT_TYPE_VALUES,
+                "description": "Target Harness component category (system_prompt, guardrail, skill, tool_guidance, script, subagent, middleware).",
+            },
+            "slug": {
+                "type": "string",
+                "description": "Unique kebab-case identifier for the component.",
+            },
+            "title": {
+                "type": "string",
+                "description": "Human-readable title of the Harness component.",
+            },
+            "description": {
+                "type": "string",
+                "description": "Summary of when and why this component should be applied.",
+            },
+            "content": {
+                "type": "string",
+                "description": "Full Markdown body or executable script content of the component.",
+            },
+            "scope": {
+                "type": "string",
+                "enum": SCOPE_TYPE_VALUES,
+                "default": ScopeType.GLOBAL.value,
+                "description": "Applicability scope ('global' or 'domain').",
+            },
+            "stack_tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Stack tags governing automatic activation of this component.",
+            },
+            "metadata": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": True,
+                "description": "Optional structured metadata (e.g., execution_mode, hook trigger, guardrail rules).",
+            },
+            "source_project_path": {
+                "type": "string",
+                "description": "Optional workspace path where the component was authored.",
+            },
         },
         "required": ["component_type", "slug", "title", "description", "content"],
     },
     MCPToolName.PUBLISH_SKILL: {
+        "$schema": JSON_SCHEMA_DRAFT_07_URI,
         "type": "object",
+        "additionalProperties": False,
         "properties": {
-            "slug": {"type": "string"},
-            "description": {"type": "string"},
-            "instructions_md": {"type": "string"},
-            "stack_tags": {"type": "array", "items": {"type": "string"}},
-            "helper_scripts": {"type": "object"},
-            "source_project_path": {"type": "string"},
+            "slug": {
+                "type": "string",
+                "description": "Unique kebab-case skill identifier.",
+            },
+            "description": {
+                "type": "string",
+                "description": "Trigger description explaining when the agent should activate this skill.",
+            },
+            "instructions_md": {
+                "type": "string",
+                "description": "Full Markdown instructions (SKILL.md body) for executing the skill.",
+            },
+            "stack_tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Technology stack tags associated with the skill.",
+            },
+            "helper_scripts": {
+                "type": "object",
+                "additionalProperties": {"type": "string"},
+                "description": "Optional mapping of relative script filenames to script contents.",
+            },
+            "source_project_path": {
+                "type": "string",
+                "description": "Optional workspace path from which the skill is published.",
+            },
         },
         "required": ["slug", "description", "instructions_md"],
     },
     MCPToolName.QUERY_CONTEXT_GRAPH: {
+        "$schema": JSON_SCHEMA_DRAFT_07_URI,
         "type": "object",
+        "additionalProperties": False,
         "properties": {
-            "workspace_path": {"type": "string"},
-            "node_id": {"type": "string", "default": ""},
-            "depth": {"type": "integer", "default": 2},
+            "workspace_path": {
+                "type": "string",
+                "description": "Absolute path to the project workspace containing the .context/ directory.",
+            },
+            "node_id": {
+                "type": "string",
+                "default": "",
+                "description": "Optional target node ID (e.g., 'mod-python-core') to center the subgraph query; empty returns the full graph.",
+            },
+            "depth": {
+                "type": "integer",
+                "default": 2,
+                "description": "Neighborhood traversal depth around node_id.",
+            },
         },
         "required": ["workspace_path"],
     },
     MCPToolName.UPSERT_CONTEXT_NODE: {
+        "$schema": JSON_SCHEMA_DRAFT_07_URI,
         "type": "object",
+        "additionalProperties": False,
         "properties": {
-            "workspace_path": {"type": "string"},
-            "entity_class": {"type": "string"},
-            "node_id": {"type": "string"},
-            "name": {"type": "string"},
-            "files": {"type": "array", "items": {"type": "string"}},
-            "body_md": {"type": "string"},
-            "trace_note": {"type": "string"},
-            "stack": {"type": "array", "items": {"type": "string"}},
-            "depends_on": {"type": "array", "items": {"type": "string"}},
-            "implements": {"type": "array", "items": {"type": "string"}},
-            "governed_by": {"type": "array", "items": {"type": "string"}},
-            "status": {"type": "string", "default": "Active"},
-            "conversation_id": {"type": "string", "default": ""},
+            "workspace_path": {
+                "type": "string",
+                "description": "Absolute path to the project workspace containing .context/.",
+            },
+            "entity_class": {
+                "type": "string",
+                "enum": CONTEXT_ENTITY_CLASS_VALUES,
+                "description": "Ontology class of the context node ('Module', 'Contract', or 'Decision').",
+            },
+            "node_id": {
+                "type": "string",
+                "description": "Canonical node identifier (e.g., 'mod-python-core', 'contract-mcp-and-http-api').",
+            },
+            "name": {
+                "type": "string",
+                "description": "Human-readable display title of the context node.",
+            },
+            "files": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of relative repository file paths governed or implemented by this node.",
+            },
+            "body_md": {
+                "type": "string",
+                "description": "Markdown body describing the architecture, contracts, and data flow of the node.",
+            },
+            "trace_note": {
+                "type": "string",
+                "description": "Audit log entry appended to the 'AI Traces' section of the node.",
+            },
+            "stack": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional list of stack tags for this node.",
+            },
+            "depends_on": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional list of node IDs that this node depends on.",
+            },
+            "implements": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional list of Contract node IDs implemented by this node.",
+            },
+            "governed_by": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional list of Decision (ADR) node IDs governing this node.",
+            },
+            "status": {
+                "type": "string",
+                "enum": CONTEXT_ENTITY_STATUS_VALUES,
+                "default": ContextEntityStatus.ACTIVE.value,
+                "description": "Lifecycle status of the node ('Active', 'Draft', or 'Deprecated').",
+            },
+            "conversation_id": {
+                "type": "string",
+                "default": "",
+                "description": "Optional active session conversation ID used to mark context sync in Redis.",
+            },
         },
         "required": [
             "workspace_path",
@@ -211,26 +393,53 @@ TOOL_INPUT_SCHEMAS: dict[MCPToolName, dict[str, Any]] = {
         ],
     },
     MCPToolName.GET_FACTORY_STATUS: {
+        "$schema": JSON_SCHEMA_DRAFT_07_URI,
         "type": "object",
+        "additionalProperties": False,
         "properties": {
-            "workspace_path": {"type": "string", "default": ""},
+            "workspace_path": {
+                "type": "string",
+                "default": "",
+                "description": "Optional workspace path to include local .context/ graph validation in the status report.",
+            },
         },
     },
     MCPToolName.MANAGE_DECISION_PROVIDERS: {
+        "$schema": JSON_SCHEMA_DRAFT_07_URI,
         "type": "object",
+        "additionalProperties": False,
         "properties": {
-            "action": {"type": "string", "default": PROVIDER_ACTION_LIST},
-            "name": {"type": "string", "default": ""},
-            "priority": {"type": "integer"},
-            "enabled": {"type": "boolean"},
-            "reset_circuit": {"type": "boolean", "default": False},
+            "action": {
+                "type": "string",
+                "enum": PROVIDER_ACTION_VALUES,
+                "default": PROVIDER_ACTION_LIST,
+                "description": "Operation to perform on Tier 2 providers ('list' or 'update').",
+            },
+            "name": {
+                "type": "string",
+                "default": "",
+                "description": "Provider name (required when action is 'update').",
+            },
+            "priority": {
+                "type": "integer",
+                "description": "Optional new routing priority (lower number = higher priority).",
+            },
+            "enabled": {
+                "type": "boolean",
+                "description": "Optional flag to enable or disable the provider at runtime.",
+            },
+            "reset_circuit": {
+                "type": "boolean",
+                "default": False,
+                "description": "Whether to reset the provider's circuit breaker state.",
+            },
         },
     },
 }
 
 
 class CoopMCPGateway:
-    """Адаптер протокола `FastMCP` (`Streamable HTTP /mcp`) с регистрацией 8 аннотированных инструментов."""
+    """Адаптер протокола `MCPServer` (`Streamable HTTP /mcp`) с регистрацией 8 аннотированных инструментов."""
 
     def __init__(self, app: FastAPI, service: CoopMCPToolService) -> None:
         self._app: FastAPI = app
@@ -239,41 +448,50 @@ class CoopMCPGateway:
 
     @property
     def has_native_fastmcp(self) -> bool:
-        """Возвращает `True`, если в окружении установлен пакет `mcp.server.fastmcp` (`mcp>=1.9.0`)."""
+        """Возвращает `True`, если в окружении инициализирован `MCPServer` (`mcp>=2.0`)."""
         return self._fastmcp is not None
 
     def _try_build_fastmcp(self) -> Any:
-        """Динамически создаёт `FastMCP` и регистрирует 8 инструментов с `ToolAnnotations` при наличии SDK."""
+        """Создаёт `MCPServer` (`mcp>=2.0`), регистрирует 8 инструментов с `ToolAnnotations` и синхронизирует `TOOL_INPUT_SCHEMAS`."""
         try:
-            fastmcp_mod = importlib.import_module("mcp.server.fastmcp")
+            mcpserver_mod = importlib.import_module("mcp.server.mcpserver")
             types_mod = importlib.import_module("mcp.types")
         except ImportError:
             return None
 
-        fastmcp_cls = getattr(fastmcp_mod, "FastMCP", None)
+        mcpserver_cls = getattr(mcpserver_mod, "MCPServer", None)
         annotations_cls = getattr(types_mod, "ToolAnnotations", None)
-        if fastmcp_cls is None:
+        if mcpserver_cls is None:
             return None
 
-        mcp_server = fastmcp_cls(
+        mcp_server = mcpserver_cls(
             name=MCP_SERVER_NAME,
-            stateless_http=True,
-            json_response=True,
-            streamable_http_path=MCP_HTTP_PATH,
+            version=__version__,
         )
 
         method_map = self._tool_handler_map()
         for tool_enum, handler in method_map.items():
             raw_ann = TOOL_ANNOTATIONS[tool_enum]
-            ann_obj = (
-                annotations_cls(**raw_ann) if annotations_cls is not None else raw_ann
+            ann_obj: Any = (
+                annotations_cls.model_validate(raw_ann)
+                if annotations_cls is not None
+                else raw_ann
             )
-            decorator = mcp_server.tool(
+            mcp_server.add_tool(
+                handler,
                 name=tool_enum.value,
+                title=str(raw_ann.get("title") or tool_enum.value),
                 description=TOOL_DESCRIPTIONS[tool_enum],
                 annotations=ann_obj,
             )
-            decorator(handler)
+
+            # Принудительно синхронизируем каноническую JSON Schema Draft-07 без `anyOf: null`
+            tool_manager = getattr(mcp_server, "_tool_manager", None)
+            tools_dict = getattr(tool_manager, "_tools", None)
+            if isinstance(tools_dict, dict) and tool_enum.value in tools_dict:
+                tool_entry = tools_dict[tool_enum.value]
+                if hasattr(tool_entry, "parameters"):
+                    tool_entry.parameters = dict(TOOL_INPUT_SCHEMAS[tool_enum])
 
         return mcp_server
 
@@ -291,12 +509,13 @@ class CoopMCPGateway:
         }
 
     def list_tools_payload(self) -> list[dict[str, Any]]:
-        """Формирует список спецификаций всех 8 инструментов в формате ответа `tools/list`."""
+        """Формирует список спецификаций всех 8 инструментов в формате ответа `tools/list` (MCP 2025-03-26+)."""
         return [
             {
                 "name": tool_enum.value,
+                "title": str(TOOL_ANNOTATIONS[tool_enum].get("title") or tool_enum.value),
                 "description": TOOL_DESCRIPTIONS[tool_enum],
-                "inputSchema": TOOL_INPUT_SCHEMAS[tool_enum],
+                "inputSchema": dict(TOOL_INPUT_SCHEMAS[tool_enum]),
                 "annotations": dict(TOOL_ANNOTATIONS[tool_enum]),
             }
             for tool_enum in MCPToolName
@@ -314,7 +533,10 @@ class CoopMCPGateway:
             raise KeyError(f"Unknown MCP tool '{name}'") from exc
 
         handler = self._tool_handler_map()[tool_enum]
-        return await handler(**(arguments or {}))
+        clean_args = {
+            k: v for k, v in (arguments or {}).items() if v is not None
+        }
+        return await handler(**clean_args)
 
     async def handle_jsonrpc(
         self,
@@ -326,7 +548,7 @@ class CoopMCPGateway:
         params = payload.get("params")
         params_dict: dict[str, Any] = dict(params) if isinstance(params, dict) else {}
 
-        if method.startswith("notifications/"):
+        if method.startswith("notifications/") or req_id is None and not method:
             return None
 
         if method == "initialize":
@@ -338,7 +560,9 @@ class CoopMCPGateway:
                 "id": req_id,
                 "result": {
                     "protocolVersion": protocol_ver,
-                    "capabilities": {"tools": {"listChanged": False}},
+                    "capabilities": {
+                        "tools": {"listChanged": False},
+                    },
                     "serverInfo": {
                         "name": MCP_SERVER_NAME,
                         "version": __version__,
@@ -354,6 +578,27 @@ class CoopMCPGateway:
                 "jsonrpc": JSONRPC_VERSION,
                 "id": req_id,
                 "result": {"tools": self.list_tools_payload()},
+            }
+
+        if method == "resources/list":
+            return {
+                "jsonrpc": JSONRPC_VERSION,
+                "id": req_id,
+                "result": {"resources": []},
+            }
+
+        if method == "resources/templates/list":
+            return {
+                "jsonrpc": JSONRPC_VERSION,
+                "id": req_id,
+                "result": {"resourceTemplates": []},
+            }
+
+        if method == "prompts/list":
+            return {
+                "jsonrpc": JSONRPC_VERSION,
+                "id": req_id,
+                "result": {"prompts": []},
             }
 
         if method == "tools/call":
@@ -409,20 +654,11 @@ class CoopMCPGateway:
 
     @asynccontextmanager
     async def run_lifespan(self) -> AsyncIterator[None]:
-        """Запускает `session_manager.run()` нативного `FastMCP` внутри `lifespan` приложения FastAPI."""
-        if self._fastmcp is not None and hasattr(self._fastmcp, "session_manager"):
-            async with self._fastmcp.session_manager.run():
-                yield
-            return
+        """Управляет жизненным циклом MCP-шлюза внутри `lifespan` приложения FastAPI."""
         yield
 
     def mount(self, app: FastAPI) -> None:
-        """Регистрирует эндпоинт `/mcp` (`Streamable HTTP`) в маршрутизаторе FastAPI."""
-        if self._fastmcp is not None and hasattr(self._fastmcp, "streamable_http_app"):
-            mcp_asgi = self._fastmcp.streamable_http_app()
-            for route in getattr(mcp_asgi, "routes", ()):
-                app.router.routes.append(route)
-            return
+        """Регистрирует эндпоинт `/mcp` (`Streamable HTTP` POST/GET/DELETE) в маршрутизаторе FastAPI."""
 
         @app.post(MCP_HTTP_PATH, tags=["mcp"])
         async def mcp_post_endpoint(request: Request) -> Response:
@@ -440,6 +676,29 @@ class CoopMCPGateway:
                         },
                     },
                 )
+
+            if isinstance(body, list):
+                if not body:
+                    return JSONResponse(
+                        status_code=400,
+                        content={
+                            "jsonrpc": JSONRPC_VERSION,
+                            "id": None,
+                            "error": {
+                                "code": JSONRPC_INVALID_REQUEST,
+                                "message": "Empty JSON-RPC batch",
+                            },
+                        },
+                    )
+                replies: list[dict[str, Any]] = []
+                for item in body:
+                    if isinstance(item, dict):
+                        item_reply = await self.handle_jsonrpc(item)
+                        if item_reply is not None:
+                            replies.append(item_reply)
+                if not replies:
+                    return Response(status_code=202)
+                return JSONResponse(content=replies)
 
             if not isinstance(body, dict):
                 return JSONResponse(
@@ -477,6 +736,7 @@ class CoopMCPGateway:
 
 
 __all__ = [
+    "JSON_SCHEMA_DRAFT_07_URI",
     "MCP_PROTOCOL_VERSION",
     "MCP_SERVER_NAME",
     "TOOL_ANNOTATIONS",

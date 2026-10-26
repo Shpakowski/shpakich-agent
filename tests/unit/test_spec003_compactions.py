@@ -591,3 +591,53 @@ def test_level5_context_graph_validation() -> None:
 
     _, _, mgr_report = ContextGraphManager().build_and_validate(workspace_root)
     assert mgr_report.is_valid is True
+
+
+@pytest.mark.asyncio
+async def test_mcp_gateway_v2_schemas_and_jsonrpc_best_practices() -> None:
+    """Проверяет совместимость `CoopMCPGateway` с `mcp>=2.0` (`MCPServer`), полноту Draft-07 схем и JSON-RPC 2.0."""
+    from src.core.enums import MCPToolName
+    from src.core.mcp.server import JSON_SCHEMA_DRAFT_07_URI, TOOL_INPUT_SCHEMAS
+
+    app = create_app()
+    gw = app.state.mcp_gateway
+    assert gw.has_native_fastmcp is True
+
+    tools_list = gw.list_tools_payload()
+    assert len(tools_list) == len(MCPToolName)
+
+    for tool_item in tools_list:
+        assert tool_item["name"] in {t.value for t in MCPToolName}
+        assert tool_item.get("title")
+        assert tool_item.get("description")
+        schema = tool_item["inputSchema"]
+        assert schema["$schema"] == JSON_SCHEMA_DRAFT_07_URI
+        assert schema["type"] == "object"
+        assert schema["additionalProperties"] is False
+        if "required" in schema:
+            assert isinstance(schema["required"], list) and len(schema["required"]) >= 1
+        props = schema["properties"]
+        assert len(props) >= 1
+        for prop_name, prop_spec in props.items():
+            assert "type" in prop_spec, f"Missing type on {tool_item['name']}.{prop_name}"
+            assert prop_spec.get("description"), f"Missing description on {tool_item['name']}.{prop_name}"
+
+    assert set(TOOL_INPUT_SCHEMAS.keys()) == set(MCPToolName)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        batch_resp = await client.post(
+            "/mcp",
+            json=[
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "resources/list", "params": {}},
+                {"jsonrpc": "2.0", "id": 3, "method": "prompts/list", "params": {}},
+            ],
+        )
+        assert batch_resp.status_code == 200
+        batch_data = batch_resp.json()
+        assert isinstance(batch_data, list) and len(batch_data) == 3
+        assert len(batch_data[0]["result"]["tools"]) == 8
+        assert batch_data[1]["result"] == {"resources": []}
+        assert batch_data[2]["result"] == {"prompts": []}
+

@@ -2,7 +2,7 @@
 type: GraphIndex
 version: "2026.2"
 project: mcp-coop-agentic-factory
-updated_at: "2026-10-26"
+updated_at: "2026-10-27"
 ---
 
 # Карта Контекстного Графа (`index.md`)
