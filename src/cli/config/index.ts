@@ -46,11 +46,21 @@ export {
 } from "./limits-and-timeouts.ts";
 
 export {
+  buildStackSignatureRulesFromComponents,
   FILE_MARKER_TAG_MAP,
+  HARNESS_SEED_FILE_NAME,
   IGNORED_SCAN_DIRECTORIES,
+  loadHarnessSeedCatalog,
+  loadPromptsConfigJson,
   NODE_DEP_TAG_MAP,
+  PROMPTS_CONFIG_FILE_NAME,
   PYTHON_DEP_TAG_MAP,
   STACK_SIGNATURE_RULES,
   UNIVERSAL_STACK_TAGS,
+  type CatalogComponentDetectorSource,
+  type HarnessSeedCatalog,
+  type SeedAgentEntry,
+  type SeedComponentDetectors,
+  type SeedComponentEntry,
   type StackSignatureRule,
 } from "./stack-signatures.ts";

@@ -52,6 +52,7 @@ export const DOCKERFILE_REL_PATH = path.posix.join(
   GLOBAL_FACTORY_RELATIVE_PATHS.DOCKERFILE,
 );
 export const CORE_SRC_REL_PATH = GLOBAL_FACTORY_RELATIVE_PATHS.PYTHON_SRC_DIR;
+export const SEEDS_REL_PATH = GLOBAL_FACTORY_RELATIVE_PATHS.SEEDS_DIR;
 export const ENV_FILE_NAME = GLOBAL_FACTORY_RELATIVE_PATHS.ENV_FILE;
 
 const SINGLE_ASSET_RELATIVE_PATHS = [
@@ -207,6 +208,15 @@ function copyRepositoryAssetsToStackDirSync(
     });
   }
 
+  const srcSeedsDir = path.join(packageRoot, SEEDS_REL_PATH);
+  const destSeedsDir = path.join(stackDir, SEEDS_REL_PATH);
+  if (fs.existsSync(srcSeedsDir)) {
+    fs.cpSync(srcSeedsDir, destSeedsDir, {
+      recursive: true,
+      force: true,
+    });
+  }
+
   const srcDistDir = path.join(packageRoot, DIST_REL_PATH);
   const destDistDir = path.join(stackDir, DIST_REL_PATH);
   if (fs.existsSync(srcDistDir)) {
@@ -244,6 +254,7 @@ export async function syncGlobalStackAssets(
   await Promise.all([
     fsp.mkdir(path.join(stackDir, DOCKER_DIR_NAME), { recursive: true }),
     fsp.mkdir(path.join(stackDir, SRC_DIR_NAME), { recursive: true }),
+    fsp.mkdir(path.join(stackDir, SEEDS_REL_PATH), { recursive: true }),
     fsp.mkdir(path.join(stackDir, BIN_DIR_NAME), { recursive: true }),
   ]);
 
@@ -292,6 +303,7 @@ export function syncGlobalFactoryStackFiles(
 
   fs.mkdirSync(path.join(stackDir, DOCKER_DIR_NAME), { recursive: true });
   fs.mkdirSync(path.join(stackDir, SRC_DIR_NAME), { recursive: true });
+  fs.mkdirSync(path.join(stackDir, SEEDS_REL_PATH), { recursive: true });
   fs.mkdirSync(path.join(stackDir, BIN_DIR_NAME), { recursive: true });
 
   copyRepositoryAssetsToStackDirSync(packageRoot, stackDir);

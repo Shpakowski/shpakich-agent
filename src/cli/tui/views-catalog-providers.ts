@@ -86,6 +86,22 @@ export function renderHarnessCatalogView(
   const rows =
     visibleItems.length > 0
       ? visibleItems.map((item) => {
+          const isEmptyStub =
+            item.has_content === false || item.is_empty_stub === true;
+          if (isEmptyStub) {
+            const stubBadge = formatBadge(
+              "EMPTY STUB",
+              "muted",
+              TUI_GLYPHS.OFFLINE,
+            );
+            const slugStr = styleText("dim", item.slug.padEnd(28));
+            const typeStr = styleText(
+              "dim",
+              `[${item.component_type}]`.padEnd(16),
+            );
+            const tagsStr = styleText("dim", `(${item.stack_tags.join(",")})`);
+            return `${stubBadge.padEnd(28)} ${slugStr} ${typeStr} ${tagsStr}`;
+          }
           const badge = formatCatalogStateBadge(item.effective_state);
           const slugStr = styleText(["bold", "white"], item.slug.padEnd(28));
           const typeStr = styleText(

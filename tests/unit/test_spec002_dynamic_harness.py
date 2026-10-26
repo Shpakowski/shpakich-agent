@@ -16,6 +16,7 @@ import httpx
 import pytest
 
 from src.core.enums import (
+    AgentType,
     ComponentStatus,
     ComponentType,
     ContextSyncAction,
@@ -38,9 +39,10 @@ from src.core.harness.compiler import HarnessCompiler
 from src.core.harness.consolidator import HarnessConsolidator
 from src.core.harness.dynamic_rag import (
     RAG_SOURCE_POSTGRES,
+    RAG_SOURCE_SEED_FALLBACK,
     select_dynamic_components_for_prompt,
 )
-from src.core.harness.seed import HARNESS_ORCHESTRATOR_SLUG
+from src.core.harness.seed import DEFAULT_HARNESS_SEEDS, HARNESS_ORCHESTRATOR_SLUG
 from src.core.main import create_app
 
 STEWARD_SLUG: str = "context-graph-steward"
@@ -156,12 +158,41 @@ class FakeSpec002Database:
 
 @pytest.mark.asyncio
 async def test_contour1_minimal_bootstrap_and_progressive_disclosure() -> None:
-    """Контур 1: Проверяет фильтрацию `execution_mode='always'` в бандле и 2 порога Progressive Disclosure."""
+    """Контур 1: Проверяет загрузку `seeds/harness-seed.json`, фильтрацию `execution_mode='always'` и Progressive Disclosure."""
+    seeds_by_slug = {seed.slug: seed for seed in DEFAULT_HARNESS_SEEDS}
+    assert HARNESS_ORCHESTRATOR_SLUG in seeds_by_slug
+    assert seeds_by_slug[HARNESS_ORCHESTRATOR_SLUG].has_content is True
+    assert seeds_by_slug["typescript"].has_content is True
+    assert seeds_by_slug["typescript"].status == ComponentStatus.COMPOSED
+    assert seeds_by_slug["nodejs"].has_content is True
+    assert seeds_by_slug["java"].has_content is False
+    assert seeds_by_slug["java"].status == ComponentStatus.DISABLED
+    assert seeds_by_slug["java"].metadata.get("is_empty_stub") is True
+
     compiler = HarnessCompiler()
-    bundle = await compiler.build_canonical_bundle(stack_tags=["bun", "python"])
+    bundle = await compiler.build_canonical_bundle(stack_tags=["bun", "python", "typescript", "java"])
 
     skill_slugs = {skill.slug for skill in bundle.skills}
     assert skill_slugs == {HARNESS_ORCHESTRATOR_SLUG}
+
+    artifact = await compiler.compile_for_project(
+        agent_type=AgentType.ANTIGRAVITY,
+        stack_tags=["typescript", "nodejs", "java"],
+    )
+    rendered_paths = {f.relative_path for f in artifact.files}
+    assert any(HARNESS_ORCHESTRATOR_SLUG in p for p in rendered_paths)
+    assert not any("/skills/typescript/" in p for p in rendered_paths)
+    assert not any("/skills/java/" in p for p in rendered_paths)
+
+    seed_ts_rag = await select_dynamic_components_for_prompt(
+        prompt="Refactor TypeScript module using Branded Types and Discriminated Unions with erasableSyntaxOnly",
+        stack_tags=["typescript"],
+        db=None,
+    )
+    assert seed_ts_rag.source == RAG_SOURCE_SEED_FALLBACK
+    assert any(r.slug == "typescript-strict-rule" for r in seed_ts_rag.rules)
+    assert any(s.slug == "typescript" for s in seed_ts_rag.skills)
+    assert not any(s.slug == "java" for s in seed_ts_rag.skills)
 
     guardrail_slugs = {gr.slug for gr in bundle.guardrails}
     assert DESTRUCTIVE_GUARDRAIL_SLUG in guardrail_slugs
@@ -192,6 +223,13 @@ async def test_contour1_minimal_bootstrap_and_progressive_disclosure() -> None:
             "score": 1.0, "relevance": 0.31,
         },
         {
+            "slug": "java", "component_type": ComponentType.SKILL.value,
+            "title": "Java Stub", "description": "Empty stub skill.",
+            "content": "   ",
+            "metadata": {"execution_mode": ScriptExecutionMode.SEMANTIC.value, "is_empty_stub": True},
+            "score": 1.0, "relevance": 0.99,
+        },
+        {
             "slug": "asyncpg-pool-rule", "component_type": ComponentType.TOOL_GUIDANCE.value,
             "title": "AsyncPG Pool Tuning", "description": "Connection pool sizing.",
             "content": "Always configure max_inactive_connection_lifetime.",
@@ -208,12 +246,13 @@ async def test_contour1_minimal_bootstrap_and_progressive_disclosure() -> None:
     assert rag_res.source == RAG_SOURCE_POSTGRES
     assert len(rag_res.rules) == 1 and rag_res.rules[0].slug == "asyncpg-pool-rule"
     by_slug = {s.slug: s for s in rag_res.skills}
+    assert "java" not in by_slug
     assert by_slug[STEWARD_SLUG].is_full_blueprint is True
     assert by_slug["fastapi-pagination-skill"].is_full_blueprint is False
 
     hint_text = rag_res.format_ephemeral_hint()
     assert hint_text is not None
-    assert "[Dynamic Harness² Rules]:" in hint_text
+    assert "[Dynamic Harness Rules]:" in hint_text
     assert f"[Active Skill Blueprint: {STEWARD_SLUG}]:" in hint_text
     assert "[Available Skill Hint]: fastapi-pagination-skill —" in hint_text
 
@@ -391,3 +430,14 @@ async def test_contour4_consolidator_and_fastapi_sync_endpoints() -> None:
 
         resp_cons = await client.post("/api/harness/consolidate", json={"dry_run": True})
         assert resp_cons.status_code == 200 and resp_cons.json()["status"] == "ok"
+
+        resp_cat = await client.get("/api/harness/components", params={"stack_tags": "typescript,java"})
+        assert resp_cat.status_code == 200
+        cat_data = resp_cat.json()
+        assert "agents" in cat_data and len(cat_data["agents"]) == 5
+        comp_by_slug = {c["slug"]: c for c in cat_data["components"]}
+        assert comp_by_slug["typescript"]["has_content"] is True
+        assert comp_by_slug["typescript"]["is_empty_stub"] is False
+        assert "detectors" in comp_by_slug["typescript"]
+        assert comp_by_slug["java"]["has_content"] is False
+        assert comp_by_slug["java"]["is_empty_stub"] is True

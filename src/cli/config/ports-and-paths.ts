@@ -33,6 +33,7 @@ export const GLOBAL_FACTORY_RELATIVE_PATHS = {
   ENV_FILE: ".env",
   HOOK_RUNNER_SCRIPT: "bin/run-hook.sh",
   PYTHON_SRC_DIR: "src/core",
+  SEEDS_DIR: "seeds",
 } as const;
 
 export const WORKSPACE_RELATIVE_PATHS = {

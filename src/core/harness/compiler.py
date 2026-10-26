@@ -50,6 +50,7 @@ from src.core.harness.seed import (
     DEFAULT_HARNESS_SEEDS,
     SHELL_TOOL_MATCHER,
     HarnessComponentSeed,
+    load_prompts_config,
     resolve_seed_components_with_overrides,
 )
 
@@ -60,10 +61,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("mcp_coop.core.harness.compiler")
 
+_COMPILER_PROMPTS: dict[str, Any] = dict(load_prompts_config().get("compiler") or {})
+
 # Бюджет размера одного Markdown-файла правил (24 КБ) для гарантированного прохождения
 # лимитов контекстного инжектора Antigravity 2.0 и OpenAI Codex CLI (project_doc_max_bytes = 32 KiB).
 MAX_RULES_MARKDOWN_BYTES: int = 24_000
-TRUNCATION_NOTICE: str = "\n\n<!-- Rules truncated to fit MAX_RULES_MARKDOWN_BYTES budget -->\n"
+RULES_MARKDOWN_HEADER: str = str(
+    _COMPILER_PROMPTS.get("rules_markdown_header") or "# Universal Engineering Rules"
+)
+TRUNCATION_NOTICE: str = str(
+    _COMPILER_PROMPTS.get("truncation_notice")
+    or "\n\n<!-- Rules truncated to fit MAX_RULES_MARKDOWN_BYTES budget -->\n"
+)
 
 DEFAULT_LOCALHOST_HOST: str = "127.0.0.1"
 MCP_HTTP_PATH: str = "/mcp"
@@ -99,8 +108,8 @@ SELECT
     score,
     version
 FROM harness_components
-WHERE (status = $1 AND (scope = $2 OR stack_tags && $3::text[]))
-   OR slug = ANY($4::text[])
+WHERE (status = $1 AND stack_tags && $2::text[])
+   OR slug = ANY($3::text[])
 ORDER BY score DESC, created_at ASC
 """
 
@@ -469,16 +478,17 @@ class HarnessCompiler:
                     rows = await conn.fetch(
                         SELECT_COMPOSED_COMPONENTS_SQL,
                         ComponentStatus.COMPOSED.value,
-                        ScopeType.GLOBAL.value,
                         list(normalized_tags),
                         list(active_overrides.enabled_components),
                     )
                 if rows:
-                    loaded: list[HarnessComponentSeed] = [
-                        self._row_to_seed(row)
-                        for row in rows
-                        if str(row["slug"]).strip().lower() not in disabled_set
-                    ]
+                    loaded: list[HarnessComponentSeed] = []
+                    for row in rows:
+                        if str(row["slug"]).strip().lower() in disabled_set:
+                            continue
+                        seed = self._row_to_seed(row)
+                        if seed.has_content:
+                            loaded.append(seed)
                     return loaded, BUNDLE_SOURCE_POSTGRES
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
@@ -523,11 +533,13 @@ class HarnessCompiler:
 
         components, source = await self._load_components(effective_tags, overrides)
 
-        rules_sections: list[str] = ["# Universal Engineering Rules"]
+        rules_sections: list[str] = [RULES_MARKDOWN_HEADER]
         guardrails: list[CompiledGuardrail] = []
         script_map: dict[str, dict[str, str]] = {}
 
         for comp in components:
+            if not comp.has_content:
+                continue
             if comp.component_type == ComponentType.SCRIPT:
                 target_skill = str(comp.metadata.get("skill_slug", "")).strip()
                 filename = str(comp.metadata.get("filename", f"{comp.slug}.py")).strip()
@@ -537,6 +549,8 @@ class HarnessCompiler:
         enabled_set = set(overrides.enabled_components)
         skills: list[CompiledSkillArtifact] = []
         for comp in components:
+            if not comp.has_content:
+                continue
             comp_slug_norm = comp.slug.strip().lower()
             exec_mode = str(
                 comp.metadata.get("execution_mode", ScriptExecutionMode.ALWAYS.value)
@@ -666,11 +680,11 @@ class HarnessCompiler:
             comp_tags = {tag.strip().lower() for tag in comp.stack_tags if tag}
             if comp_slug in disabled_set:
                 effective_state = ComponentEffectiveState.DISABLED_PROJECT.value
-            elif comp_slug in enabled_set:
+            elif comp_slug in enabled_set and comp.has_content:
                 effective_state = ComponentEffectiveState.ACTIVE_FORCED.value
-            elif comp.status != ComponentStatus.COMPOSED:
+            elif comp.status != ComponentStatus.COMPOSED or not comp.has_content:
                 effective_state = ComponentEffectiveState.DISABLED_GLOBAL.value
-            elif comp.scope == ScopeType.GLOBAL or bool(comp_tags & effective_tags_set):
+            elif bool(comp_tags & effective_tags_set):
                 effective_state = ComponentEffectiveState.ACTIVE_AUTO.value
             else:
                 effective_state = ComponentEffectiveState.UNMATCHED_STACK.value
@@ -687,6 +701,10 @@ class HarnessCompiler:
                     "score": comp.score,
                     "version": comp.version,
                     "effective_state": effective_state,
+                    "has_content": comp.has_content,
+                    "is_empty_stub": not comp.has_content,
+                    "category": str(comp.metadata.get("category", "")),
+                    "detectors": comp.metadata.get("detectors", {}),
                 }
             )
         return items

@@ -40,6 +40,7 @@ from src.core.harness import (
     HarnessCompiler,
     normalize_stack_tags,
 )
+from src.core.harness.profiles import list_agent_catalog_metadata
 from src.core.services import AntigravitySDKService, EmbeddingClient
 
 logger = logging.getLogger("mcp_coop.core")
@@ -182,6 +183,7 @@ async def list_harness_components(
         "stack_tags": list(resolved_tags),
         "profile_overrides": profile_overrides,
         "components": items,
+        "agents": list_agent_catalog_metadata(),
     }
 
 

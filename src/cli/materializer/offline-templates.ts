@@ -6,6 +6,8 @@
 
 import {
   GLOBAL_FACTORY_DIR_NAME,
+  loadHarnessSeedCatalog,
+  loadPromptsConfigJson,
   OFFLINE_ORCHESTRATOR_SLUG,
   resolveMcpEndpointUrl,
 } from "../config/index.ts";
@@ -15,6 +17,8 @@ import {
   type HookEventName,
   type RenderedFilePayload,
 } from "./manifest-store.ts";
+
+const CORE_ENGINEERING_MENTOR_SLUG = "core-engineering-mentor" as const;
 
 export const DEFAULT_OFFLINE_MCP_URL = "http://127.0.0.1:8787/mcp" as const;
 export const DEFAULT_MCP_SERVER_KEY = "mcp-coop-factory" as const;
@@ -29,69 +33,59 @@ function buildHookCommand(event: HookEventName, agent: AgentId): string {
 }
 
 /**
- * Генерирует автономный Markdown-файл универсальных инженерных правил.
+ * Генерирует автономный Markdown-файл универсальных инженерных правил на основе
+ * `seeds/prompts-config.json` (`rules_markdown_header`) и компонента `core-engineering-mentor`
+ * из `seeds/harness-seed.json`.
  */
 export function buildOfflineRulesMarkdown(
   _stackTags: readonly string[] = [],
 ): string {
-  return [
-    "# Universal Engineering Rules",
-    "",
-    "---",
-    "",
-    "## 1. Deliberate & Incremental Execution",
-    "- Work in small, verifiable iterations (`Plan -> Step -> Review`) rather than dumping large, multi-module changes at once.",
-    "- Before writing code, briefly state **WHAT** is changing and **WHY**; after modifying code, summarize the resulting data flow.",
-    "",
-    "## 2. Engineering Rigor & Anti-Sycophancy",
-    "- Treat user questions (`Why is it done this way?`, `What if we use X?`) as an engineering discussion, **never** as an automatic order to delete and rewrite code.",
-    "- Explain trade-offs first, propose alternatives with a `(Recommended)` option, and modify code only after explicit user confirmation.",
-    "- Verify unfamiliar APIs, schemas, and file paths via context or documentation instead of guessing.",
-    "",
-    "## 3. Code Quality & Language Standard",
-    "- Maintain a Single Source of Truth (`DRY`), clear single responsibility (`SRP`), and `KISS / SOLID / YAGNI`.",
-    "- **Zero-Hardcode**: never scatter magic numbers or raw string literals across modules; extract constants, enums, and typed settings.",
-    "- **Language**: write all code, identifiers, and system literals in **English**; write architectural comments/docstrings (`Why & How`) and chat responses in the **user's language**.",
-    "",
-    "## 4. Operational Safety & Orchestration",
-    "- Never run destructive commands (`rm -rf /`, force-push to main branches, or unconfirmed `git reset --hard`).",
-    "- Apply the `coop-orchestrator` skill for task decomposition, context hygiene, subagent delegation, and verification loops.",
-    "",
-  ].join("\n");
+  const promptsConfig = loadPromptsConfigJson();
+  const compilerSection =
+    typeof promptsConfig["compiler"] === "object" &&
+    promptsConfig["compiler"] !== null
+      ? (promptsConfig["compiler"] as Record<string, unknown>)
+      : {};
+  const header =
+    typeof compilerSection["rules_markdown_header"] === "string"
+      ? compilerSection["rules_markdown_header"].trim()
+      : "";
+
+  const catalog = loadHarnessSeedCatalog();
+  const mentorComp = catalog.components.find(
+    (c) => c.slug === CORE_ENGINEERING_MENTOR_SLUG,
+  );
+  const body = (mentorComp?.content ?? "").trim();
+
+  if (header && body) {
+    return `${header}\n\n---\n\n${body}\n`;
+  }
+  return `${body || header}\n`;
 }
 
 /**
- * Генерирует автономный бутстрап-скилл `coop-orchestrator` (`SKILL.md`) для оркестрации задач,
- * гигиены контекста, делегирования субагентам и верификации изменений.
+ * Генерирует автономный бутстрап-скилл `coop-orchestrator` (`SKILL.md`) напрямую
+ * из компонента `coop-orchestrator` в `seeds/harness-seed.json`.
  */
 export function buildOfflineBootstrapSkillMarkdown(
   _stackTags: readonly string[] = [],
 ): string {
+  const catalog = loadHarnessSeedCatalog();
+  const orchestratorComp = catalog.components.find(
+    (c) => c.slug === OFFLINE_ORCHESTRATOR_SLUG,
+  );
+  const slug = orchestratorComp?.slug ?? OFFLINE_ORCHESTRATOR_SLUG;
+  const description = (orchestratorComp?.description ?? "").trim();
+  const body = (orchestratorComp?.content ?? "").trim();
+
   return [
     "---",
-    `name: ${OFFLINE_ORCHESTRATOR_SLUG}`,
+    `name: ${slug}`,
     "description: >-",
-    "  Universal task orchestration, context window hygiene, subagent delegation, and verification loop workflow. Apply when decomposing multi-step tasks, coordinating research or subagents, and verifying code changes.",
+    `  ${description}`,
     "---",
     "",
-    "# Cooperative Task Orchestrator (`coop-orchestrator`)",
-    "",
-    "## 1. Task Decomposition & Single-Loop First",
-    "- Break ambiguous or multi-step goals into small, atomic, independently verifiable steps before editing code.",
-    "- Default to a direct single-agent loop for localized tasks; avoid over-engineering workflows when a direct edit and check is sufficient.",
-    "",
-    "## 2. Context Hygiene & Subagent Delegation",
-    "- Protect the primary context window from noise and large raw outputs.",
-    "- Spawn subagents only for broad codebase exploration, heavy documentation research, or independent parallel workstreams.",
-    "- Because a subagent has an isolated context, always provide a self-contained brief:",
-    "  1. **Objective**: exact question to answer or artifact to produce.",
-    "  2. **Scope & Constraints**: target directories, files, or boundaries.",
-    "  3. **Expected Output**: concise structured summary with exact file/line references, never raw file dumps.",
-    "",
-    "## 3. Execution-Verification Loop (Evaluator-Optimizer)",
-    "- Never ship code blind: validate every atomic change with targeted typechecks, linters, or unit tests.",
-    "- **Root-Cause First**: when a test or command fails, read the exact error and identify the root cause before making another edit.",
-    "- **Bounded Retries**: never repeat a failing command blindly. If an issue is not resolved after 2–3 reasoned attempts, stop, summarize the findings, and align with the user.",
+    body,
     "",
   ].join("\n");
 }

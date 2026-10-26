@@ -42,4 +42,6 @@ governed_by:
 - 2026-10-25: В `docker/docker-compose.yml` включён `init: true` (`tini`) для защиты от процессов-зомби при запуске подпроцессов микро-агентов и проброшены опциональные переменные окружения `ANTIGRAVITY_*`.
 - 2026-10-25: Проставлена связь `governed_by: ["[[adr-001-clean-host-global-docker]]"]` после декомпозиции `SPEC.md` v1.0 в граф `.context/`.
 - 2026-10-26: Оптимизирован интервал `healthcheck` сервиса `mcp-coop-agentic-factory-core` в `docker/docker-compose.yml` и `docker/Dockerfile` (`start_period: 15s`, `start_interval: 2s`, `interval: 1h`) для быстрой проверки на старте без спама `GET /health` в логах.
+- 2026-10-26: В `docker/Dockerfile` добавлено копирование директории `COPY seeds ./seeds` внутрь образа `mcp-coop-agentic-factory-core` для загрузки `seeds/harness-seed.json` и `seeds/prompts-config.json` при старте контейнера.
+
 

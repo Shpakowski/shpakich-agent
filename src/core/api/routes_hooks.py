@@ -54,11 +54,63 @@ from src.core.enums import (
     VerdictAction,
 )
 from src.core.harness import HarnessCompiler
+from src.core.harness.seed import load_prompts_config
 from src.core.services import EmbeddingClient
 
 logger = logging.getLogger("mcp_coop.core")
 
 hooks_router = APIRouter()
+
+_HOOK_PROMPTS: dict[str, Any] = dict(load_prompts_config().get("hooks") or {})
+
+SESSION_START_BANNER_TEMPLATE: str = str(
+    _HOOK_PROMPTS.get("session_start_banner")
+    or "[MCP-COOP Factory]: Active stack tags={stack_tags}. Follow Learning-First iterative workflow and keep .context/ graph synchronized."
+)
+POST_TOOL_USE_FAILURE_TEMPLATE: str = str(
+    _HOOK_PROMPTS.get("post_tool_use_failure")
+    or "[MCP-COOP Working Memory]: Recorded tool failure #{fail_count} for '{tool_name}'. Inspect the root cause before retrying."
+)
+POST_TOOL_USE_RECOVERY_MESSAGE: str = str(
+    _HOOK_PROMPTS.get("post_tool_use_recovery")
+    or "[MCP-COOP Memory Promotion]: Previous tool failure was resolved! Before finishing, record the root cause and fix into long-term memory."
+)
+PRE_INVOCATION_POST_COMPACT_MESSAGE: str = str(
+    _HOOK_PROMPTS.get("pre_invocation_post_compact")
+    or "[Post-Compaction Re-Hydration]: Context was compacted. Re-verify `.context/index.md` and active session state before editing project files."
+)
+PRE_INVOCATION_ACTIVE_CONTEXT_TEMPLATE: str = str(
+    _HOOK_PROMPTS.get("pre_invocation_active_context_header")
+    or "[Active Context Graph (.context/index.md)]:\n{index_md}"
+)
+PLAN_GUARDRAIL_HEADER: str = str(
+    _HOOK_PROMPTS.get("plan_guardrail_header")
+    or "[Plan Guardrail]: Break the implementation plan into small Learning-First iterations and include a `.context/` graph synchronization step in every iteration."
+)
+PLAN_PATTERNS_LINE_TEMPLATE: str = str(
+    _HOOK_PROMPTS.get("plan_patterns_line")
+    or "[Stack Harness Patterns ({stack_tags})]: {patterns}"
+)
+PLAN_MEMORIES_LINE_TEMPLATE: str = str(
+    _HOOK_PROMPTS.get("plan_memories_line")
+    or "[Prior Architectural Memories]: {memories}"
+)
+PLAN_COMPACTIONS_LINE_TEMPLATE: str = str(
+    _HOOK_PROMPTS.get("plan_compactions_line")
+    or "[Prior Session Compactions]: {compactions}"
+)
+ERROR_RECOVERY_RAG_TEMPLATE: str = str(
+    _HOOK_PROMPTS.get("error_recovery_rag")
+    or "[Error Recovery RAG]: Similar error '{title}' solved previously: {solution}"
+)
+ACTIVE_SESSION_ERROR_TEMPLATE: str = str(
+    _HOOK_PROMPTS.get("active_session_error")
+    or "[Active Session Error]: Unresolved error in '{tool_name}': {error_text}"
+)
+STOP_REFLECTION_REASON_MESSAGE: str = str(
+    _HOOK_PROMPTS.get("stop_reflection_reason")
+    or "[Harness Reflection]: You resolved a non-trivial tool error in this session. Please propose a memory update or summarize the root cause before finishing."
+)
 
 
 async def _build_plan_best_practices_hint(
@@ -71,12 +123,7 @@ async def _build_plan_best_practices_hint(
     workspace_path: str = "",
 ) -> str:
     """Формирует транзиентную подсказку для `/plan` из `harness_components`, `memories` и `session_compactions`."""
-    lines: list[str] = [
-        (
-            "[Plan Guardrail]: Break the implementation plan into small Learning-First iterations "
-            "and include a `.context/` graph synchronization step in every iteration."
-        )
-    ]
+    lines: list[str] = [PLAN_GUARDRAIL_HEADER]
     try:
         catalog = await compiler.list_catalog_components(
             stack_tags,
@@ -101,7 +148,12 @@ async def _build_plan_best_practices_hint(
             pattern_items = "; ".join(
                 f"{item.get('slug')} ({item.get('title')})" for item in active_patterns
             )
-            lines.append(f"[Stack Harness² Patterns ({', '.join(stack_tags)})]: {pattern_items}")
+            lines.append(
+                PLAN_PATTERNS_LINE_TEMPLATE.format(
+                    stack_tags=", ".join(stack_tags),
+                    patterns=pattern_items,
+                )
+            )
     except Exception as exc:  # noqa: BLE001
         logger.debug("Plan catalog pattern lookup failed: %s", exc)
 
@@ -113,7 +165,7 @@ async def _build_plan_best_practices_hint(
                 f"{m.get('title')}: {str(m.get('solution') or '')[:140]}"
                 for m in memories[:MAX_PLAN_MEMORIES_INJECTED]
             )
-            lines.append(f"[Prior Architectural Memories]: {mem_items}")
+            lines.append(PLAN_MEMORIES_LINE_TEMPLATE.format(memories=mem_items))
     except Exception as exc:  # noqa: BLE001
         logger.debug("Plan memory lookup failed: %s", exc)
 
@@ -131,7 +183,7 @@ async def _build_plan_best_practices_hint(
                     f"{str(c.get('summary_text') or '')[:160]}"
                     for c in compactions[:MAX_PLAN_COMPACTIONS_INJECTED]
                 )
-                lines.append(f"[Prior Session Compactions]: {comp_items}")
+                lines.append(PLAN_COMPACTIONS_LINE_TEMPLATE.format(compactions=comp_items))
         except Exception as exc:  # noqa: BLE001
             logger.debug("Plan compaction lookup failed: %s", exc)
 
@@ -182,10 +234,7 @@ async def hook_session_start(
             logger.debug("Redis session init failed: %s", exc)
 
     sys_parts: list[str] = [
-        (
-            f"[MCP-COOP Factory]: Active stack tags={list(stack_tags)}. "
-            "Follow Learning-First iterative workflow and keep .context/ graph synchronized."
-        )
+        SESSION_START_BANNER_TEMPLATE.format(stack_tags=list(stack_tags))
     ]
     script_res = await dispatcher.execute_hook_scripts(
         hook_in,
@@ -335,8 +384,10 @@ async def hook_post_tool_use(
                     ),
                 )
                 eph_parts.append(
-                    f"[MCP-COOP Working Memory]: Recorded tool failure #{fail_count} "
-                    f"for '{hook_in.tool_name}'. Inspect the root cause before retrying."
+                    POST_TOOL_USE_FAILURE_TEMPLATE.format(
+                        fail_count=fail_count,
+                        tool_name=hook_in.tool_name,
+                    )
                 )
             else:
                 candidate = await redis_store.mark_error_resolved(
@@ -344,10 +395,7 @@ async def hook_post_tool_use(
                     recovery_command=cmd or hook_in.tool_name,
                 )
                 if candidate is not None:
-                    eph_parts.append(
-                        "[MCP-COOP Memory Promotion]: Previous tool failure was resolved! "
-                        "Before finishing, record the root cause and fix into long-term memory."
-                    )
+                    eph_parts.append(POST_TOOL_USE_RECOVERY_MESSAGE)
         except Exception as exc:  # noqa: BLE001
             logger.debug("PostToolUse Redis tracking failed: %s", exc)
 
@@ -413,10 +461,7 @@ async def hook_pre_invocation(
                 logger.debug("Compaction checkpoint Redis lookup failed: %s", exc)
 
         if not already_processed:
-            rehydrated_msg = (
-                "[Post-Compaction Re-Hydration]: Context was compacted. Re-verify `.context/index.md` "
-                "and active session state before editing project files."
-            )
+            rehydrated_msg = PRE_INVOCATION_POST_COMPACT_MESSAGE
             idx_text = str(raw_payload.get("context_index_md") or "").strip()
             if not idx_text and hook_in.workspace_path:
                 idx_path = Path(hook_in.workspace_path) / ".context" / "index.md"
@@ -426,9 +471,8 @@ async def hook_pre_invocation(
                     except OSError:
                         pass
             if idx_text:
-                rehydrated_msg = (
-                    f"{rehydrated_msg}\n\n[Active Context Graph (.context/index.md)]:\n{idx_text}"
-                )
+                active_ctx_block = PRE_INVOCATION_ACTIVE_CONTEXT_TEMPLATE.format(index_md=idx_text)
+                rehydrated_msg = f"{rehydrated_msg}\n\n{active_ctx_block}"
             sys_parts.append(rehydrated_msg)
 
             if checkpoint is not None and checkpoint.summary_text.strip():
@@ -509,11 +553,17 @@ async def hook_pre_invocation(
                 if matches:
                     top = matches[0]
                     hints.append(
-                        f"[Error Recovery RAG]: Similar error '{top['title']}' solved previously: {top['solution']}"
+                        ERROR_RECOVERY_RAG_TEMPLATE.format(
+                            title=top["title"],
+                            solution=top["solution"],
+                        )
                     )
                 else:
                     hints.append(
-                        f"[Active Session Error]: Unresolved error in '{last_err.tool_name}': {last_err.error_text[:200]}"
+                        ACTIVE_SESSION_ERROR_TEMPLATE.format(
+                            tool_name=last_err.tool_name,
+                            error_text=last_err.error_text[:200],
+                        )
                     )
         except Exception as exc:  # noqa: BLE001
             logger.debug("PreInvocation error lookup failed: %s", exc)
@@ -583,10 +633,7 @@ async def hook_stop(
                     domain=DecisionDomain.HARNESS_PROBE,
                     action=VerdictAction.CONTINUE,
                     decided_by_tier="stop_reflection_gate",
-                    reason=(
-                        "[Harness² Reflection]: You resolved a non-trivial tool error in this session. "
-                        "Please propose a memory update or summarize the root cause before finishing."
-                    ),
+                    reason=STOP_REFLECTION_REASON_MESSAGE,
                 )
         except Exception as exc:  # noqa: BLE001
             logger.debug("Stop hook Redis check failed: %s", exc)

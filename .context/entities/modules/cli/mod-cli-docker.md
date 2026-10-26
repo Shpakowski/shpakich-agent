@@ -30,3 +30,5 @@ governed_by:
 
 ## Логи контекста (AI Traces)
 - 2026-10-26: Реализован менеджер жизненного цикла глобального Docker-стека в `~/.mcp-coop-agentic-factory/` (`src/cli/docker/`): синхронизация контекста сборки (`docker/Dockerfile`, `docker/docker-compose.yml`, `pyproject.toml`, `README.md`, `.dockerignore`, `src/core`), генерация `.env` и POSIX-лаунчера `~/.mcp-coop-agentic-factory/bin/run-hook.sh` с автоопределением `bun` / `node` (`syncGlobalFactoryStackFiles` в `assets.ts`), диагностика Docker Engine и контейнеров (`checkDockerDaemonAvailable`, `inspectGlobalDockerContainers` в `stack-status.ts`), а также Fail-Open запуск `docker compose up -d --build` с асинхронным стримингом прогресса и поллингом `/health` (`ensureGlobalStackUp`, `stopGlobalStackDown` в `compose-runner.ts`).
+- 2026-10-26: В `src/cli/docker/assets.ts` добавлена синхронизация директории `seeds/` (`seeds/harness-seed.json` и `seeds/prompts-config.json`) в `~/.mcp-coop-agentic-factory/seeds/` перед сборкой и запуском глобального Docker-стека.
+

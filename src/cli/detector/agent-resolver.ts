@@ -13,6 +13,7 @@ import {
   type AgentType,
   ENV_VARS,
   isValidAgentType,
+  type StackSignatureRule,
 } from "../config/index.ts";
 import { inspectContextGraph } from "./context-inspector.ts";
 import { detectStackTags, GLOBAL_STACK_TAG } from "./stack-scanner.ts";
@@ -160,11 +161,13 @@ export function resolveTargetAgent(
 /**
  * Собирает полный профиль рабочей директории проекта: абсолютный путь, имя проекта,
  * выбранного ИИ-агента с источником решения, теги технологического стека и статус графа `.context/`.
+ * Принимает опциональные правила `customRules`, загруженные напрямую из БД ядра.
  */
 export function inspectWorkspace(
   workspaceDir: string = process.cwd(),
   requestedAgent?: string,
   env: NodeJS.ProcessEnv = process.env,
+  customRules?: readonly StackSignatureRule[],
 ): WorkspaceInspection {
   const resolvedWorkspacePath = path.resolve(workspaceDir);
   const projectName =
@@ -174,7 +177,7 @@ export function inspectWorkspace(
     requestedAgent,
     env,
   );
-  const stackTags = detectStackTags(resolvedWorkspacePath);
+  const stackTags = detectStackTags(resolvedWorkspacePath, customRules);
   const contextGraph = inspectContextGraph(resolvedWorkspacePath);
 
   return {

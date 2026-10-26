@@ -30,3 +30,5 @@ governed_by:
 
 ## Логи контекста (AI Traces)
 - 2026-10-26: Реализован детерминированный инспектор рабочего пространства (`src/cli/detector/`): табличное автоопределение тегов технологического стека (`detectStackTags`, `getAllKnownStackTags` в `stack-scanner.ts` по манифестам `package.json`, `pyproject.toml`, `requirements*.txt`, `Cargo.toml`, `go.mod`, `Dockerfile`, `docker-compose.yml`, `*.sol`), извлечение метки последнего обновления графа `.context/index.md` (`getContextGraphLastUpdated` в `context-inspector.ts`) и каскадный резолвинг целевого ИИ-агента (`resolveTargetAgent`, `inspectWorkspace` в `agent-resolver.ts` по цепочке `cli_flag` → `environment` → `workspace_marker` → `default_fallback`).
+- 2026-10-26: В `src/cli/detector/stack-scanner.ts` и `src/cli/detector/agent-resolver.ts` добавлена поддержка динамических правил детекции стека из БД (`customRules: StackSignatureRules` в `detectStackTags` и `inspectWorkspace`), сканирование манифестов JVM (`pom.xml`, `build.gradle*`) и карта статусов компонентов каталога `getCatalogTagStatusMap(catalogComponents)`.
+

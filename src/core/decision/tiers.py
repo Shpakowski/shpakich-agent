@@ -34,6 +34,7 @@ from src.core.enums import (
     VerdictAction,
 )
 from src.core.harness.compiler import HarnessCompiler
+from src.core.harness.seed import load_prompts_config
 from src.core.services.antigravity import AntigravitySDKService
 
 logger = logging.getLogger("mcp_coop.core.decision.tiers")
@@ -118,119 +119,46 @@ class DomainEvaluationSpec(BaseModel):
 
 
 def build_default_domain_specs() -> dict[DecisionDomain, DomainEvaluationSpec]:
-    """Создаёт стандартный реестр спецификаций для 5 доменов матрицы принятия решений."""
-    return {
-        DecisionDomain.TOOL_SAFETY: DomainEvaluationSpec(
-            domain=DecisionDomain.TOOL_SAFETY,
-            default_fail_mode=FailMode.FAIL_CLOSED_ASK,
-            tier2_questions=[
-                DecisionQuestion(
-                    name="is_safe_to_execute",
-                    question_type=DecisionQuestionType.PREDICATE,
-                    instructions=(
-                        "Is this tool invocation safe to execute without data loss, "
-                        "privilege escalation, or destructive side effects?"
-                    ),
-                    predicate_threshold=0.6,
+    """Создаёт стандартный реестр спецификаций для 5 доменов матрицы принятия решений из `seeds/prompts-config.json`."""
+    raw_domains = load_prompts_config().get("decision_domains")
+    specs: dict[DecisionDomain, DomainEvaluationSpec] = {}
+    if isinstance(raw_domains, Mapping):
+        for domain in DecisionDomain:
+            raw_spec = raw_domains.get(domain.value)
+            if not isinstance(raw_spec, Mapping):
+                continue
+            raw_fail_mode = str(
+                raw_spec.get(
+                    "default_fail_mode",
+                    FailMode.FAIL_CLOSED_ASK.value
+                    if domain == DecisionDomain.TOOL_SAFETY
+                    else FailMode.FAIL_OPEN_ALLOW.value,
+                )
+            )
+            raw_questions = raw_spec.get("tier2_questions")
+            questions = [
+                DecisionQuestion.model_validate(q)
+                for q in (raw_questions if isinstance(raw_questions, list) else [])
+                if isinstance(q, Mapping)
+            ]
+            specs[domain] = DomainEvaluationSpec(
+                domain=domain,
+                default_fail_mode=FailMode(raw_fail_mode),
+                tier2_questions=questions,
+            )
+
+    for domain in DecisionDomain:
+        if domain not in specs:
+            specs[domain] = DomainEvaluationSpec(
+                domain=domain,
+                default_fail_mode=(
+                    FailMode.FAIL_CLOSED_ASK
+                    if domain == DecisionDomain.TOOL_SAFETY
+                    else FailMode.FAIL_OPEN_ALLOW
                 ),
-                DecisionQuestion(
-                    name="recommended_action",
-                    question_type=DecisionQuestionType.CHOICE,
-                    instructions="Choose the safest execution policy for this command.",
-                    choices=[
-                        VerdictAction.ALLOW.value,
-                        VerdictAction.ASK.value,
-                        VerdictAction.DENY.value,
-                    ],
-                ),
-                DecisionQuestion(
-                    name="risk_score",
-                    question_type=DecisionQuestionType.SCORE,
-                    instructions="Estimate operational risk from 0.0 (harmless) to 1.0 (destructive).",
-                    levels=["low", "medium", "high", "critical"],
-                ),
-            ],
-        ),
-        DecisionDomain.PLAN_VALIDATION: DomainEvaluationSpec(
-            domain=DecisionDomain.PLAN_VALIDATION,
-            default_fail_mode=FailMode.FAIL_OPEN_ALLOW,
-            tier2_questions=[
-                DecisionQuestion(
-                    name="is_plan_compliant",
-                    question_type=DecisionQuestionType.PREDICATE,
-                    instructions=(
-                        "Does the implementation plan follow iterative Learning-First steps "
-                        "and include .context/ graph synchronization?"
-                    ),
-                    predicate_threshold=0.5,
-                ),
-                DecisionQuestion(
-                    name="plan_quality_score",
-                    question_type=DecisionQuestionType.SCORE,
-                    instructions="Score the engineering clarity and modularity of the plan from 0.0 to 1.0.",
-                    levels=["poor", "acceptable", "good", "excellent"],
-                ),
-            ],
-        ),
-        DecisionDomain.SUBAGENT_ROUTING: DomainEvaluationSpec(
-            domain=DecisionDomain.SUBAGENT_ROUTING,
-            default_fail_mode=FailMode.FAIL_OPEN_ALLOW,
-            tier2_questions=[
-                DecisionQuestion(
-                    name="target_tier",
-                    question_type=DecisionQuestionType.CHOICE,
-                    instructions="Select the optimal subagent model tier for the delegated task.",
-                    choices=[
-                        SUBAGENT_LITE_CHOICE,
-                        SUBAGENT_FLASH_CHOICE,
-                        SUBAGENT_PRO_CHOICE,
-                    ],
-                ),
-                DecisionQuestion(
-                    name="complexity_score",
-                    question_type=DecisionQuestionType.SCORE,
-                    instructions="Estimate task complexity from 0.0 (trivial lookup) to 1.0 (deep architecture).",
-                    levels=["trivial", "moderate", "complex"],
-                ),
-            ],
-        ),
-        DecisionDomain.CONTEXT_PRUNING: DomainEvaluationSpec(
-            domain=DecisionDomain.CONTEXT_PRUNING,
-            default_fail_mode=FailMode.FAIL_OPEN_ALLOW,
-            tier2_questions=[
-                DecisionQuestion(
-                    name="keep_in_working_memory",
-                    question_type=DecisionQuestionType.PREDICATE,
-                    instructions="Should this context item be retained in active session memory after compaction?",
-                    predicate_threshold=0.5,
-                ),
-                DecisionQuestion(
-                    name="relevance_score",
-                    question_type=DecisionQuestionType.SCORE,
-                    instructions="Score relevance of the context item to current task from 0.0 to 1.0.",
-                    levels=["irrelevant", "useful", "critical"],
-                ),
-            ],
-        ),
-        DecisionDomain.HARNESS_PROBE: DomainEvaluationSpec(
-            domain=DecisionDomain.HARNESS_PROBE,
-            default_fail_mode=FailMode.FAIL_OPEN_ALLOW,
-            tier2_questions=[
-                DecisionQuestion(
-                    name="promote_to_composed",
-                    question_type=DecisionQuestionType.PREDICATE,
-                    instructions="Is this proposed harness rule or memory general, accurate, and safe to promote?",
-                    predicate_threshold=0.7,
-                ),
-                DecisionQuestion(
-                    name="utility_score",
-                    question_type=DecisionQuestionType.SCORE,
-                    instructions="Score long-term engineering utility of the candidate component from 0.0 to 1.0.",
-                    levels=["low", "medium", "high"],
-                ),
-            ],
-        ),
-    }
+                tier2_questions=[],
+            )
+    return specs
 
 
 class LocalDeterministicTier:

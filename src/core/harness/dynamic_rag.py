@@ -24,6 +24,7 @@ from src.core.enums import (
 from src.core.harness.seed import (
     HARNESS_ORCHESTRATOR_SLUG,
     HarnessComponentSeed,
+    load_prompts_config,
     resolve_seed_components_with_overrides,
 )
 from src.core.services.embeddings import EmbeddingClient, format_pgvector
@@ -33,6 +34,22 @@ if TYPE_CHECKING:
     from src.core.harness.compiler import ProjectHarnessOverrides
 
 logger = logging.getLogger("mcp_coop.core.harness.dynamic_rag")
+
+_DYNAMIC_RAG_PROMPTS: dict[str, Any] = dict(load_prompts_config().get("dynamic_rag") or {})
+DYNAMIC_RULES_HEADER: str = str(
+    _DYNAMIC_RAG_PROMPTS.get("rules_header") or "[Dynamic Harness Rules]:"
+)
+DYNAMIC_RULE_ITEM_TEMPLATE: str = str(
+    _DYNAMIC_RAG_PROMPTS.get("rule_item_template") or "#### {title} (`{slug}`)\n{content}"
+)
+SKILL_BLUEPRINT_TEMPLATE: str = str(
+    _DYNAMIC_RAG_PROMPTS.get("skill_blueprint_template")
+    or "[Active Skill Blueprint: {slug}]:\n{content}"
+)
+SKILL_HINT_TEMPLATE: str = str(
+    _DYNAMIC_RAG_PROMPTS.get("skill_hint_template")
+    or "[Available Skill Hint]: {slug} — {description}"
+)
 
 DEFAULT_MAX_DYNAMIC_RULES: int = 3
 DEFAULT_MAX_DYNAMIC_SKILLS: int = 2
@@ -134,15 +151,32 @@ class DynamicPromptRAGResult(BaseModel):
 
         sections: list[str] = []
         if self.rules:
-            rule_items = [f"#### {r.title} (`{r.slug}`)\n{r.content.strip()}" for r in self.rules]
-            sections.append("[Dynamic Harness² Rules]:\n" + "\n\n".join(rule_items))
+            rule_items = [
+                DYNAMIC_RULE_ITEM_TEMPLATE.format(
+                    title=r.title,
+                    slug=r.slug,
+                    content=r.content.strip(),
+                )
+                for r in self.rules
+            ]
+            sections.append(f"{DYNAMIC_RULES_HEADER}\n" + "\n\n".join(rule_items))
 
         for skill in self.skills:
             if skill.is_full_blueprint:
-                sections.append(f"[Active Skill Blueprint: {skill.slug}]:\n{skill.content.strip()}")
+                sections.append(
+                    SKILL_BLUEPRINT_TEMPLATE.format(
+                        slug=skill.slug,
+                        content=skill.content.strip(),
+                    )
+                )
             else:
                 clean_desc = " ".join(skill.description.strip().splitlines())
-                sections.append(f"[Available Skill Hint]: {skill.slug} — {clean_desc}")
+                sections.append(
+                    SKILL_HINT_TEMPLATE.format(
+                        slug=skill.slug,
+                        description=clean_desc,
+                    )
+                )
 
         return "\n\n".join(sections) if sections else None
 
@@ -194,6 +228,8 @@ def _classify_candidates(
     seen_slugs: set[str] = set()
 
     for slug, comp_type, title, description, content, relevance in candidates:
+        if not content or not content.strip():
+            continue
         norm_slug = slug.strip().lower()
         if norm_slug in seen_slugs or norm_slug == HARNESS_ORCHESTRATOR_SLUG:
             continue
@@ -292,7 +328,11 @@ async def select_dynamic_components_for_prompt(
     seeds = resolve_seed_components_with_overrides(effective_tags, enabled_components=(), disabled_components=disabled_list)
     seed_candidates: list[tuple[str, ComponentType, str, str, str, float]] = []
     for seed in seeds:
-        if seed.slug.strip().lower() in enabled_set or seed.component_type.value not in DYNAMIC_QUERY_TYPES:
+        if (
+            not seed.has_content
+            or seed.slug.strip().lower() in enabled_set
+            or seed.component_type.value not in DYNAMIC_QUERY_TYPES
+        ):
             continue
         raw_meta = seed.metadata if isinstance(seed.metadata, Mapping) else json.loads(str(seed.metadata or "{}"))
         if str(raw_meta.get("execution_mode", ScriptExecutionMode.ALWAYS.value)).strip().lower() != ScriptExecutionMode.SEMANTIC.value:

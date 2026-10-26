@@ -48,3 +48,5 @@ governed_by:
 
 ## Логи контекста (AI Traces)
 - 2026-10-26: Реализованы парсер CLI-аргументов на `node:util.parseArgs` (`parseCliArgs` в `arg-parser.ts`) и контроллеры всех 9 команд (`src/cli/commands/`): `handleInitCommand` (`cmd-init.ts`), `handleSyncCommand` с защитой от перезаписи адаптеров дефолтным оффлайн-фолбэком при выключенном Docker-ядре (`cmd-sync.ts`), `handleHarnessCommand` для подкоманд `list`, `enable`, `disable`, `hook-enable`, `hook-disable`, `tag-add`, `tag-exclude`, `consolidate [--dry-run]` (`cmd-harness.ts`), `handleProvidersCommand` для `list`, `add`, `enable`, `disable`, `priority`, `remove`, `reset` (`cmd-providers.ts`), инфраструктурные контроллеры `status`, `ui [--no-open]`, `up`, `down` (`cmd-lifecycle.ts`) и `handleHookCommand` (`cmd-hook.ts`).
+- 2026-10-26: Пайплайн `handleInitCommand` (`src/cli/commands/cmd-init.ts`) переведён на архитектуру DB-First: сначала поднимается глобальный Docker-стек (`ensureGlobalStackUp`), затем из PostgreSQL запрашивается живой каталог компонентов и сигнатур детектора (`fetchHarnessComponents`), после чего выполняется `inspectWorkspace` и запускается `runInitWizard`.
+

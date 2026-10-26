@@ -17,9 +17,12 @@ export {
   detectStackTags,
   FILE_STACK_RULES,
   getAllKnownStackTags,
+  getCatalogTagStatusMap,
   GLOBAL_STACK_TAG,
   PACKAGE_JSON_DEPENDENCY_RULES,
+  ROOT_TEXT_MANIFEST_REL_PATHS,
   TEXT_MANIFEST_TOKEN_RULES,
+  type CatalogTagStatusInfo,
   type FileStackRule,
   type TextManifestTokenRule,
 } from "./stack-scanner.ts";

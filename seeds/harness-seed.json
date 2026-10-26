@@ -1,0 +1,1261 @@
+{
+  "version": "2026.2",
+  "plugin": {
+    "id": "mcp-coop-agentic-factory",
+    "display_name": "MCP-COOP Agentic Factory",
+    "description": "Adaptive engineering workspace plugin providing project context management, cross-session memory, and automated workflow guardrails.",
+    "mcp_server_key": "mcp-coop-factory",
+    "codex_mcp_server_key": "mcp_coop_factory",
+    "default_agent": "antigravity"
+  },
+  "legacy_slugs_to_purge": [
+    "harness-orchestrator",
+    "context-graph-steward",
+    "context-graph-discipline",
+    "clean-architecture",
+    "javascript",
+    "typescript-architecture",
+    "javascript-ecmascript"
+  ],
+  "agents": [
+    {
+      "agent_type": "antigravity",
+      "display_name": "Google Antigravity (AGY 2.0 Plugin Bundle)",
+      "rules": {
+        "relative_path": ".agents/plugins/mcp-coop-agentic-factory/rules/AGENTS.md",
+        "rules_format": "plain_md",
+        "write_strategy": "overwrite",
+        "description": "Antigravity 2.0 plugin-scoped engineering rules and tool guidance",
+        "globs": "*",
+        "always_apply": true,
+        "scoped_paths": []
+      },
+      "skills": {
+        "directory_template": ".agents/plugins/mcp-coop-agentic-factory/skills/{slug}",
+        "skill_filename": "SKILL.md",
+        "scripts_subdir": "scripts",
+        "write_strategy": "overwrite"
+      },
+      "mcp": {
+        "relative_path": ".agents/plugins/mcp-coop-agentic-factory/mcp_config.json",
+        "config_format": "mcp_servers_url",
+        "server_key": "mcp-coop-factory",
+        "write_strategy": "overwrite"
+      },
+      "hooks": {
+        "relative_path": ".agents/plugins/mcp-coop-agentic-factory/hooks.json",
+        "dialect": "agy_protojson",
+        "event_mapping": {
+          "session-start": "SessionStart",
+          "pre-tool-use": "PreToolUse",
+          "post-tool-use": "PostToolUse",
+          "pre-invocation": "PreInvocation",
+          "stop": "Stop"
+        },
+        "write_strategy": "overwrite",
+        "hook_group_name": "mcp-coop-agentic-factory",
+        "default_timeout_seconds": 15
+      },
+      "plugin_manifest": {
+        "relative_path": ".agents/plugins/mcp-coop-agentic-factory/plugin.json",
+        "name": "mcp-coop-agentic-factory",
+        "display_name": "MCP-COOP Agentic Factory",
+        "description": "Adaptive engineering workspace plugin providing project context management, cross-session memory, and automated workflow guardrails.",
+        "suggested_prompts": [],
+        "write_strategy": "overwrite"
+      },
+      "extra_instruction_paths": [],
+      "cli_display_name": "Google Antigravity",
+      "config_hint": ".agents/plugins & hooks.json",
+      "workspace_markers": [
+        ".agents",
+        ".gemini/antigravity"
+      ]
+    },
+    {
+      "agent_type": "claude-code",
+      "display_name": "Anthropic Claude Code",
+      "rules": {
+        "relative_path": ".claude/rules/mcp-coop-factory.md",
+        "rules_format": "plain_md",
+        "write_strategy": "overwrite",
+        "description": "Claude Code modular project rules managed by MCP-COOP Factory",
+        "globs": "*",
+        "always_apply": true,
+        "scoped_paths": []
+      },
+      "skills": {
+        "directory_template": ".claude/skills/{slug}",
+        "skill_filename": "SKILL.md",
+        "scripts_subdir": "scripts",
+        "write_strategy": "overwrite"
+      },
+      "mcp": {
+        "relative_path": ".mcp.json",
+        "config_format": "mcp_servers_http_typed",
+        "server_key": "mcp-coop-factory",
+        "write_strategy": "merge_json"
+      },
+      "hooks": {
+        "relative_path": ".claude/settings.json",
+        "dialect": "claude_codex_v1",
+        "event_mapping": {
+          "session-start": "SessionStart",
+          "pre-tool-use": "PreToolUse",
+          "post-tool-use": "PostToolUse",
+          "pre-invocation": "UserPromptSubmit",
+          "stop": "Stop"
+        },
+        "write_strategy": "merge_json",
+        "hook_group_name": "mcp-coop-agentic-factory",
+        "default_timeout_seconds": 15
+      },
+      "plugin_manifest": null,
+      "extra_instruction_paths": [],
+      "cli_display_name": "Claude Code",
+      "config_hint": ".claude/settings.json & CLAUDE.md",
+      "workspace_markers": [
+        ".claude",
+        "CLAUDE.md"
+      ]
+    },
+    {
+      "agent_type": "cursor",
+      "display_name": "Cursor IDE",
+      "rules": {
+        "relative_path": ".cursor/rules/mcp-coop-factory.mdc",
+        "rules_format": "cursor_mdc",
+        "write_strategy": "overwrite",
+        "description": "MCP-COOP Agentic Factory always-on engineering rules and guardrails",
+        "globs": "*",
+        "always_apply": true,
+        "scoped_paths": []
+      },
+      "skills": {
+        "directory_template": ".agents/skills/{slug}",
+        "skill_filename": "SKILL.md",
+        "scripts_subdir": "scripts",
+        "write_strategy": "overwrite"
+      },
+      "mcp": {
+        "relative_path": ".cursor/mcp.json",
+        "config_format": "mcp_servers_url",
+        "server_key": "mcp-coop-factory",
+        "write_strategy": "merge_json"
+      },
+      "hooks": {
+        "relative_path": ".cursor/hooks.json",
+        "dialect": "cursor_v1",
+        "event_mapping": {
+          "session-start": "sessionStart",
+          "pre-tool-use": "preToolUse",
+          "post-tool-use": "postToolUse",
+          "pre-invocation": "beforeSubmitPrompt",
+          "stop": "stop"
+        },
+        "write_strategy": "merge_json",
+        "hook_group_name": "mcp-coop-agentic-factory",
+        "default_timeout_seconds": 15
+      },
+      "plugin_manifest": null,
+      "extra_instruction_paths": [],
+      "cli_display_name": "Cursor",
+      "config_hint": ".cursor/rules/*.mdc & hooks.json",
+      "workspace_markers": [
+        ".cursor",
+        ".cursorrules"
+      ]
+    },
+    {
+      "agent_type": "codex",
+      "display_name": "OpenAI Codex CLI",
+      "rules": {
+        "relative_path": "AGENTS.md",
+        "rules_format": "plain_md",
+        "write_strategy": "overwrite",
+        "description": "OpenAI Codex CLI root instructions compiled by MCP-COOP Factory",
+        "globs": "*",
+        "always_apply": true,
+        "scoped_paths": []
+      },
+      "skills": {
+        "directory_template": ".agents/skills/{slug}",
+        "skill_filename": "SKILL.md",
+        "scripts_subdir": "scripts",
+        "write_strategy": "overwrite"
+      },
+      "mcp": {
+        "relative_path": ".codex/config.toml",
+        "config_format": "codex_toml",
+        "server_key": "mcp_coop_factory",
+        "write_strategy": "merge_toml"
+      },
+      "hooks": {
+        "relative_path": ".codex/hooks.json",
+        "dialect": "claude_codex_v1",
+        "event_mapping": {
+          "session-start": "SessionStart",
+          "pre-tool-use": "PreToolUse",
+          "post-tool-use": "PostToolUse",
+          "pre-invocation": "UserPromptSubmit",
+          "stop": "Stop"
+        },
+        "write_strategy": "merge_json",
+        "hook_group_name": "mcp-coop-agentic-factory",
+        "default_timeout_seconds": 15
+      },
+      "plugin_manifest": null,
+      "extra_instruction_paths": [],
+      "cli_display_name": "OpenAI Codex CLI",
+      "config_hint": ".codex/hooks.json & AGENTS.md",
+      "workspace_markers": [
+        ".codex"
+      ]
+    },
+    {
+      "agent_type": "opencode",
+      "display_name": "OpenCode CLI",
+      "rules": {
+        "relative_path": ".opencode/rules/mcp-coop-factory.md",
+        "rules_format": "plain_md",
+        "write_strategy": "overwrite",
+        "description": "OpenCode modular project instructions managed by MCP-COOP Factory",
+        "globs": "*",
+        "always_apply": true,
+        "scoped_paths": []
+      },
+      "skills": {
+        "directory_template": ".agents/skills/{slug}",
+        "skill_filename": "SKILL.md",
+        "scripts_subdir": "scripts",
+        "write_strategy": "overwrite"
+      },
+      "mcp": {
+        "relative_path": "opencode.json",
+        "config_format": "opencode_remote",
+        "server_key": "mcp-coop-factory",
+        "write_strategy": "merge_json"
+      },
+      "hooks": {
+        "relative_path": ".opencode/plugins/mcp-coop-factory.ts",
+        "dialect": "opencode_ts_plugin",
+        "event_mapping": {
+          "session-start": "session.created",
+          "pre-tool-use": "tool.execute.before",
+          "post-tool-use": "tool.execute.after",
+          "pre-invocation": "chat.message",
+          "stop": "session.idle"
+        },
+        "write_strategy": "overwrite",
+        "hook_group_name": "mcp-coop-agentic-factory",
+        "default_timeout_seconds": 15
+      },
+      "plugin_manifest": null,
+      "extra_instruction_paths": [
+        "AGENTS.md",
+        ".context/index.md",
+        ".opencode/rules/*.md"
+      ],
+      "cli_display_name": "OpenCode",
+      "config_hint": ".opencode/plugins & opencode.json",
+      "workspace_markers": [
+        ".opencode"
+      ]
+    }
+  ],
+  "components": [
+    {
+      "slug": "core-engineering-mentor",
+      "component_type": "system_prompt",
+      "stack_tags": [
+        "global"
+      ],
+      "title": "Universal Engineering Rules & Thinking Discipline",
+      "description": "Universal, project-agnostic engineering mindset rules: incremental execution, anti-sycophancy code review, KISS/DRY/SOLID/YAGNI with Zero-Hardcode, and operational safety.",
+      "content": "## 1. Deliberate & Incremental Execution\n- Work in small, verifiable iterations (`Plan -> Step -> Review`) rather than dumping large, multi-module changes at once.\n- Before writing code, briefly state **WHAT** is changing and **WHY**; after modifying code, summarize the resulting data flow.\n\n## 2. Engineering Rigor & Anti-Sycophancy\n- Treat user questions (`Why is it done this way?`, `What if we use X?`) as an engineering discussion, **never** as an automatic order to delete and rewrite code.\n- Explain trade-offs first, propose alternatives with a `(Recommended)` option, and modify code only after explicit user confirmation.\n- Verify unfamiliar APIs, schemas, and file paths via context or documentation instead of guessing.\n\n## 3. Code Quality & Language Standard\n- Maintain a Single Source of Truth (`DRY`), clear single responsibility (`SRP`), and `KISS / SOLID / YAGNI`.\n- **Zero-Hardcode**: never scatter magic numbers or raw string literals across modules; extract constants, enums, and typed settings.\n- **Language**: write all code, identifiers, and system literals in **English**; write architectural comments/docstrings (`Why & How`) and chat responses in the **user's language**.\n\n## 4. Operational Safety & Orchestration\n- Never run destructive commands (`rm -rf /`, force-push to main branches, or unconfirmed `git reset --hard`).\n- Apply the `coop-orchestrator` skill for task decomposition, context hygiene, subagent delegation, and verification loops.",
+      "metadata": {
+        "execution_mode": "always"
+      },
+      "status": "composed",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "block-destructive-commands",
+      "component_type": "guardrail",
+      "stack_tags": [
+        "global"
+      ],
+      "title": "Block Destructive Shell & Git Commands",
+      "description": "Deterministic PreToolUse guardrail that blocks root filesystem deletion, force-pushes to main/master, and destructive hard resets.",
+      "content": "### Guardrail: Destructive Command Prevention\n- Never execute recursive root deletion (`rm -rf /`).\n- Never force-push (`git push --force` or `--force-with-lease`) to `main` or `master`.\n- Never run `git reset --hard` without explicit prior confirmation from the user.",
+      "metadata": {
+        "action": "deny",
+        "matcher": "run_command|Bash|shell|exec_command",
+        "pattern": "(?:rm\\s+-[a-zA-Z]*r[a-zA-Z]*f\\s+/(?:\\s|$)|git\\s+push\\s+.*--force(?:-with-lease)?\\s+(?:origin\\s+)?(?:main|master)\\b|git\\s+reset\\s+--hard\\b)",
+        "execution_mode": "semantic"
+      },
+      "status": "composed",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "rewrite-npm-to-bun",
+      "component_type": "guardrail",
+      "stack_tags": [
+        "bun"
+      ],
+      "title": "Rewrite npm Package Commands to Bun",
+      "description": "Domain-scoped PreToolUse guardrail for Bun workspaces that transparently rewrites npm install/add/run/test commands to bun equivalents.",
+      "content": "### Guardrail: Bun Package Manager Enforcement\n- In workspaces tagged with `bun`, use `bun` (`bun install`, `bun add`, `bun run`, `bun test`, `bunx`) instead of `npm`. Invocations matching `npm install|i|add|run|test` are automatically rewritten by the PreToolUse hook.",
+      "metadata": {
+        "action": "overwrite",
+        "matcher": "run_command|Bash|shell|exec_command",
+        "pattern": "^\\s*npm\\s+(install|i|add|run|test)\\b",
+        "replacement": "bun \\1",
+        "execution_mode": "semantic"
+      },
+      "status": "composed",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "coop-orchestrator",
+      "component_type": "skill",
+      "stack_tags": [
+        "global"
+      ],
+      "title": "Cooperative Task Orchestrator",
+      "description": "Universal task orchestration, context window hygiene, subagent delegation, and verification loop workflow. Apply when decomposing multi-step tasks, coordinating research or subagents, and verifying code changes.",
+      "content": "# Cooperative Task Orchestrator (`coop-orchestrator`)\n\n## 1. Task Decomposition & Single-Loop First\n- Break ambiguous or multi-step goals into small, atomic, independently verifiable steps before editing code.\n- Default to a direct single-agent loop for localized tasks; avoid over-engineering workflows when a direct edit and check is sufficient.\n\n## 2. Context Hygiene & Subagent Delegation\n- Protect the primary context window from noise and large raw outputs.\n- Spawn subagents only for broad codebase exploration, heavy documentation research, or independent parallel workstreams.\n- Because a subagent has an isolated context, always provide a self-contained brief:\n  1. **Objective**: exact question to answer or artifact to produce.\n  2. **Scope & Constraints**: target directories, files, or boundaries.\n  3. **Expected Output**: concise structured summary with exact file/line references, never raw file dumps.\n\n## 3. Execution-Verification Loop (Evaluator-Optimizer)\n- Never ship code blind: validate every atomic change with targeted typechecks, linters, or unit tests.\n- **Root-Cause First**: when a test or command fails, read the exact error and identify the root cause before making another edit.\n- **Bounded Retries**: never repeat a failing command blindly. If an issue is not resolved after 2–3 reasoned attempts, stop, summarize the findings, and align with the user.",
+      "metadata": {
+        "execution_mode": "always"
+      },
+      "status": "composed",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "inject-context-map",
+      "component_type": "script",
+      "stack_tags": [
+        "global"
+      ],
+      "title": "Context Graph Map Injector (SessionStart Hook Script)",
+      "description": "Injects the project's active .context/index.md knowledge graph map into the agent's system context at SessionStart.",
+      "content": "import json\nimport sys\n\ndef main() -> None:\n    raw = sys.stdin.read().strip()\n    payload = json.loads(raw) if raw else {}\n    index_md = str(payload.get(\"context_index_md\") or \"\").strip()\n    if not index_md:\n        print(json.dumps({}))\n        return\n    msg = (\n        \"[MCP-COOP Context Graph]: Active project context graph map (`.context/index.md`).\\n\"\n        \"Use links from this map for targeted node reading and always update the graph \"\n        \"after modifying project files:\\n\\n\"\n        f\"{index_md}\"\n    )\n    print(json.dumps({\"system_message\": msg}, ensure_ascii=False))\n\nif __name__ == \"__main__\":\n    main()\n",
+      "metadata": {
+        "hook_events": [
+          "session-start"
+        ],
+        "execution_mode": "always",
+        "priority": 10,
+        "timeout_ms": 500
+      },
+      "status": "composed",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "track-file-changes",
+      "component_type": "script",
+      "stack_tags": [
+        "global"
+      ],
+      "title": "Workspace Code & Context Graph Mutation Tracker (PostToolUse Hook Script)",
+      "description": "Tracks file edits on PostToolUse and records code_modified and context_updated flags in Redis session state for Context Graph enforcement.",
+      "content": "import json\nimport os\nimport sys\n\nFILE_MUTATION_TOOLS = {\n    \"write_file\",\n    \"edit_file\",\n    \"write\",\n    \"edit\",\n    \"multiedit\",\n    \"replace_file_content\",\n    \"multi_replace_file_content\",\n}\nTRACKED_EXTENSIONS = {\n    \".py\", \".ts\", \".tsx\", \".js\", \".jsx\", \".rs\", \".go\", \".sol\", \".sql\", \".sh\", \".yml\", \".yaml\", \".toml\"\n}\n\ndef main() -> None:\n    raw = sys.stdin.read().strip()\n    payload = json.loads(raw) if raw else {}\n    if payload.get(\"error\"):\n        print(json.dumps({}))\n        return\n\n    tool_name = str(payload.get(\"tool_name\") or \"\").strip().lower()\n    if tool_name not in FILE_MUTATION_TOOLS:\n        print(json.dumps({}))\n        return\n\n    tool_args = payload.get(\"tool_args\") or {}\n    raw_path = str(\n        tool_args.get(\"Path\")\n        or tool_args.get(\"path\")\n        or tool_args.get(\"file_path\")\n        or tool_args.get(\"TargetFile\")\n        or \"\"\n    ).strip()\n    workspace_path = str(payload.get(\"workspace_path\") or \"\").strip()\n    if not raw_path or not workspace_path:\n        print(json.dumps({}))\n        return\n\n    abs_ws = os.path.abspath(workspace_path)\n    abs_target = os.path.abspath(os.path.join(abs_ws, raw_path))\n    rel_path = os.path.relpath(abs_target, abs_ws).replace(\"\\\\\", \"/\")\n    if rel_path.startswith(\"..\"):\n        print(json.dumps({}))\n        return\n\n    if rel_path == \".context\" or rel_path.startswith(\".context/\"):\n        print(json.dumps({\n            \"state_updates\": {\n                \"context_updated\": \"1\",\n                \"reminder_sent\": \"0\",\n            }\n        }))\n        return\n\n    _, ext = os.path.splitext(rel_path.lower())\n    if ext in TRACKED_EXTENSIONS:\n        session_state = payload.get(\"session_state\") or {}\n        existing_raw = str(session_state.get(\"modified_files\") or \"\").strip()\n        files = [f for f in existing_raw.split(\",\") if f]\n        if rel_path not in files:\n            files.append(rel_path)\n        print(json.dumps({\n            \"state_updates\": {\n                \"code_modified\": \"1\",\n                \"context_updated\": \"0\",\n                \"modified_files\": \",\".join(files[:10]),\n            }\n        }))\n        return\n\n    print(json.dumps({}))\n\nif __name__ == \"__main__\":\n    main()\n",
+      "metadata": {
+        "hook_events": [
+          "post-tool-use"
+        ],
+        "execution_mode": "always",
+        "priority": 10,
+        "timeout_ms": 500
+      },
+      "status": "composed",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "enforce-context-sync",
+      "component_type": "script",
+      "stack_tags": [
+        "global"
+      ],
+      "title": "Context Graph Synchronization Gate (Stop Hook Script)",
+      "description": "Enforces atomic .context/ graph synchronization on Stop when project source files were modified during the turn.",
+      "content": "import json\nimport sys\n\nBYPASS_REASONS = {\n    \"USER_CANCELED\",\n    \"ERROR\",\n    \"MAX_INVOCATIONS\",\n    \"MAX_FORCED_INVOCATIONS\",\n    \"MAX_TOKEN_BUDGET_EXCEEDED\",\n}\n\ndef main() -> None:\n    raw = sys.stdin.read().strip()\n    payload = json.loads(raw) if raw else {}\n    raw_payload = payload.get(\"raw_payload\") or {}\n    termination_reason = str(raw_payload.get(\"terminationReason\") or \"\")\n    if (\n        payload.get(\"stop_hook_active\")\n        or payload.get(\"error\")\n        or termination_reason in BYPASS_REASONS\n    ):\n        print(json.dumps({\"action\": \"allow\"}))\n        return\n\n    state = payload.get(\"session_state\") or {}\n    code_modified = str(state.get(\"code_modified\") or \"0\") == \"1\"\n    context_updated = str(state.get(\"context_updated\") or \"0\") == \"1\"\n    reminder_sent = str(state.get(\"reminder_sent\") or \"0\") == \"1\"\n    modified_raw = str(state.get(\"modified_files\") or \"\").strip()\n    files_list = \", \".join(f\"`{f}`\" for f in modified_raw.split(\",\") if f) or \"project files\"\n\n    if code_modified and not context_updated and not reminder_sent:\n        reason = (\n            f\"[MCP-COOP Context Gate]: Project files were modified in this turn ({files_list}), \"\n            \"but the context graph in `.context/` (`index.md` or `.context/entities/`) \"\n            \"was not synchronized. Please update `.context/` and append an entry to `AI Traces` \"\n            \"before finishing. Always reply to the user in the language they use in chat.\"\n        )\n        print(json.dumps({\n            \"action\": \"continue\",\n            \"reason\": reason,\n            \"state_updates\": {\"reminder_sent\": \"1\"},\n        }, ensure_ascii=False))\n        return\n\n    if context_updated or reminder_sent:\n        print(json.dumps({\n            \"action\": \"allow\",\n            \"state_updates\": {\n                \"code_modified\": \"0\",\n                \"context_updated\": \"0\",\n                \"reminder_sent\": \"0\",\n                \"modified_files\": \"\",\n            },\n        }))\n        return\n\n    print(json.dumps({\"action\": \"allow\"}))\n\nif __name__ == \"__main__\":\n    main()\n",
+      "metadata": {
+        "hook_events": [
+          "stop"
+        ],
+        "execution_mode": "always",
+        "priority": 10,
+        "timeout_ms": 500
+      },
+      "status": "composed",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "clean-architecture-rule",
+      "component_type": "system_prompt",
+      "stack_tags": [
+        "global"
+      ],
+      "title": "Clean & Hexagonal Architecture Rule",
+      "description": "Enforces language-agnostic Clean and Hexagonal Architecture dependency rules, pure domain core isolation, and pragmatic Vertical Slice boundaries.",
+      "content": "# Clean & Hexagonal Architecture Rule\n\nAll modules across any programming language (TypeScript, Python, Go, Rust) must enforce strict **Inward Dependency Flow**, **Pure Domain Core Isolation**, and **Pragmatic Complexity-Proportional Layering** (`Clean + Hexagonal + Vertical Slices`).\n\n---\n\n## 1. Strict Inward Dependency Rule\nDependencies in source code must point **strictly inward** toward higher-level policies:\n`Presentation / Delivery & Infrastructure / Adapters` -> `Application / Use Cases (Ports)` -> `Domain Core`.\n\n- **Domain Core (Inner Layer)**: Contains pure Entities, Value Objects, Aggregates, Domain Events, Domain Exceptions, and pure Domain Policies/Calculations. Must depend ONLY on the language standard library.\n- **Application / Use Cases (Middle Layer)**: Orchestrates business workflows, transaction boundaries, and defines consumer-owned **Ports** (`Protocol` / `interface`). Depends ONLY on `Domain Core` and standard library primitives.\n- **Adapters / Infrastructure / Presentation (Outer Layer)**: HTTP controllers, CLI runners, MCP handlers, SQL repositories, Redis caches, and third-party SDK clients. Implements Application Ports and adapts transport DTOs to Domain types. Never imported by inner layers.\n\n## 2. Pure Domain Core Invariants (Zero Infrastructure Leakage)\n- **DON'T** perform I/O inside `Domain`: no SQL queries, HTTP calls, filesystem reads, `process.env` / `os.getenv` lookups, or uninjected system clock/random calls.\n- **DON'T** pollute Domain models with ORM base classes (`DeclarativeBase`, `TypeORM`), database column decorators, or raw driver records (`asyncpg.Record`, Prisma rows). Map persistence rows to Domain objects strictly inside Outbound Adapters.\n- **DON'T** leak delivery frameworks (`FastAPI`, `Express`, `React`, CLI parsers) or HTTP status codes (`404`, `422`, `500`) into `Domain` or `Application` layers. Raise semantic Domain/Application errors (`QuotaExceededError`) and translate them at the Inbound Adapter edge.\n- **DON'T** leak third-party vendor SDK types (`OpenAI`, `Stripe`, `AWS`) past the Outbound Adapter boundary.\n\n## 3. Consumer-Owned Ports & Explicit Composition Root (`DIP` & `ISP`)\n- **DO** define abstract `Port` interfaces/protocols inside the **consuming** `Application` or `Domain` module—never inside the concrete `Infrastructure` folder.\n- **DO** keep Ports narrow and capability-focused (`ISP`); never build generic `IRepository<T>` wrappers over ORMs that leak query builders.\n- **DO** wire concrete Adapters to abstract Ports in a single **Composition Root** (`main.py`, `index.ts`) via explicit dependency injection (`lifespan` / constructor injection), never via hidden global singletons.\n\n## 4. Pragmatic Anti-Overengineering Guardrails (`KISS` & `YAGNI` + Vertical Slices)\n- **DO** organize code by **business capability / vertical feature slice** (`src/<context>/<feature>/`) rather than scattering files across giant horizontal `controllers/`, `services/`, and `repositories/` folders.\n- **DO** scale layering proportionally to complexity (**Functional Core, Imperative Shell**):\n  - **Simple Read / CRUD Slice**: Use a flat 2-step flow (`Inbound Handler -> Query/Storage Adapter`) returning a typed Read Model without inventing anemic pass-through domain classes.\n  - **State-Mutating / Invariant-Heavy Slice**: Use full Hexagonal separation (`Inbound Adapter -> Use Case -> Pure Domain Policy/Entity -> Outbound Port`).\n- **DON'T** create redundant 1:1 DTO mapper chains (`RequestDTO -> CommandDTO -> ServiceDTO -> RepoDTO`) when structures are identical, and **DON'T** extract an interface (`1-to-1 Interface Tax`) unless crossing an I/O or architectural boundary.",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "architecture"
+      },
+      "status": "composed",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "javascript-runtime-rule",
+      "component_type": "system_prompt",
+      "stack_tags": [
+        "nodejs",
+        "bun"
+      ],
+      "title": "JavaScript Runtime Engineering Rule",
+      "description": "Enforces modern JavaScript and ECMAScript runtime standards including Explicit Resource Management (using), Iterator Helpers, Set methods, Temporal, Immutability, and AbortSignal.",
+      "content": "# JavaScript Runtime Engineering Rule\n\nAll JavaScript and TypeScript runtime code targeting modern engines (**Node.js, Bun, Deno**) must use native modern ECMAScript capabilities instead of legacy boilerplate or obsolete polyfill patterns.\n\n---\n\n## 1. Deterministic Resource Management (`using` / `await using`)\n- **DO** bind finite or leaky resources (DB connections/transactions, file handles, locks, temporary directories, timers, stream readers) to lexical block scopes via `using` (`[Symbol.dispose]()`) or `await using` (`[Symbol.asyncDispose]()`).\n- **DO** use `DisposableStack` and `AsyncDisposableStack` (`stack.use()`, `stack.adopt()`, `stack.defer()`) when coordinating multiple resources or wrapping legacy handles.\n- **DON'T** write deeply nested `let res; try { ... } finally { await res?.close(); }` blocks for standard resource lifecycles.\n\n## 2. Immutability-by-Default & Collection Operations\n- **DO** treat arrays, maps, sets, and objects passed across function boundaries as immutable.\n- **DO** use non-mutating array methods: `.toSorted()`, `.toReversed()`, `.toSpliced()`, and `.with()`.\n- **DO** use `Object.groupBy()` and `Map.groupBy()` instead of manual `.reduce()` grouping accumulators.\n- **DO** use `Map.prototype.getOrInsert()` and `Map.prototype.getOrInsertComputed()` for single-lookup map upserts, and `structuredClone()` for deep copies.\n- **DO** use native mathematical `Set` methods (`union`, `intersection`, `difference`, `symmetricDifference`, `isSubsetOf`, `isSupersetOf`, `isDisjointFrom`) instead of `[...setA].filter(x => setB.has(x))`.\n- **DO** use lazy **Iterator Helpers** (`.values().map().filter().take().toArray()`, `Iterator.concat()`, and `await Array.fromAsync()`) instead of allocating intermediate arrays on large or streamed collections.\n- **DON'T** mutate shared arrays in-place with `.sort()`, `.reverse()`, or `.splice()`, and **DON'T** use `JSON.parse(JSON.stringify(obj))` for cloning.\n\n## 3. Modern Async Control Flow, Cancellation & Dates\n- **DO** use `Promise.try(fn, ...args)` to safely wrap callbacks that may either throw synchronously or return a Promise, and `Promise.withResolvers()` when externalizing `resolve`/`reject`.\n- **DO** pass `signal: AbortSignal` to all cancellable I/O operations and compose deadlines with `AbortSignal.timeout(ms)` and `AbortSignal.any([callerSignal, AbortSignal.timeout(ms)])`.\n- **DO** use `Temporal` (`Temporal.Instant`, `Temporal.ZonedDateTime`, `Temporal.PlainDate`, `Temporal.Duration`) for calendar, timezone, and duration arithmetic instead of mutable `Date`.\n- **DON'T** use `Promise.race([ioCall(), sleep(ms)])` without aborting the underlying `AbortSignal`.\n\n## 4. Structured Errors, Regex Safety & Native ESM\n- **DO** preserve error chains across layers via `new DomainError(\"Context message\", { cause: err })` and narrow caught values via `Error.isError(err)`.\n- **DO** escape dynamic strings in regular expressions with `RegExp.escape(input)` instead of custom `.replace()` regexes.\n- **DO** author strict ESM using `node:` prefix for host builtins (`node:fs/promises`, `node:crypto`), `import.meta.dirname`, `Uint8Array.fromBase64()` / `.toBase64()`, and `import data from \"./file.json\" with { type: \"json\" }`.\n- **DON'T** use `require()`, `module.exports`, `__dirname`, or deprecated `assert { type: \"json\" }`.",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "runtime"
+      },
+      "status": "composed",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "typescript-strict-rule",
+      "component_type": "system_prompt",
+      "stack_tags": [
+        "typescript"
+      ],
+      "title": "TypeScript Strict Engineering Rule",
+      "description": "Enforces modern TypeScript compiler invariants, erasableSyntaxOnly, isolatedDeclarations, Zero-Any, and strict boundary typing.",
+      "content": "# TypeScript Strict Engineering Rule\n\nAll TypeScript code must be authored for modern TypeScript compilers (`tsc` / `tsgo`) and native type-stripping runtimes (**Node.js, Bun, Deno**). Every module must support pure type-erasure execution and parallel per-file `.d.ts` generation without invoking cross-file AST evaluation.\n\n---\n\n## 1. Pure Type-Erasure Compliance (`--erasableSyntaxOnly`)\n- **DO** write strictly standard ECMAScript syntax with erasable TypeScript type annotations that can be stripped into whitespace without emitting synthetic runtime helpers.\n- **DON'T** use `enum` or `const enum`. Replace all enumerations with frozen `as const` objects paired with a derived union type:\n  ```ts\n  export const JobState = {\n    IDLE: \"idle\",\n    ACTIVE: \"active\",\n    FAILED: \"failed\",\n  } as const;\n  export type JobState = (typeof JobState)[keyof typeof JobState];\n  ```\n- **DON'T** use `namespace` or runtime `module` blocks; use standard ES modules (`import` / `export`).\n- **DON'T** use constructor parameter properties (`constructor(private readonly db: Db) {}`). Declare explicit class fields or `#private` ECMAScript fields instead.\n- **DON'T** use legacy `import x = require(...)`, `export =`, or angle-bracket assertions (`<T>val`).\n\n## 2. Parallel Check & Emit Discipline (`--isolatedDeclarations` & `--verbatimModuleSyntax`)\n- **DO** annotate explicit parameter and return types on every exported function, public class method, and exported non-literal constant (`export function parsePayload(raw: unknown): Result<Config, ValidationError>`).\n- **DO** separate type-only imports from runtime imports using `import type { Foo } from \"./foo.ts\"` or `import { type Foo, createFoo } from \"./foo.ts\"`.\n- **DO** use explicit file extensions in all relative imports (`./module.ts` with `rewriteRelativeImportExtensions: true`).\n\n## 3. Soundness & Zero-`any` Invariants\n- **DON'T** use `any`, `as unknown as T`, or non-null assertions (`value!`).\n- **DO** type all untrusted external inputs (`JSON.parse`, `fetch`, `process.env`, CLI arguments, `catch (err: unknown)`) as `unknown` and narrow them via a **Standard Schema (`@standard-schema/spec`)** validator, type predicate (`val is T`), or assertion function (`asserts val is T`).\n- **DO** respect `noUncheckedIndexedAccess` (handle `T | undefined` on array/record indexing via narrowing or `.at()`) and `exactOptionalPropertyTypes` (do not assign explicit `undefined` to `prop?: T` unless declared as `prop?: T | undefined`).\n- **DO** use `satisfies` to validate static configuration objects while preserving literal types, and enforce exhaustive `switch` checks on discriminated unions via `default: return assertUnreachable(event satisfies never)`.\n- **DO** model expected domain and I/O failures explicitly in function return signatures (`Result<T, E>`) rather than throwing untyped exceptions across module boundaries.",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "language"
+      },
+      "status": "composed",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "hexagonal-architecture",
+      "component_type": "skill",
+      "stack_tags": [
+        "global"
+      ],
+      "title": "Hexagonal & Clean Architecture Blueprint",
+      "description": "Use this skill when designing module boundaries, choosing between Vertical Slices and Hexagonal Ports & Adapters, or refactoring leaky ORM/framework coupling.",
+      "content": "# Hexagonal & Clean Architecture Blueprint (`Functional Core, Imperative Shell`)\n\nUse this blueprint to design language-agnostic module boundaries (TypeScript, Python, Go, Rust) that enforce the **Inward Dependency Rule** while preventing speculative enterprise ceremony (`Lasagna Architecture`).\n\n---\n\n## 1. Architectural Tier Decision Matrix (Vertical Slice vs. Hexagonal DDD-Lite)\n\nBefore creating folders or interfaces, classify the feature slice into one of three complexity tiers:\n\n| Dimension | Tier 1: Flat Vertical Slice (`CQRS-Lite`) | Tier 2: Modular Application Service (`Service + Port`) | Tier 3: Full Hexagonal + DDD-Lite Core |\n| :--- | :--- | :--- | :--- |\n| **Business Rules** | Pure read projections, search queries, or simple config CRUD with schema validation only. | Multi-step workflow orchestration (fetch -> call external API -> persist) with light branching. | Complex state machines, scoring/financial math, multi-entity invariants, policy/decision engines. |\n| **External I/O Volatility** | Single stable datastore (e.g., PostgreSQL read query). | 1–2 external dependencies (DB + Redis or webhook). | Multiple volatile providers (LLMs, payment gateways, multi-dialect adapters, swappable storage). |\n| **Target Layout** | `routes` + `queries` + `models` inside the feature slice. | `routes` -> `service` -> `ports` <- `adapter`. | `domain/` (Entities, VOs, Policies) <- `application/` (UseCases, Ports) <- `adapters/` (Inbound/Outbound). |\n| **Testing Strategy** | Integration/contract test against DB or HTTP router. | Unit test `service` with In-Memory Fake Port + 1 integration test. | Zero-I/O unit tests on `domain/` & `application/` + Contract tests on `adapters/`. |\n\n---\n\n## 2. Layer Responsibility Contract Table\n\n| Layer | Allowed Contents | Permitted Imports | Strictly Forbidden (Hard Violations) |\n| :--- | :--- | :--- | :--- |\n| **1. Domain Core** (`domain/`) | Immutable Value Objects, Entities, Aggregates, Domain Events, Domain Exceptions, Pure Calculation/Policy functions. | Standard library only. | ORMs, SQL drivers, HTTP/Web frameworks, Redis, SDKs, `process.env` / `os.environ`, async I/O. |\n| **2. Application / Use Cases** (`application/` / `service`) | Use Case orchestrators, Command/Query handlers, Application DTOs, **Consumer-Owned Port Interfaces (`Protocol` / `interface`)**. | `Domain Core`, standard library, pure boundary-decoupled schemas. | Concrete DB drivers (`asyncpg`, `pg`, `Prisma`), HTTP request/response objects (`fastapi.Request`), concrete SDK clients. |\n| **3. Inbound Adapters** (`api/`, `cli/`, `mcp/`) | REST routes, MCP tool handlers, CLI commands, transport Request/Response DTOs, Domain-Error-to-Status mapping. | `Application` (Use Cases, Ports, DTOs), `Domain` exceptions, Web/CLI frameworks. | Inline business rule math, direct SQL/SDK calls (except Tier 1 Flat Read Slices). |\n| **4. Outbound Adapters** (`db/`, `adapters/`, `clients/`) | Concrete SQL repositories, ORM models, Redis stores, HTTP/LLM SDK clients, Data Mappers (`Row <-> Entity`). | `Application` (implements Outbound Ports), `Domain` (hydrates Entities/VOs), DB drivers & 3rd-party SDKs. | Importing Inbound Adapters (`api/`, `cli/`), embedding business policy decisions inside SQL/SDK wrappers. |\n| **5. Composition Root** (`main.py`, `deps.py`, `index.ts`) | Application bootstrap, `lifespan` management, Dependency Injection wiring, typed `Settings`. | All layers (the **only** place allowed to bind concrete Adapters to abstract Ports). | Business logic, domain calculations, or inline query execution. |\n\n---\n\n## 3. Boundary Anti-Patterns & Refactoring Recipes\n\n### Anti-Pattern 1: The Leaky ORM / Persistence Record\n- **Symptom**: Raw `asyncpg.Record`, `SQLAlchemy` models, or `Prisma` rows are passed directly into Use Cases and mutated or returned to API controllers.\n- **Fix**: Keep SQL rows and ORM models private to `db/`. Map rows to immutable Domain Value Objects / Entities at the Outbound Adapter boundary (`_row_to_entity`).\n\n### Anti-Pattern 2: Anemic Domain Model & \"God Service\"\n- **Symptom**: Domain types are passive data bags while `Service` classes mix 600 lines of branching business math with `await db.execute(...)`.\n- **Fix (`Functional Core, Imperative Shell`)**: Extract state transitions and scoring/validation rules into pure, synchronous Domain functions or Entity methods (**Functional Core**). Keep the Application Use Case as a thin **Imperative Shell**:\n  1. Load state via Outbound Port -> 2. Compute pure Domain transition in memory -> 3. Persist state via Outbound Port.\n\n### Anti-Pattern 3: Framework & Transport Coupling in Core Logic\n- **Symptom**: Application services accept `fastapi.Request`, raise `HTTPException(status_code=403)`, read `os.getenv()` inline, or format CLI ANSI output.\n- **Fix**: Pass typed Command/Query DTOs into Use Cases, raise semantic Domain Exceptions (`QuotaExceededError`), inject typed `Settings` from the Composition Root, and map exceptions to HTTP/MCP/CLI responses in the Inbound Adapter.\n\n### Anti-Pattern 4: Speculative Enterprise Lasagna\n- **Symptom**: Every trivial endpoint traverses 8 pass-through layers (`Controller -> Mapper -> IUseCase -> UseCaseImpl -> IDomainService -> IRepository -> RepositoryImpl -> DAO`) that forward arguments unchanged.\n- **Fix**: Delete any interface that has a single implementation and does not cross an I/O or architectural boundary. Use Tier 1 Flat Vertical Slices for simple reads/CRUD.",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "architecture"
+      },
+      "status": "composed",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "typescript",
+      "component_type": "skill",
+      "stack_tags": [
+        "typescript"
+      ],
+      "title": "TypeScript Architecture & Type-Level Patterns",
+      "description": "Use this skill when designing, writing, or refactoring TypeScript modules using Branded Types, Discriminated Unions, Type-State machines, satisfies, Result<T, E>, and Standard Schema.",
+      "content": "# TypeScript Architecture & Type-Level Patterns\n\nUse these reference patterns to build zero-runtime-overhead, type-safe domain models and module boundaries compatible with modern TypeScript (`tsc` / `tsgo`), `--erasableSyntaxOnly`, and `--isolatedDeclarations`.\n\n---\n\n## 1. Reference `tsconfig.json` Baseline (Modern TS & Native Runtimes)\n\n```jsonc\n{\n  \"compilerOptions\": {\n    \"target\": \"ES2024\",\n    \"module\": \"nodenext\",\n    \"moduleResolution\": \"nodenext\",\n    \"verbatimModuleSyntax\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"isolatedDeclarations\": true,\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noPropertyAccessFromIndexSignature\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"useUnknownInCatchVariables\": true\n  }\n}\n```\n\n---\n\n## 2. Branded / Nominal Types (`unique symbol` Phantom Brand)\n\nPrevent accidental mixing of structurally identical primitives (`UserId` vs `ProjectId`, `ValidatedSql` vs `RawString`) at compile time with zero runtime memory overhead:\n\n```ts\ndeclare const BrandSymbol: unique symbol;\n\nexport type Brand<T, B extends string> = T & {\n  readonly [BrandSymbol]: { readonly [K in B]: true };\n};\n\nexport type ProjectId = Brand<string, \"ProjectId\">;\nexport type ComponentSlug = Brand<string, \"ComponentSlug\">;\nexport type PositiveInt = Brand<number, \"PositiveInt\">;\n\nexport function parsePositiveInt(raw: number): PositiveInt {\n  if (!Number.isInteger(raw) || raw <= 0) {\n    throw new RangeError(`Expected positive integer, received: ${raw}`);\n  }\n  return raw as PositiveInt;\n}\n```\n\n---\n\n## 3. Discriminated Unions & Exhaustiveness Checking (`satisfies never`)\n\nModel domain events, protocol messages, and state outcomes as tagged unions with a literal `kind` discriminator:\n\n```ts\nexport type SyncOutcome =\n  | { readonly kind: \"created\"; readonly slug: string; readonly version: number }\n  | { readonly kind: \"unchanged\"; readonly slug: string; readonly hash: string }\n  | { readonly kind: \"rejected\"; readonly slug: string; readonly reason: string };\n\nexport function assertUnreachable(value: never): never {\n  throw new Error(`Unhandled discriminated union member: ${JSON.stringify(value)}`);\n}\n\nexport function formatSyncOutcome(outcome: SyncOutcome): string {\n  switch (outcome.kind) {\n    case \"created\":\n      return `Created ${outcome.slug}@v${outcome.version}`;\n    case \"unchanged\":\n      return `Unchanged ${outcome.slug} (${outcome.hash.slice(0, 8)})`;\n    case \"rejected\":\n      return `Rejected ${outcome.slug}: ${outcome.reason}`;\n    default:\n      return assertUnreachable(outcome satisfies never);\n  }\n}\n```\n\n---\n\n## 4. Type-State Pattern (Compile-Time Lifecycle Enforcement)\n\nMake illegal lifecycle transitions unrepresentable at compile time using generic phase tags and `this:` parameter constraints:\n\n```ts\nexport const SessionPhase = {\n  DISCONNECTED: \"disconnected\",\n  CONNECTED: \"connected\",\n  AUTHENTICATED: \"authenticated\",\n} as const;\n\nexport type SessionPhase = (typeof SessionPhase)[keyof typeof SessionPhase];\n\nexport class SessionClient<Phase extends SessionPhase = typeof SessionPhase.DISCONNECTED> {\n  readonly #endpoint: string;\n  readonly #token: string | undefined;\n\n  private constructor(endpoint: string, token?: string) {\n    this.#endpoint = endpoint;\n    this.#token = token;\n  }\n\n  public static create(endpoint: string): SessionClient<typeof SessionPhase.DISCONNECTED> {\n    return new SessionClient(endpoint);\n  }\n\n  public async connect(\n    this: SessionClient<typeof SessionPhase.DISCONNECTED>,\n  ): Promise<SessionClient<typeof SessionPhase.CONNECTED>> {\n    return new SessionClient(this.#endpoint);\n  }\n\n  public async authenticate(\n    this: SessionClient<typeof SessionPhase.CONNECTED>,\n    token: string,\n  ): Promise<SessionClient<typeof SessionPhase.AUTHENTICATED>> {\n    return new SessionClient(this.#endpoint, token);\n  }\n\n  public async query(\n    this: SessionClient<typeof SessionPhase.AUTHENTICATED>,\n    sql: string,\n  ): Promise<readonly unknown[]> {\n    return [{ endpoint: this.#endpoint, authenticated: Boolean(this.#token), sql }];\n  }\n}\n```\n\n---\n\n## 5. Precision Inference (`satisfies` + `const` Type Parameters + `NoInfer<T>`)\n\nCombine `satisfies` (validating contracts without widening literals), `const` type parameters (inferring tuple/object literals), and `NoInfer<T>` (blocking secondary argument widening):\n\n```ts\nexport interface EndpointSpec {\n  readonly path: `/${string}`;\n  readonly method: \"GET\" | \"POST\" | \"DELETE\";\n}\n\nexport const CoreEndpoints = {\n  health: { path: \"/health\", method: \"GET\" },\n  ingest: { path: \"/api/sync/ingest\", method: \"POST\" },\n} as const satisfies Record<string, EndpointSpec>;\n\nexport function defineFsm<const S extends string>(\n  states: readonly S[],\n  initialState: NoInfer<S>,\n): { readonly states: readonly S[]; readonly current: S } {\n  return { states, current: initialState };\n}\n```\n\n---\n\n## 6. Explicit `Result<T, E>` & `Standard Schema v1` Boundary Validation\n\nRepresent expected I/O and validation failures as values (`Result<T, E>`) and decouple boundary adapters from specific schema libraries using the universal `StandardSchemaV1` interface (supported by Zod, Valibot, ArkType, Effect Schema):\n\n```ts\nexport type Result<T, E = Error> =\n  | { readonly ok: true; readonly value: T }\n  | { readonly ok: false; readonly error: E };\n\nexport function ok<T>(value: T): Result<T, never> {\n  return { ok: true, value };\n}\n\nexport function err<E>(error: E): Result<never, E> {\n  return { ok: false, error };\n}\n\nexport interface StandardSchemaV1<Input = unknown, Output = Input> {\n  readonly \"~standard\": {\n    readonly version: 1;\n    readonly vendor: string;\n    readonly validate: (\n      value: unknown,\n    ) => StandardSchemaV1Result<Output> | Promise<StandardSchemaV1Result<Output>>;\n    readonly types?: { readonly input: Input; readonly output: Output } | undefined;\n  };\n}\n\nexport type StandardSchemaV1Result<Output> =\n  | { readonly value: Output; readonly issues?: undefined }\n  | { readonly issues: ReadonlyArray<{ readonly message: string }> };\n\nexport type InferSchemaOutput<S extends StandardSchemaV1> =\n  S extends StandardSchemaV1<unknown, infer Output> ? Output : never;\n\nexport async function validateBoundary<S extends StandardSchemaV1>(\n  schema: S,\n  rawInput: unknown,\n): Promise<Result<InferSchemaOutput<S>, ReadonlyArray<string>>> {\n  const result = await schema[\"~standard\"].validate(rawInput);\n  if (result.issues) {\n    return err(result.issues.map((item) => item.message));\n  }\n  return ok(result.value as InferSchemaOutput<S>);\n}\n```",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "language",
+        "detectors": {
+          "file_markers": [
+            "tsconfig.json"
+          ],
+          "node_packages": [
+            "typescript"
+          ],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "composed",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "nodejs",
+      "component_type": "skill",
+      "stack_tags": [
+        "nodejs"
+      ],
+      "title": "JavaScript & ECMAScript Production Idioms",
+      "description": "Use this skill when writing or modernizing JavaScript and ECMAScript runtime code with Explicit Resource Management (using), Iterator Helpers, Set algebra, RegExp.escape, Temporal, and AbortSignal.",
+      "content": "# JavaScript & ECMAScript Production Idioms\n\nUse these idiomatic recipes to replace legacy JavaScript boilerplate with standardized modern **ECMAScript** and cross-runtime (**Node.js, Bun, Deno**) Web-Standard APIs.\n\n---\n\n## 1. Explicit Resource Management (`using` / `await using` & `AsyncDisposableStack`)\n\nReplace nested `try / finally` pyramids with deterministic LIFO disposal at block exit:\n\n```ts\nfunction acquireLock(lockManager: LockManager, key: string, signal: AbortSignal) {\n  return lockManager.acquire(key, { signal }).then((lock) => ({\n    lock,\n    async [Symbol.asyncDispose](): Promise<void> {\n      await lock.release();\n    },\n  }));\n}\n\nexport async function runTransactionalBatch(\n  pool: DbPool,\n  lockManager: LockManager,\n  callerSignal?: AbortSignal,\n): Promise<void> {\n  const signal = callerSignal\n    ? AbortSignal.any([callerSignal, AbortSignal.timeout(15_000)])\n    : AbortSignal.timeout(15_000);\n\n  await using stack = new AsyncDisposableStack();\n  await using _lock = await acquireLock(lockManager, \"job:sync\", signal);\n\n  const client = stack.adopt(await pool.connect(), (c) => c.release());\n  await client.query(\"BEGIN\");\n\n  let committed = false;\n  stack.defer(async () => {\n    if (!committed) await client.query(\"ROLLBACK\");\n  });\n\n  await client.query(\"UPDATE jobs SET status = 'processed'\", { signal });\n  await client.query(\"COMMIT\");\n  committed = true;\n}\n```\n\n---\n\n## 2. Lazy Data Pipelines with `Iterator Helpers` & `Array.fromAsync`\n\nAvoid intermediate array allocations on large collections by chaining lazy `Iterator.prototype` methods (`.map()`, `.filter()`, `.flatMap()`, `.take()`, `.drop()`, `.toArray()`) and `Iterator.concat()`:\n\n```ts\nexport interface UserRecord {\n  readonly email: string;\n  readonly isActive: boolean;\n  readonly expired: boolean;\n}\n\n// Evaluates lazily one item at a time; stops immediately after 5 matches (zero intermediate arrays)\nexport function getTopActiveEmails(\n  primaryUsers: ReadonlyMap<string, UserRecord>,\n  fallbackUsers: ReadonlyMap<string, UserRecord>,\n): string[] {\n  return Iterator.concat(primaryUsers.values(), fallbackUsers.values())\n    .filter((u) => u.isActive && !u.expired)\n    .map((u) => u.email.trim().toLowerCase())\n    .filter((email) => email.endsWith(\"@example.com\"))\n    .take(5)\n    .toArray();\n}\n\n// Materialize async iterables cleanly with Array.fromAsync\nexport async function decodeStreamChunks(stream: AsyncIterable<Uint8Array>): Promise<string[]> {\n  const decoder = new TextDecoder();\n  return await Array.fromAsync(stream, (chunk) => decoder.decode(chunk));\n}\n```\n\n---\n\n## 3. Mathematical `Set` Operations\n\nUse built-in $O(\\min(|A|, |B|))$ set algebra methods (`union`, `intersection`, `difference`, `symmetricDifference`, `isSubsetOf`, `isSupersetOf`, `isDisjointFrom`):\n\n```ts\nexport function computePermissionDiff(\n  current: ReadonlySet<string>,\n  target: ReadonlySet<string>,\n  restricted: ReadonlySet<string>,\n) {\n  const currSet = new Set(current);\n  const targSet = new Set(target);\n  const restSet = new Set(restricted);\n\n  return {\n    toGrant: targSet.difference(currSet),\n    toRevoke: currSet.difference(targSet),\n    changed: currSet.symmetricDifference(targSet),\n    hasRestrictedViolation: !targSet.isDisjointFrom(restSet),\n    alreadySatisfied: targSet.isSubsetOf(currSet),\n  };\n}\n```\n\n---\n\n## 4. Safe Dynamic Regular Expressions (`RegExp.escape` & Inline Modifiers)\n\nNever hand-roll regex escaping (`str.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')`). Use `RegExp.escape()`:\n\n```ts\nexport function redactSensitiveValues(logLine: string, secrets: readonly string[]): string {\n  if (secrets.length === 0) return logLine;\n  const escapedUnion = secrets.map((s) => RegExp.escape(s)).join(\"|\");\n  const pattern = new RegExp(`(?i:bearer\\\\s+)?(?:${escapedUnion})`, \"g\");\n  return logLine.replaceAll(pattern, \"[REDACTED]\");\n}\n```\n\n---\n\n## 5. Immutable Date/Time Arithmetic with `Temporal`\n\nReplace mutable, timezone-fragile `Date` objects with `Temporal` value objects (`Temporal.Instant`, `Temporal.ZonedDateTime`, `Temporal.PlainDate`, `Temporal.Duration`):\n\n```ts\nexport function computeNextWindow(startIsoDate: string, timeZone = \"UTC\") {\n  const startDate = Temporal.PlainDate.from(startIsoDate);\n  // Clamps Jan 31 + 1 month to Feb 28/29 automatically\n  const nextBillingDate = startDate.add({ months: 1 });\n  const nextZdt = nextBillingDate.toZonedDateTime({\n    timeZone,\n    plainTime: Temporal.PlainTime.from(\"00:00:00\"),\n  });\n\n  const nowInstant = Temporal.Now.instant();\n  const remaining = nowInstant.until(nextZdt.toInstant(), {\n    largestUnit: \"hour\",\n    smallestUnit: \"minute\",\n  });\n\n  return {\n    nextDate: nextBillingDate.toString(),\n    nextUtcIso: nextZdt.toInstant().toString(),\n    remainingHours: remaining.hours,\n  };\n}\n```\n\n---\n\n## 6. Quick Idiom Lookup Table (Legacy -> Modern ECMAScript)\n\n| Legacy Pattern (Banned) | Modern ECMAScript Idiom |\n| :--- | :--- |\n| `try { ... } finally { await res.close(); }` | `await using res = ...` / `AsyncDisposableStack` |\n| `[...arr].sort(fn)` / `[...arr].reverse()` | `arr.toSorted(fn)` / `arr.toReversed()` / `arr.toSpliced()` / `arr.with(i, v)` |\n| `arr.reduce((acc, x) => ...)` for grouping | `Object.groupBy(arr, fn)` / `Map.groupBy(arr, fn)` |\n| `if (!map.has(k)) map.set(k, compute());` | `map.getOrInsertComputed(k, compute)` / `map.getOrInsert(k, defaultVal)` |\n| `new Promise(r => r(fn()))` | `Promise.try(fn, ...args)` |\n| `let res, rej; new Promise((a, b) => ...)` | `const { promise, resolve, reject } = Promise.withResolvers<T>()` |\n| `Promise.race([fetch(u), sleep(ms)])` | `fetch(u, { signal: AbortSignal.any([sig, AbortSignal.timeout(ms)]) })` |\n| `err instanceof Error` (cross-realm unsafe) | `Error.isError(err)` + `new CustomError(msg, { cause: err })` |\n| `Buffer.from(s, \"base64\")` / `btoa()` | `Uint8Array.fromBase64(s)` / `bytes.toBase64()` / `bytes.toHex()` |\n| `import data from \"./x.json\" assert { type: \"json\" }` | `import data from \"./x.json\" with { type: \"json\" }` |",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "runtime",
+        "detectors": {
+          "file_markers": [
+            "package.json"
+          ],
+          "node_packages": [],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "composed",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "bun",
+      "component_type": "skill",
+      "stack_tags": [
+        "bun"
+      ],
+      "title": "Bun Runtime & Toolkit",
+      "description": "Bun runtime technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "runtime",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [
+            "bun.lockb",
+            "bun.lock",
+            "bunfig.toml"
+          ],
+          "node_packages": [],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "python",
+      "component_type": "skill",
+      "stack_tags": [
+        "python"
+      ],
+      "title": "Python Language & Ecosystem",
+      "description": "Python language technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "language",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [
+            "pyproject.toml",
+            "requirements.txt"
+          ],
+          "node_packages": [],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "docker",
+      "component_type": "skill",
+      "stack_tags": [
+        "docker"
+      ],
+      "title": "Docker & Container Compose",
+      "description": "Docker & Compose infrastructure tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "infrastructure",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [
+            "Dockerfile",
+            "docker-compose.yml",
+            "compose.yaml",
+            "docker/Dockerfile",
+            "docker/docker-compose.yml"
+          ],
+          "node_packages": [],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "rust",
+      "component_type": "skill",
+      "stack_tags": [
+        "rust"
+      ],
+      "title": "Rust & Cargo Ecosystem",
+      "description": "Rust language technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "language",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [
+            "Cargo.toml"
+          ],
+          "node_packages": [],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "go",
+      "component_type": "skill",
+      "stack_tags": [
+        "go"
+      ],
+      "title": "Go (Golang) Ecosystem",
+      "description": "Go language technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "language",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [
+            "go.mod"
+          ],
+          "node_packages": [],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "java",
+      "component_type": "skill",
+      "stack_tags": [
+        "java"
+      ],
+      "title": "Java & JVM Ecosystem",
+      "description": "Java & JVM ecosystem tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "language",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [
+            "pom.xml",
+            "build.gradle",
+            "build.gradle.kts"
+          ],
+          "node_packages": [],
+          "python_packages": [],
+          "content_patterns": [
+            "\\b(?:spring-boot|jakarta|maven|gradle)\\b"
+          ]
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "react",
+      "component_type": "skill",
+      "stack_tags": [
+        "react"
+      ],
+      "title": "React UI Library",
+      "description": "React frontend technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "frontend",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [
+            "react"
+          ],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "next",
+      "component_type": "skill",
+      "stack_tags": [
+        "next"
+      ],
+      "title": "Next.js Framework",
+      "description": "Next.js framework technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "frontend",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [
+            "next"
+          ],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "vue",
+      "component_type": "skill",
+      "stack_tags": [
+        "vue"
+      ],
+      "title": "Vue.js Framework",
+      "description": "Vue.js frontend technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "frontend",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [
+            "vue"
+          ],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "svelte",
+      "component_type": "skill",
+      "stack_tags": [
+        "svelte"
+      ],
+      "title": "Svelte / SvelteKit",
+      "description": "Svelte frontend technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "frontend",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [
+            "svelte"
+          ],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "express",
+      "component_type": "skill",
+      "stack_tags": [
+        "express"
+      ],
+      "title": "Express.js HTTP Server",
+      "description": "Express.js backend technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "backend",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [
+            "express"
+          ],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "fastify",
+      "component_type": "skill",
+      "stack_tags": [
+        "fastify"
+      ],
+      "title": "Fastify Web Framework",
+      "description": "Fastify backend technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "backend",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [
+            "fastify"
+          ],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "nestjs",
+      "component_type": "skill",
+      "stack_tags": [
+        "nestjs"
+      ],
+      "title": "NestJS Framework",
+      "description": "NestJS backend technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "backend",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [
+            "nestjs",
+            "@nestjs/core"
+          ],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "prisma",
+      "component_type": "skill",
+      "stack_tags": [
+        "prisma"
+      ],
+      "title": "Prisma ORM",
+      "description": "Prisma ORM database tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "database",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [
+            "prisma",
+            "@prisma/client"
+          ],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "drizzle-orm",
+      "component_type": "skill",
+      "stack_tags": [
+        "drizzle-orm"
+      ],
+      "title": "Drizzle ORM",
+      "description": "Drizzle ORM database tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "database",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [
+            "drizzle-orm"
+          ],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "vitest",
+      "component_type": "skill",
+      "stack_tags": [
+        "vitest"
+      ],
+      "title": "Vitest Testing Framework",
+      "description": "Vitest testing technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "testing",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [
+            "vitest"
+          ],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "playwright",
+      "component_type": "skill",
+      "stack_tags": [
+        "playwright"
+      ],
+      "title": "Playwright E2E Testing",
+      "description": "Playwright testing technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "testing",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [
+            "playwright",
+            "@playwright/test"
+          ],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "tailwindcss",
+      "component_type": "skill",
+      "stack_tags": [
+        "tailwindcss"
+      ],
+      "title": "Tailwind CSS",
+      "description": "Tailwind CSS styling technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "frontend",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [
+            "tailwindcss"
+          ],
+          "python_packages": [],
+          "content_patterns": []
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "fastapi",
+      "component_type": "skill",
+      "stack_tags": [
+        "fastapi"
+      ],
+      "title": "FastAPI Web Framework",
+      "description": "FastAPI Python web framework tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "backend",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [],
+          "python_packages": [
+            "fastapi"
+          ],
+          "content_patterns": [
+            "\\bfastapi\\b"
+          ]
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "fastmcp",
+      "component_type": "skill",
+      "stack_tags": [
+        "fastmcp"
+      ],
+      "title": "FastMCP / Model Context Protocol",
+      "description": "FastMCP & MCP server technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "protocol",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [],
+          "python_packages": [
+            "fastmcp",
+            "mcp"
+          ],
+          "content_patterns": [
+            "\\b(?:fastmcp|mcp)\\b"
+          ]
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "pydantic",
+      "component_type": "skill",
+      "stack_tags": [
+        "pydantic"
+      ],
+      "title": "Pydantic v2 Data Validation",
+      "description": "Pydantic v2 schema validation tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "library",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [],
+          "python_packages": [
+            "pydantic"
+          ],
+          "content_patterns": [
+            "\\bpydantic\\b"
+          ]
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "asyncpg",
+      "component_type": "skill",
+      "stack_tags": [
+        "asyncpg"
+      ],
+      "title": "asyncpg PostgreSQL Driver",
+      "description": "asyncpg async PostgreSQL driver tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "database",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [],
+          "python_packages": [
+            "asyncpg"
+          ],
+          "content_patterns": [
+            "\\basyncpg\\b"
+          ]
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "sqlalchemy",
+      "component_type": "skill",
+      "stack_tags": [
+        "sqlalchemy"
+      ],
+      "title": "SQLAlchemy ORM & Core",
+      "description": "SQLAlchemy database toolkit tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "database",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [],
+          "python_packages": [
+            "sqlalchemy"
+          ],
+          "content_patterns": [
+            "\\bsqlalchemy\\b"
+          ]
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "pytest",
+      "component_type": "skill",
+      "stack_tags": [
+        "pytest"
+      ],
+      "title": "Pytest Testing Framework",
+      "description": "Pytest testing framework tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "testing",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [],
+          "python_packages": [
+            "pytest"
+          ],
+          "content_patterns": [
+            "\\bpytest\\b"
+          ]
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "pgvector",
+      "component_type": "skill",
+      "stack_tags": [
+        "pgvector"
+      ],
+      "title": "pgvector Vector Similarity Search",
+      "description": "pgvector PostgreSQL extension tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "database",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [],
+          "python_packages": [
+            "pgvector"
+          ],
+          "content_patterns": [
+            "\\bpgvector\\b"
+          ]
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "postgresql",
+      "component_type": "skill",
+      "stack_tags": [
+        "postgresql"
+      ],
+      "title": "PostgreSQL Relational Database",
+      "description": "PostgreSQL database technology tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "database",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [],
+          "python_packages": [
+            "postgres",
+            "postgresql",
+            "psycopg",
+            "psycopg2"
+          ],
+          "content_patterns": [
+            "\\bpostgres(?:ql)?\\b"
+          ]
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    },
+    {
+      "slug": "redis",
+      "component_type": "skill",
+      "stack_tags": [
+        "redis"
+      ],
+      "title": "Redis In-Memory Data Store",
+      "description": "Redis cache & session store tag stub (empty skill in DB).",
+      "content": "",
+      "metadata": {
+        "execution_mode": "semantic",
+        "category": "database",
+        "is_empty_stub": true,
+        "detectors": {
+          "file_markers": [],
+          "node_packages": [],
+          "python_packages": [
+            "redis"
+          ],
+          "content_patterns": [
+            "\\bredis\\b"
+          ]
+        }
+      },
+      "status": "disabled",
+      "score": 1.0,
+      "version": 1
+    }
+  ]
+}

@@ -1,8 +1,10 @@
 /**
  * Слой конфигурации CLI (`src/cli/config`): реестр поддерживаемых ИИ-агентов, диалектов протокола
- * и канонических событий жизненных хуков. Выступает единым источником истины (Single Source of Truth)
- * для детектора окружения, компилятора профилей `Harness²` и локального прокси-раннера хуков.
+ * и канонических событий жизненных хуков. Метаданные агентов динамически загружаются из
+ * `seeds/harness-seed.json` (`Single Source of Truth`), сохраняя полную статическую типизацию `AgentType`.
  */
+
+import { loadHarnessSeedCatalog } from "./stack-signatures.ts";
 
 export const AGENT_TYPES = [
   "antigravity",
@@ -44,43 +46,79 @@ export interface AgentDescriptor {
   readonly workspaceMarkers: readonly string[];
 }
 
-export const AGENT_METADATA = {
-  antigravity: {
-    id: "antigravity",
-    displayName: "Google Antigravity",
-    configHint: ".agents/plugins & hooks.json",
-    dialect: "ANTIGRAVITY_PROTOJSON",
-    workspaceMarkers: [".agents", ".gemini/antigravity"],
-  },
-  "claude-code": {
-    id: "claude-code",
-    displayName: "Claude Code",
-    configHint: ".claude/settings.json & CLAUDE.md",
-    dialect: "CLAUDE_CODEX_V1",
-    workspaceMarkers: [".claude", "CLAUDE.md"],
-  },
-  codex: {
-    id: "codex",
-    displayName: "OpenAI Codex CLI",
-    configHint: ".codex/hooks.json & AGENTS.md",
-    dialect: "CLAUDE_CODEX_V1",
-    workspaceMarkers: [".codex"],
-  },
-  cursor: {
-    id: "cursor",
-    displayName: "Cursor",
-    configHint: ".cursor/rules/*.mdc & hooks.json",
-    dialect: "CURSOR_V1",
-    workspaceMarkers: [".cursor", ".cursorrules"],
-  },
-  opencode: {
-    id: "opencode",
-    displayName: "OpenCode",
-    configHint: ".opencode/plugins & opencode.json",
-    dialect: "CLAUDE_CODEX_V1",
-    workspaceMarkers: [".opencode"],
-  },
-} as const satisfies Record<AgentType, AgentDescriptor>;
+function resolveAgentDialectFromSeed(
+  rawDialect: string | undefined,
+  agentId: AgentType,
+): AgentDialect {
+  const normalized = (rawDialect ?? "").trim().toUpperCase();
+  if (normalized.includes("ANTIGRAVITY") || normalized.includes("AGY")) {
+    return "ANTIGRAVITY_PROTOJSON";
+  }
+  if (normalized.includes("CURSOR")) {
+    return "CURSOR_V1";
+  }
+  if (
+    normalized.includes("CLAUDE") ||
+    normalized.includes("CODEX") ||
+    normalized.includes("OPENCODE")
+  ) {
+    return "CLAUDE_CODEX_V1";
+  }
+  if (agentId === "antigravity") {
+    return "ANTIGRAVITY_PROTOJSON";
+  }
+  if (agentId === "cursor") {
+    return "CURSOR_V1";
+  }
+  return "CLAUDE_CODEX_V1";
+}
+
+function buildAgentMetadataFromSeed(): Readonly<
+  Record<AgentType, AgentDescriptor>
+> {
+  const seedAgents = loadHarnessSeedCatalog().agents;
+  const byId = new Map<string, (typeof seedAgents)[number]>();
+  for (const entry of seedAgents) {
+    if (typeof entry.agent_type === "string") {
+      byId.set(entry.agent_type.trim().toLowerCase(), entry);
+    }
+  }
+
+  const buildEntry = (agentId: AgentType): AgentDescriptor => {
+    const seedEntry = byId.get(agentId);
+    const displayName =
+      seedEntry?.cli_display_name ?? seedEntry?.display_name ?? agentId;
+    const configHint = seedEntry?.config_hint ?? "";
+    const workspaceMarkers = Array.isArray(seedEntry?.workspace_markers)
+      ? seedEntry.workspace_markers.filter(
+          (m): m is string => typeof m === "string" && m.trim().length > 0,
+        )
+      : [];
+    const dialect = resolveAgentDialectFromSeed(
+      seedEntry?.hooks?.dialect,
+      agentId,
+    );
+
+    return {
+      id: agentId,
+      displayName,
+      configHint,
+      dialect,
+      workspaceMarkers,
+    };
+  };
+
+  return {
+    antigravity: buildEntry("antigravity"),
+    "claude-code": buildEntry("claude-code"),
+    codex: buildEntry("codex"),
+    cursor: buildEntry("cursor"),
+    opencode: buildEntry("opencode"),
+  };
+}
+
+export const AGENT_METADATA: Readonly<Record<AgentType, AgentDescriptor>> =
+  buildAgentMetadataFromSeed();
 
 export const AGENT_DISPLAY_NAMES: Readonly<Record<AgentType, string>> = {
   antigravity: AGENT_METADATA.antigravity.displayName,

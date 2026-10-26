@@ -1,7 +1,7 @@
 /**
  * Слой 1 (Host CLI TUI Presentation): интерактивный визард команды `init` на базе `@clack/prompts`.
  * Проводит пользователя через выбор целевого ИИ-агента (`select`) и тегов технологического стека (`multiselect`),
- * автоматически переключаясь в неблокирующий режим подтверждения при флаге `--yes` или отсутствии TTY.
+ * визуально различая активные скиллы в БД (`hasContent: true`) и пустые технологические заглушки (`styleText("dim", ...)`).
  */
 
 import {
@@ -16,13 +16,15 @@ import {
 import process from "node:process";
 import { styleText } from "node:util";
 import { CLI_VERSION } from "../config/index.ts";
+import type { HarnessComponentItem } from "../core-api/endpoints-harness.ts";
 import {
   AGENT_CONFIG_HINTS,
   AGENT_DISPLAY_NAMES,
+  type AgentId,
+  getAllKnownStackTags,
+  getCatalogTagStatusMap,
   GLOBAL_STACK_TAG,
   SUPPORTED_AGENTS,
-  getAllKnownStackTags,
-  type AgentId,
   type WorkspaceProfile,
 } from "../detector/index.ts";
 import {
@@ -44,6 +46,7 @@ export interface WizardOptions {
   readonly yes?: boolean | undefined;
   readonly version?: string | undefined;
   readonly runtime?: string | undefined;
+  readonly catalogComponents?: readonly HarnessComponentItem[] | undefined;
 }
 
 export type InitWizardOptions = WizardOptions;
@@ -108,13 +111,19 @@ export async function runInitWizard(
     return null;
   }
 
+  const tagStatusMap = getCatalogTagStatusMap(options.catalogComponents);
   const detectedDomainTags = initialProfile.stackTags.filter(
     (tag) => tag !== GLOBAL_STACK_TAG,
   );
   const detectedSet = new Set(detectedDomainTags);
-  const additionalKnownTags = getAllKnownStackTags().filter(
-    (tag) => !detectedSet.has(tag),
-  );
+
+  const allCatalogTagsSet = new Set<string>([
+    ...getAllKnownStackTags(),
+    ...tagStatusMap.keys(),
+  ]);
+  const additionalKnownTags = Array.from(allCatalogTagsSet)
+    .filter((tag) => !detectedSet.has(tag) && tag !== GLOBAL_STACK_TAG)
+    .sort((a, b) => a.localeCompare(b));
   const orderedStackCatalog = [...detectedDomainTags, ...additionalKnownTags];
 
   const selectedDomainTags = await multiselect<string>({
@@ -124,12 +133,33 @@ export async function runInitWizard(
     required: false,
     options: orderedStackCatalog.map((tag) => {
       const isDetected = detectedSet.has(tag);
+      const tagInfo = tagStatusMap.get(tag);
+      const hasContent = tagInfo?.hasContent ?? false;
+
+      if (hasContent) {
+        return {
+          value: tag,
+          label: isDetected
+            ? styleText(["bold", "green"], tag)
+            : styleText("bold", tag),
+          hint: isDetected
+            ? styleText(
+                "green",
+                `${TUI_GLYPHS.ONLINE} detected in workspace · active skill in DB`,
+              )
+            : styleText("cyan", `active skill in DB (${tagInfo?.title ?? tag})`),
+        };
+      }
+
       return {
         value: tag,
-        label: isDetected ? styleText(["bold", "green"], tag) : tag,
+        label: styleText("dim", `${tag} (empty stub)`),
         hint: isDetected
-          ? styleText("green", `${TUI_GLYPHS.ONLINE} detected in workspace`)
-          : styleText("dim", "optional stack tag"),
+          ? styleText(
+              "dim",
+              `${TUI_GLYPHS.OFFLINE} detected in workspace · inactive stub in DB`,
+            )
+          : styleText("dim", "inactive stub in DB (tag only)"),
       };
     }),
   });

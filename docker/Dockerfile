@@ -35,9 +35,10 @@ WORKDIR /app
 RUN groupadd --system --gid 10001 appgroup && \
     useradd --system --uid 10001 --gid appgroup --create-home --home-dir /home/appuser appuser
 
-# Копируем манифест зависимостей и README.md, а затем исходный код Python-ядра.
+# Копируем манифест зависимостей, базовые JSON-сиды фабрики и исходный код Python-ядра.
 # Благодаря .dockerignore в контекст попадают только необходимые для ядра файлы.
 COPY pyproject.toml README.md ./
+COPY seeds ./seeds
 COPY src/core ./src/core
 
 # Устанавливаем пакет и все его зависимости из pyproject.toml в системное окружение образа,
