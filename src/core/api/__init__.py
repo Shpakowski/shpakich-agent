@@ -17,6 +17,7 @@ from src.core.api.deps import (
     _get_sync_engine,
     _get_visualizer_service,
     _log_hook_event,
+    _log_mcp_tool_event,
     _resolve_project_context,
     _resolve_project_stack_tags,
 )
@@ -101,6 +102,7 @@ __all__ = [
     "_get_sync_engine",
     "_get_visualizer_service",
     "_log_hook_event",
+    "_log_mcp_tool_event",
     "_resolve_project_context",
     "_resolve_project_stack_tags",
     "consolidate_harness_components",

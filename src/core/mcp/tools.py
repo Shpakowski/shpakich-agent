@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from src.core.api.deps import _log_mcp_tool_event
 from src.core.config import CoreSettings, get_settings
 from src.core.db.compactions import CompactionArchiveStore
 from src.core.decision.engine import DecisionEngine
@@ -41,6 +43,7 @@ from src.core.graph.sync_engine import WorkspaceSyncEngine
 from src.core.harness.compiler import HarnessCompiler, normalize_stack_tags
 from src.core.services.antigravity import AntigravitySDKService
 from src.core.services.embeddings import EmbeddingClient, format_pgvector
+from src.core.telemetry import build_and_log_mcp_telemetry
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -223,6 +226,34 @@ class CoopMCPToolService:
             embedding_client=self._embedding_client,
         )
 
+    async def _record_mcp_telemetry(
+        self,
+        *,
+        tool_name: str,
+        workspace_path: str,
+        args_payload: dict[str, Any],
+        result_payload: dict[str, Any],
+        start_t: float,
+        summary_note: str,
+    ) -> None:
+        """Формирует телеметрию вызова MCP-инструмента, выводит в Docker-лог и пишет в `hook_events`."""
+        telemetry = build_and_log_mcp_telemetry(
+            tool_name=tool_name,
+            workspace_path=workspace_path,
+            args_payload=args_payload,
+            result_payload=result_payload,
+            duration_ms=(time.perf_counter() - start_t) * 1000.0,
+            summary_note=summary_note,
+        )
+        await _log_mcp_tool_event(
+            self._db,
+            tool_name=tool_name,
+            workspace_path=workspace_path,
+            args_payload=args_payload,
+            result_payload=result_payload,
+            telemetry=telemetry,
+        )
+
     async def search_memory(
         self,
         query: str,
@@ -232,6 +263,7 @@ class CoopMCPToolService:
         workspace_path: str = "",
     ) -> dict[str, Any]:
         """Ищет решения ошибок в долгосрочной базе опыта (`memories`) и опционально сводки `/compact` (`session_compactions`)."""
+        start_t = time.perf_counter()
         clean_query = query.strip()
         normalized_tags = stack_tags or [ScopeType.GLOBAL.value]
         results = await self._engine.search_memories(
@@ -253,6 +285,20 @@ class CoopMCPToolService:
             )
             response["compactions"] = compactions
             response["compactions_count"] = len(compactions)
+
+        await self._record_mcp_telemetry(
+            tool_name="coop_search_memory",
+            workspace_path=workspace_path,
+            args_payload={
+                "query": query,
+                "stack_tags": normalized_tags,
+                "limit": limit,
+                "include_compactions": include_compactions,
+            },
+            result_payload=response,
+            start_t=start_t,
+            summary_note=f"found={len(results)} memories",
+        )
         return response
 
     async def learn_memory(
@@ -265,17 +311,33 @@ class CoopMCPToolService:
         source_project_path: str | None = None,
     ) -> dict[str, Any]:
         """Индексирует новое решение ошибки в таблицу `memories` с автоматической векторизацией `EmbeddingGemma 2`."""
+        start_t = time.perf_counter()
         validated_scope = ScopeType(scope).value
-        return await self._engine.store_memory(
+        normalized_tags = stack_tags or [ScopeType.GLOBAL.value]
+        result = await self._engine.store_memory(
             title=title,
             error_symptom=error_symptom,
             solution=solution,
-            stack_tags=stack_tags or [ScopeType.GLOBAL.value],
+            stack_tags=normalized_tags,
             scope=validated_scope,
             source_project_path=source_project_path,
         )
+        await self._record_mcp_telemetry(
+            tool_name="coop_learn_memory",
+            workspace_path=source_project_path or "",
+            args_payload={
+                "title": title,
+                "error_symptom": error_symptom,
+                "scope": validated_scope,
+                "stack_tags": normalized_tags,
+            },
+            result_payload=result,
+            start_t=start_t,
+            summary_note=f"stored title=\"{title[:40]}\"",
+        )
+        return result
 
-    async def propose_harness_edit(
+    async def _propose_harness_edit_impl(
         self,
         component_type: str,
         slug: str,
@@ -287,7 +349,7 @@ class CoopMCPToolService:
         metadata: dict[str, Any] | None = None,
         source_project_path: str | None = None,
     ) -> dict[str, Any]:
-        """Проводит кандидата через цикл `Propose -> Probe -> Compose` (`HARNESS_PROBE`) и сохраняет в БД при одобрении."""
+        """Внутренняя реализация цикла `Propose -> Probe -> Compose` (`HARNESS_PROBE`)."""
         comp_type = ComponentType(component_type)
         comp_scope = ScopeType(scope)
         clean_slug = slug.strip()
@@ -376,6 +438,47 @@ class CoopMCPToolService:
             "persisted": persisted,
         }
 
+    async def propose_harness_edit(
+        self,
+        component_type: str,
+        slug: str,
+        title: str,
+        description: str,
+        content: str,
+        scope: str = ScopeType.GLOBAL.value,
+        stack_tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        source_project_path: str | None = None,
+    ) -> dict[str, Any]:
+        """Проводит кандидата через цикл `Propose -> Probe -> Compose` (`HARNESS_PROBE`) и сохраняет в БД при одобрении."""
+        start_t = time.perf_counter()
+        result = await self._propose_harness_edit_impl(
+            component_type=component_type,
+            slug=slug,
+            title=title,
+            description=description,
+            content=content,
+            scope=scope,
+            stack_tags=stack_tags,
+            metadata=metadata,
+            source_project_path=source_project_path,
+        )
+        await self._record_mcp_telemetry(
+            tool_name="coop_propose_harness_edit",
+            workspace_path=source_project_path or "",
+            args_payload={
+                "slug": slug,
+                "component_type": component_type,
+                "title": title,
+                "scope": scope,
+                "stack_tags": stack_tags or [],
+            },
+            result_payload=result,
+            start_t=start_t,
+            summary_note=f"status={result.get('status')} score={result.get('score')}",
+        )
+        return result
+
     async def publish_skill(
         self,
         slug: str,
@@ -386,6 +489,7 @@ class CoopMCPToolService:
         source_project_path: str | None = None,
     ) -> dict[str, Any]:
         """Публикует новый переиспользуемый навык (`SKILL.md` + скрипты) через конвейер `propose_harness_edit`."""
+        start_t = time.perf_counter()
         inferred_scope = (
             ScopeType.DOMAIN.value
             if (
@@ -398,7 +502,7 @@ class CoopMCPToolService:
             )
             else ScopeType.GLOBAL.value
         )
-        return await self.propose_harness_edit(
+        result = await self._propose_harness_edit_impl(
             component_type=ComponentType.SKILL.value,
             slug=slug,
             title=slug,
@@ -409,6 +513,19 @@ class CoopMCPToolService:
             metadata={"helper_scripts": dict(helper_scripts or {})},
             source_project_path=source_project_path,
         )
+        await self._record_mcp_telemetry(
+            tool_name="coop_publish_skill",
+            workspace_path=source_project_path or "",
+            args_payload={
+                "slug": slug,
+                "description": description,
+                "stack_tags": stack_tags or [],
+            },
+            result_payload=result,
+            start_t=start_t,
+            summary_note=f"status={result.get('status')} score={result.get('score')}",
+        )
+        return result
 
     async def query_context_graph(
         self,
@@ -417,20 +534,36 @@ class CoopMCPToolService:
         depth: int = DEFAULT_SUBGRAPH_DEPTH,
     ) -> dict[str, Any]:
         """Извлекает локальный подграф окрестности узла `node_id` радиуса `depth` из `.context/` (`nx.DiGraph`)."""
+        start_t = time.perf_counter()
         try:
             result = self._graph_manager.query_subgraph(
                 workspace_path=workspace_path,
                 node_id=node_id,
                 depth=depth,
             )
-            return result.model_dump(mode="json")
+            res_dict = result.model_dump(mode="json")
         except (KeyError, ValueError, OSError) as exc:
-            return {
+            res_dict = {
                 "error": str(exc),
                 "is_valid": False,
                 "root_node_id": node_id.strip() or None,
                 "depth": max(0, depth),
             }
+
+        nodes_count = len(res_dict.get("nodes") or [])
+        await self._record_mcp_telemetry(
+            tool_name="coop_query_context_graph",
+            workspace_path=workspace_path,
+            args_payload={
+                "workspace_path": workspace_path,
+                "node_id": node_id,
+                "depth": depth,
+            },
+            result_payload=res_dict,
+            start_t=start_t,
+            summary_note=f"nodes={nodes_count} valid={res_dict.get('is_valid', False)}",
+        )
+        return res_dict
 
     async def upsert_context_node(
         self,
@@ -449,6 +582,7 @@ class CoopMCPToolService:
         conversation_id: str = "",
     ) -> dict[str, Any]:
         """Атомарно создаёт или обновляет `.md`-узел графа `.context/entities/` с записью в `AI Traces`."""
+        start_t = time.perf_counter()
         node = self._graph_manager.upsert_node(
             workspace_path=workspace_path,
             entity_class=ContextEntityClass(entity_class),
@@ -489,16 +623,31 @@ class CoopMCPToolService:
                 logger.debug("Failed to update session context flag in Redis: %s", exc)
 
         _, _, validation = self._graph_manager.build_and_validate(workspace_path)
-        return {
+        res_dict = {
             "node": node.model_dump(mode="json"),
             "validation": validation.model_dump(mode="json"),
         }
+        await self._record_mcp_telemetry(
+            tool_name="coop_upsert_context_node",
+            workspace_path=workspace_path,
+            args_payload={
+                "node_id": node_id,
+                "entity_class": entity_class,
+                "name": name,
+                "files": files,
+            },
+            result_payload=res_dict,
+            start_t=start_t,
+            summary_note=f"upserted node={node_id} valid={validation.is_valid}",
+        )
+        return res_dict
 
     async def get_factory_status(
         self,
         workspace_path: str = "",
     ) -> dict[str, Any]:
         """Возвращает агрегированную диагностику БД, Redis, `EmbeddingClient`, провайдеров Tier 2 и `.context/`."""
+        start_t = time.perf_counter()
         db = self._db
         redis_store = self._redis
         postgres_connected = await db.check_health() if db is not None else False
@@ -534,7 +683,7 @@ class CoopMCPToolService:
                 _, _, report = self._graph_manager.build_and_validate(workspace_path)
                 context_summary = report.model_dump(mode="json")
 
-        return {
+        res_dict = {
             "service": self._settings.app_name,
             "version": self._settings.version,
             "postgres_connected": postgres_connected,
@@ -545,6 +694,15 @@ class CoopMCPToolService:
             "database_counts": counts,
             "context_graph": context_summary,
         }
+        await self._record_mcp_telemetry(
+            tool_name="coop_get_factory_status",
+            workspace_path=workspace_path,
+            args_payload={"workspace_path": workspace_path},
+            result_payload=res_dict,
+            start_t=start_t,
+            summary_note=f"pg={postgres_connected} redis={redis_connected}",
+        )
+        return res_dict
 
     async def manage_decision_providers(
         self,
@@ -555,48 +713,66 @@ class CoopMCPToolService:
         reset_circuit: bool = False,
     ) -> dict[str, Any]:
         """Управляет провайдерами Tier 2 в рантайме (`list` или `update`) без передачи секретных API-ключей в чат."""
+        start_t = time.perf_counter()
         normalized_action = action.strip().lower()
         if normalized_action == PROVIDER_ACTION_LIST:
             views = await self._provider_pool.list_providers()
-            return {
+            res_dict: dict[str, Any] = {
                 "action": PROVIDER_ACTION_LIST,
                 "count": len(views),
                 "providers": [v.model_dump(mode="json") for v in views],
             }
-
-        if normalized_action == PROVIDER_ACTION_UPDATE:
+        elif normalized_action == PROVIDER_ACTION_UPDATE:
             clean_name = name.strip()
             if not clean_name:
-                return {
+                res_dict = {
                     "action": PROVIDER_ACTION_UPDATE,
                     "updated": False,
                     "error": "Provider 'name' is required for update action.",
                 }
-            updated = await self._provider_pool.update_provider(
-                clean_name,
-                priority=priority,
-                enabled=enabled,
-                reset_circuit=reset_circuit,
-            )
-            if updated is None:
-                return {
-                    "action": PROVIDER_ACTION_UPDATE,
-                    "updated": False,
-                    "error": f"Provider '{clean_name}' not found.",
-                }
-            return {
-                "action": PROVIDER_ACTION_UPDATE,
-                "updated": True,
-                "provider": updated.model_dump(mode="json"),
+            else:
+                updated = await self._provider_pool.update_provider(
+                    clean_name,
+                    priority=priority,
+                    enabled=enabled,
+                    reset_circuit=reset_circuit,
+                )
+                if updated is None:
+                    res_dict = {
+                        "action": PROVIDER_ACTION_UPDATE,
+                        "updated": False,
+                        "error": f"Provider '{clean_name}' not found.",
+                    }
+                else:
+                    res_dict = {
+                        "action": PROVIDER_ACTION_UPDATE,
+                        "updated": True,
+                        "provider": updated.model_dump(mode="json"),
+                    }
+        else:
+            res_dict = {
+                "action": normalized_action,
+                "updated": False,
+                "error": (
+                    f"Unsupported action '{action}'. Use '{PROVIDER_ACTION_LIST}' or '{PROVIDER_ACTION_UPDATE}'."
+                ),
             }
 
-        return {
-            "action": normalized_action,
-            "updated": False,
-            "error": (
-                f"Unsupported action '{action}'. Use '{PROVIDER_ACTION_LIST}' or '{PROVIDER_ACTION_UPDATE}'."
-            ),
-        }
+        await self._record_mcp_telemetry(
+            tool_name="coop_manage_decision_providers",
+            workspace_path="",
+            args_payload={
+                "action": action,
+                "name": name,
+                "priority": priority,
+                "enabled": enabled,
+                "reset_circuit": reset_circuit,
+            },
+            result_payload=res_dict,
+            start_t=start_t,
+            summary_note=f"action={normalized_action}",
+        )
+        return res_dict
 
 
 __all__ = [

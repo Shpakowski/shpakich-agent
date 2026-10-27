@@ -98,6 +98,7 @@
         </label>
 
         <!-- Action Buttons -->
+        <button id="telemetry-btn" class="btn btn-sm btn-purple" title="Open Token Economics &amp; Live Hook Telemetry">Telemetry &amp; Tokens</button>
         <button id="diff-last-view-btn" class="btn btn-sm btn-cyan" title="Toggle Diff Highlighting Since Last Viewed Snapshot">Diff Last View</button>
         <button id="consolidate-btn" class="btn btn-sm btn-amber" title="Trigger Harness Probing Consolidation">Consolidate</button>
         <button id="refresh-btn" class="btn btn-sm btn-emerald" title="Reload Graph Snapshot">Refresh</button>
@@ -373,6 +374,78 @@
         </div>
       </aside>
     </main>
+
+    <!-- Token Economics & Live Hook Telemetry Modal Overlay -->
+    <div id="telemetry-modal" class="telemetry-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="telemetry-modal-title">
+      <div class="telemetry-modal-panel">
+        <div class="telemetry-modal-header">
+          <div class="telemetry-modal-title-group">
+            <span class="telemetry-modal-badge">OTel GenAI + MCP</span>
+            <h2 id="telemetry-modal-title">Token Economics &amp; Live Hook Telemetry</h2>
+            <span id="telemetry-window-label" class="telemetry-window-sub">Window: Last 1h</span>
+          </div>
+          <div class="telemetry-modal-actions">
+            <button id="telemetry-refresh-btn" class="btn btn-sm btn-emerald" title="Reload Telemetry Analytics">Refresh</button>
+            <button id="telemetry-close-btn" class="btn btn-sm btn-rose" title="Close Telemetry Modal">&times; Close</button>
+          </div>
+        </div>
+
+        <!-- 6 KPI Summary Cards -->
+        <div class="telemetry-kpi-grid">
+          <div class="telemetry-kpi-card">
+            <div class="telemetry-kpi-label">Total Events / MCP Calls</div>
+            <div id="tel-kpi-events" class="telemetry-kpi-val">0 / 0</div>
+            <div id="tel-kpi-denied" class="telemetry-kpi-sub">0 denied</div>
+          </div>
+          <div class="telemetry-kpi-card">
+            <div class="telemetry-kpi-label">User Input Tokens</div>
+            <div id="tel-kpi-user-in" class="telemetry-kpi-val telemetry-val-cyan">0</div>
+            <div class="telemetry-kpi-sub">Prompts &amp; Tool Args</div>
+          </div>
+          <div class="telemetry-kpi-card">
+            <div class="telemetry-kpi-label">Harness Injected Tokens</div>
+            <div id="tel-kpi-injected" class="telemetry-kpi-val telemetry-val-purple">0</div>
+            <div class="telemetry-kpi-sub">System + Ephemeral RAG</div>
+          </div>
+          <div class="telemetry-kpi-card">
+            <div class="telemetry-kpi-label">Model &amp; MCP Out Tokens</div>
+            <div id="tel-kpi-output" class="telemetry-kpi-val telemetry-val-amber">0</div>
+            <div class="telemetry-kpi-sub">Responses + Thinking</div>
+          </div>
+          <div class="telemetry-kpi-card telemetry-kpi-card-emerald">
+            <div class="telemetry-kpi-label">Context Saved % (Progressive Disclosure)</div>
+            <div id="tel-kpi-saved-pct" class="telemetry-kpi-val telemetry-val-emerald">100.0%</div>
+            <div class="telemetry-kpi-sub">vs 4,200 tok static catalog</div>
+          </div>
+          <div class="telemetry-kpi-card">
+            <div class="telemetry-kpi-label">Avg Hook Latency (ms)</div>
+            <div id="tel-kpi-latency" class="telemetry-kpi-val">0.0 ms</div>
+            <div class="telemetry-kpi-sub">End-to-End Pipeline</div>
+          </div>
+        </div>
+
+        <!-- Two-Column Body -->
+        <div class="telemetry-modal-body">
+          <!-- Left Column: Top Injected Harness Components -->
+          <div class="telemetry-col telemetry-col-left">
+            <div class="telemetry-col-header">
+              <span>Top Injected Harness Components</span>
+              <span id="tel-components-count" class="badge-tag badge-new">0</span>
+            </div>
+            <div id="tel-top-components-list" class="telemetry-scroll-list"></div>
+          </div>
+
+          <!-- Right Column: Live Hook & MCP Telemetry Stream -->
+          <div class="telemetry-col telemetry-col-right">
+            <div class="telemetry-col-header">
+              <span>Live Hook &amp; MCP Telemetry Stream (Click row to expand details)</span>
+              <span id="tel-events-count" class="badge-tag badge-upd">0</span>
+            </div>
+            <div id="tel-events-list" class="telemetry-scroll-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Injected Client-Side JavaScript Application Modules -->

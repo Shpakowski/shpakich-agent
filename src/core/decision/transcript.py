@@ -47,11 +47,20 @@ PAYLOAD_PROMPT_KEYS: tuple[str, ...] = (
     "prompt",
     "user_prompt",
 )
+TRANSCRIPT_TAIL_KEYS: tuple[str, ...] = (
+    "transcript_tail",
+    "transcriptTail",
+)
 STEP_INDEX_KEYS: tuple[str, ...] = (
     "step_index",
     "step_idx",
     "stepIdx",
     "step",
+)
+
+USER_REQUEST_TAG_REGEX: re.Pattern[str] = re.compile(
+    r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>",
+    re.IGNORECASE | re.DOTALL,
 )
 
 SUMMARY_TAG_REGEX: re.Pattern[str] = re.compile(
@@ -318,22 +327,35 @@ def _try_extract_from_truncated_json_line(
     return is_post_compact, None
 
 
+def _clean_user_prompt(raw_content: str) -> str:
+    """Извлекает чистый текст запроса из `<USER_REQUEST>...</USER_REQUEST>`, отсекая `<ADDITIONAL_METADATA>`."""
+    stripped = raw_content.strip()
+    if not stripped:
+        return ""
+    matches = USER_REQUEST_TAG_REGEX.findall(stripped)
+    for match in reversed(matches):
+        cleaned = match.strip()
+        if cleaned:
+            return cleaned
+    return stripped
+
+
 def inspect_transcript_tail_detailed(
     transcript_path: str | None,
     *,
     fallback_step_idx: int = 0,
     raw_payload: Mapping[str, Any] | None = None,
 ) -> TranscriptTailInspection:
-    """Читает последние 64 КБ транскрипта и пэйлоад для извлечения `CompactionCheckpoint`."""
+    """Читает последние 64 КБ транскрипта (с диска или из `transcript_tail`) и пэйлоад для извлечения `CompactionCheckpoint`."""
     is_post_compact = False
     last_user_prompt = ""
     checkpoint: CompactionCheckpoint | None = None
     safe_fallback_step = max(0, fallback_step_idx)
 
+    tail_text = ""
     if transcript_path:
         path = Path(transcript_path)
         if path.is_file():
-            tail_text = ""
             try:
                 file_size = path.stat().st_size
                 offset = max(0, file_size - TRANSCRIPT_TAIL_MAX_BYTES)
@@ -344,115 +366,122 @@ def inspect_transcript_tail_detailed(
             except OSError:
                 tail_text = ""
 
-            if tail_text:
-                lines = [ln.strip() for ln in tail_text.splitlines() if ln.strip()]
-                tail_start_idx = max(0, len(lines) - TAIL_SCAN_MAX_LINES)
-                raw_non_json_lines: list[tuple[int, str]] = []
-                last_checkpoint_line_idx = -1
+    if not tail_text and isinstance(raw_payload, Mapping):
+        for tail_key in TRANSCRIPT_TAIL_KEYS:
+            candidate_tail = raw_payload.get(tail_key)
+            if isinstance(candidate_tail, str) and candidate_tail.strip():
+                tail_text = candidate_tail
+                break
 
-                for idx, line in enumerate(lines):
-                    try:
-                        obj = json.loads(line)
-                    except ValueError:
-                        if _looks_like_truncated_json(line):
-                            if idx >= tail_start_idx:
-                                trunc_compact, trunc_ckpt = _try_extract_from_truncated_json_line(
-                                    line,
-                                    safe_fallback_step,
-                                )
-                                if trunc_compact:
-                                    is_post_compact = True
-                                if trunc_ckpt is not None:
-                                    checkpoint = trunc_ckpt
-                                    last_checkpoint_line_idx = idx
-                        else:
-                            raw_non_json_lines.append((idx, line))
-                        continue
+    if tail_text:
+        lines = [ln.strip() for ln in tail_text.splitlines() if ln.strip()]
+        tail_start_idx = max(0, len(lines) - TAIL_SCAN_MAX_LINES)
+        raw_non_json_lines: list[tuple[int, str]] = []
+        last_checkpoint_line_idx = -1
 
-                    if not isinstance(obj, Mapping):
-                        continue
-
-                    if idx < tail_start_idx:
-                        continue
-
-                    step_type = str(obj.get("type") or "").strip()
-                    content_str = _extract_json_step_content(obj)
-                    line_step_idx = _extract_step_idx(obj, safe_fallback_step)
-                    explicit_compact, explicit_summary, explicit_key = (
-                        _extract_explicit_json_summary(obj)
-                    )
-
-                    has_compact_type = step_type == COMPACT_STEP_TYPE
-                    has_resuming_marker = COMPACT_RESUMING_MARKER in content_str
-                    extracted_summary = explicit_summary or extract_compaction_summary(content_str)
-
-                    if (
-                        has_compact_type
-                        or has_resuming_marker
-                        or explicit_compact
-                        or extracted_summary is not None
-                    ):
-                        is_post_compact = True
-                        summary_candidate = extracted_summary
-                        if summary_candidate is None and has_compact_type:
-                            plain_checkpoint = content_str.replace(
-                                COMPACT_RESUMING_MARKER, ""
-                            ).strip()
-                            if plain_checkpoint:
-                                summary_candidate = plain_checkpoint[
-                                    :MAX_COMPACTION_SUMMARY_CHARS
-                                ]
-
-                        if summary_candidate:
-                            source_marker = (
-                                COMPACT_STEP_TYPE
-                                if has_compact_type
-                                else (
-                                    explicit_key
-                                    if explicit_summary is not None and explicit_key
-                                    else (
-                                        COMPACT_RESUMING_MARKER
-                                        if has_resuming_marker
-                                        else SUMMARY_XML_OPEN_TAG
-                                    )
-                                )
-                            )
-                            checkpoint = CompactionCheckpoint(
-                                summary_text=summary_candidate,
-                                checkpoint_hash=compute_checkpoint_hash(summary_candidate),
-                                step_idx=line_step_idx,
-                                source_marker=source_marker,
-                            )
+        for idx, line in enumerate(lines):
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                if _looks_like_truncated_json(line):
+                    if idx >= tail_start_idx:
+                        trunc_compact, trunc_ckpt = _try_extract_from_truncated_json_line(
+                            line,
+                            safe_fallback_step,
+                        )
+                        if trunc_compact:
+                            is_post_compact = True
+                        if trunc_ckpt is not None:
+                            checkpoint = trunc_ckpt
                             last_checkpoint_line_idx = idx
+                else:
+                    raw_non_json_lines.append((idx, line))
+                continue
 
-                    if step_type == USER_INPUT_STEP_TYPE and content_str.strip():
-                        last_user_prompt = content_str.strip()
+            if not isinstance(obj, Mapping):
+                continue
 
-                if raw_non_json_lines:
-                    raw_non_json_block = "\n".join(ln for _, ln in raw_non_json_lines)
-                    block_lower = raw_non_json_block.lower()
-                    if (
-                        COMPACT_RESUMING_MARKER in raw_non_json_block
-                        or SUMMARY_XML_OPEN_TAG in block_lower
-                        or SUMMARY_XML_CLOSE_TAG in block_lower
-                    ):
-                        is_post_compact = True
-                        if (
-                            checkpoint is None
-                            or raw_non_json_lines[-1][0] > last_checkpoint_line_idx
-                        ):
-                            multiline_summary = extract_compaction_summary(raw_non_json_block)
-                            if multiline_summary:
-                                checkpoint = CompactionCheckpoint(
-                                    summary_text=multiline_summary,
-                                    checkpoint_hash=compute_checkpoint_hash(multiline_summary),
-                                    step_idx=safe_fallback_step,
-                                    source_marker=(
-                                        COMPACT_RESUMING_MARKER
-                                        if COMPACT_RESUMING_MARKER in raw_non_json_block
-                                        else SUMMARY_XML_OPEN_TAG
-                                    ),
-                                )
+            if idx < tail_start_idx:
+                continue
+
+            step_type = str(obj.get("type") or "").strip()
+            content_str = _extract_json_step_content(obj)
+            line_step_idx = _extract_step_idx(obj, safe_fallback_step)
+            explicit_compact, explicit_summary, explicit_key = (
+                _extract_explicit_json_summary(obj)
+            )
+
+            has_compact_type = step_type == COMPACT_STEP_TYPE
+            has_resuming_marker = COMPACT_RESUMING_MARKER in content_str
+            extracted_summary = explicit_summary or extract_compaction_summary(content_str)
+
+            if (
+                has_compact_type
+                or has_resuming_marker
+                or explicit_compact
+                or extracted_summary is not None
+            ):
+                is_post_compact = True
+                summary_candidate = extracted_summary
+                if summary_candidate is None and has_compact_type:
+                    plain_checkpoint = content_str.replace(
+                        COMPACT_RESUMING_MARKER, ""
+                    ).strip()
+                    if plain_checkpoint:
+                        summary_candidate = plain_checkpoint[
+                            :MAX_COMPACTION_SUMMARY_CHARS
+                        ]
+
+                if summary_candidate:
+                    source_marker = (
+                        COMPACT_STEP_TYPE
+                        if has_compact_type
+                        else (
+                            explicit_key
+                            if explicit_summary is not None and explicit_key
+                            else (
+                                COMPACT_RESUMING_MARKER
+                                if has_resuming_marker
+                                else SUMMARY_XML_OPEN_TAG
+                            )
+                        )
+                    )
+                    checkpoint = CompactionCheckpoint(
+                        summary_text=summary_candidate,
+                        checkpoint_hash=compute_checkpoint_hash(summary_candidate),
+                        step_idx=line_step_idx,
+                        source_marker=source_marker,
+                    )
+                    last_checkpoint_line_idx = idx
+
+            if step_type == USER_INPUT_STEP_TYPE and content_str.strip():
+                last_user_prompt = _clean_user_prompt(content_str)
+
+        if raw_non_json_lines:
+            raw_non_json_block = "\n".join(ln for _, ln in raw_non_json_lines)
+            block_lower = raw_non_json_block.lower()
+            if (
+                COMPACT_RESUMING_MARKER in raw_non_json_block
+                or SUMMARY_XML_OPEN_TAG in block_lower
+                or SUMMARY_XML_CLOSE_TAG in block_lower
+            ):
+                is_post_compact = True
+                if (
+                    checkpoint is None
+                    or raw_non_json_lines[-1][0] > last_checkpoint_line_idx
+                ):
+                    multiline_summary = extract_compaction_summary(raw_non_json_block)
+                    if multiline_summary:
+                        checkpoint = CompactionCheckpoint(
+                            summary_text=multiline_summary,
+                            checkpoint_hash=compute_checkpoint_hash(multiline_summary),
+                            step_idx=safe_fallback_step,
+                            source_marker=(
+                                COMPACT_RESUMING_MARKER
+                                if COMPACT_RESUMING_MARKER in raw_non_json_block
+                                else SUMMARY_XML_OPEN_TAG
+                            ),
+                        )
 
     if isinstance(raw_payload, Mapping):
         payload_step_idx = _extract_step_idx(raw_payload, safe_fallback_step)

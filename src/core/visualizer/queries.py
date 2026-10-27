@@ -128,6 +128,24 @@ SELECT
     (SELECT COUNT(*) FROM decision_providers WHERE enabled = TRUE)::int AS providers_count;
 """
 
+# Выборка последних событий жизненных хуков и вызовов MCP для аналитики токен-экономики и телеметрии
+FETCH_RECENT_HOOK_TELEMETRY_SQL: str = """
+SELECT
+    id::bigint AS id,
+    conversation_id,
+    workspace_path,
+    event_type,
+    coalesce(tool_name, '') AS tool_name,
+    payload,
+    decision,
+    created_at
+FROM hook_events
+WHERE ($1::text IS NULL OR workspace_path IS NULL OR workspace_path = $1::text)
+  AND created_at >= NOW() - ($2::int * INTERVAL '1 minute')
+ORDER BY created_at DESC, id DESC
+LIMIT $3::int;
+"""
+
 # Вычисление семантических связей между узлами на основе косинусного расстояния pgvector
 SELECT_SEMANTIC_SIMILARITY_SQL: str = """
 WITH embedded_entities AS (
@@ -414,6 +432,7 @@ def score_lexical_match(query: str, title: str, body: str) -> tuple[float, float
 
 
 __all__ = [
+    "FETCH_RECENT_HOOK_TELEMETRY_SQL",
     "SEARCH_KNOWLEDGE_HYBRID_SQL",
     "SELECT_AUX_COUNTS_SQL",
     "SELECT_COMPACTIONS_SQL",

@@ -13,6 +13,7 @@ files:
   - src/core/__init__.py
   - src/core/enums.py
   - src/core/config.py
+  - src/core/telemetry.py
   - src/core/main.py
   - src/core/api/__init__.py
   - src/core/api/models.py
@@ -67,6 +68,7 @@ files:
   - tests/unit/test_spec002_dynamic_harness.py
   - tests/unit/test_spec003_compactions.py
   - tests/unit/test_visualizer.py
+  - tests/unit/test_telemetry.py
 depends_on: []
 implements:
   - "[[contract-storage-schema]]"
@@ -103,6 +105,7 @@ governed_by:
 15. **Пакет визуализатора топологии и знаний `src/core/visualizer/` (`models.py`, `queries.py`, `topology.py`, `search.py`, `service.py`, `__init__.py`) и веб-оболочка `src/core/ui/` (`styles.css`, `template.html`, `graph_canvas.js`, `app.js`, `__init__.py` -> `render_visualizer_html`)**: полнофункциональный интерактивный визуализатор графа RAG и топологии `Harness`. Включает Pydantic-модели снимков Cytoscape.js (`VisualizerGraphSnapshot`, `CytoscapeElement`, `VisualizerSearchHit`), оптимизированные SQL-запросы (`queries.py`), асинхронный сборщик топологии `VisualizerTopologyBuilder` с поддержкой автономного оффлайн-режима (`db=None`) и генерацией семантических рёбер по косинусной близости, гибридный векторно-полнотекстовый поиск `VisualizerSearchService` с автоматическим лексическим фолбэком, фасад `VisualizerGraphService` и легковесный SPA-интерфейс в тёмной теме без внешних CDN/NPM зависимостей.
 16. **`tests/unit/test_spec002_dynamic_harness.py` и `tests/unit/test_spec003_compactions.py`**: комплексные наборы модульных и интеграционных тестов динамического харнеса (Progressive Disclosure, двусторонний инжест, 3-Way Hash Sync, консолидация) и архивации сводок сжатия контекста `/compact`.
 17. **`tests/unit/test_visualizer.py`**: исчерпывающий набор тестов визуализатора графа RAG и топологии `Harness`, покрывающий автономный режим `VisualizerTopologyBuilder(db=None)`, сборку снимка при активной БД с дельтой изменений и семантическими рёбрами, гибридный векторно-полнотекстовый поиск `VisualizerSearchService` с лексическим фолбэком и HTTP-эндпоинты FastAPI (`/ui`, `/api/visualizer/graph`, `/api/visualizer/search`).
+18. **`src/core/telemetry.py` и `tests/unit/test_telemetry.py`**: система структурной наблюдаемости и токен-телеметрии (`OpenTelemetry GenAI & MCP Semantic Conventions`), включающая детерминированный эстиматор BPE-токенов `estimate_tokens` (кириллица, латиница, код/JSON), расчёт экономии контекста `compute_progressive_disclosure_savings_pct`, извлечение выходных токенов ответа модели из `transcript.jsonl` (`extract_last_model_output_tokens`), фильтр `QuietHooksAccessFilter` для `uvicorn.access`, двухрежимные логгеры Docker Desktop (`pretty` дерево `├─ / └─` и `json`) и модульные тесты `test_telemetry.py`.
 
 ## Логи контекста (AI Traces)
 - 2026-10-24: Создан базовый скелет Python 3.12 Core (`pyproject.toml`, `src/core/__init__.py`, `src/core/config.py`, `src/core/main.py`) в строгом соответствии с PEP 621, паттерном FastAPI `lifespan` и языковым стандартом `AGENTS.md` (код на английском, архитектурные комментарии и докстринги на русском).
@@ -142,6 +145,9 @@ governed_by:
 - 2026-10-26: Реализован единый источник знаний в `seeds/harness-seed.json` и `seeds/prompts-config.json`: все 40 компонентов `Harness` (универсальный статический Bootstrap, динамические семантические скиллы/правила и 27 пустых технологических стабов с `detectors`), профили 5 агентов и системные промпты загружаются через `load_harness_seed_payload()` и `load_prompts_config()` в `src/core/harness/seed.py`, `src/core/harness/profiles.py`, `src/core/harness/compiler.py`, `src/core/harness/dynamic_rag.py`, `src/core/api/routes_hooks.py`, `src/core/api/routes_management.py`, `src/core/decision/tiers.py` и `src/core/services/antigravity/service.py`.
 - 2026-10-26: В `src/core/harness/seed.py` (`_normalize_seed_fields`) и `src/core/mcp/tools.py` (`publish_skill`) инвертировано дефолтное условие вывода `scope`: `ScopeType.DOMAIN` выставляется только при явном наличии `ScopeType.DOMAIN.value` в тегах, а дефолтной веткой (`else`) сделан `ScopeType.GLOBAL`.
 - 2026-10-27: Обновлён `pyproject.toml` (`mcp>=2.0.0`) и `src/core/mcp/server.py` (`CoopMCPGateway` и `TOOL_INPUT_SCHEMAS`): выполнен переход на `mcp.server.mcpserver.MCPServer` (`mcp 2.x`) без легаси-фолбэка на `mcp 1.x`, добавлена синхронизация строгих JSON Schema Draft-07 (`$schema`, `additionalProperties: false`, `description`, `enum`, `required`) во все 8 инструментов, обработка `resources/list`, `resources/templates/list`, `prompts/list` и пакетных JSON-RPC 2.0 запросов.
+- 2026-10-27: Реализована система структурной наблюдаемости и токен-телеметрии (`src/core/telemetry.py`, `src/core/config.py`, `src/core/main.py`, `src/core/api/deps.py`, `src/core/api/routes_hooks.py`, `src/core/api/routes_sync.py`, `src/core/mcp/tools.py`, `src/core/visualizer/*`, `src/core/api/routes_visualizer.py`, `src/core/ui/*`, `tests/unit/test_telemetry.py`): добавлен подсчёт токенов (`user_in`, `harness_injected`, `model_out`, `saved_pct`), двухрежимные логи для Docker Desktop (`LOG_FORMAT=pretty|json` с деревом `├─ / └─` и подавлением шума `uvicorn.access`), сохранение `_telemetry` в `hook_events`, эндпоинт `GET /api/visualizer/telemetry` и интерактивное окно `Telemetry & Tokens` в `/ui`.
+- 2026-10-27: В `src/core/decision/transcript.py`, `src/core/telemetry.py` и `src/core/api/routes_hooks.py` реализована поддержка моста `transcript_tail` (Host CLI -> Docker Core), очистка промпта от `<ADDITIONAL_METADATA>` через `_clean_user_prompt` и извлечение аппаратных токенов LLM (`input_tokens`, `cache_read_tokens`, `output_tokens`) из шагов `PLANNER_RESPONSE` (`extract_last_llm_api_usage`).
+
 
 
 

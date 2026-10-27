@@ -16,13 +16,16 @@ from src.core.visualizer.models import (
     DEFAULT_MIN_SIMILARITY,
     DEFAULT_SEARCH_TOP_K,
     DEFAULT_SINCE_MINUTES,
+    DEFAULT_TELEMETRY_LIMIT,
     VisualizerGraphSnapshot,
     VisualizerSearchResponse,
+    VisualizerTelemetryResponse,
 )
 
 UI_ROUTE_PATH: str = "/ui"
 VISUALIZER_GRAPH_ROUTE_PATH: str = "/api/visualizer/graph"
 VISUALIZER_SEARCH_ROUTE_PATH: str = "/api/visualizer/search"
+VISUALIZER_TELEMETRY_ROUTE_PATH: str = "/api/visualizer/telemetry"
 
 MIN_SINCE_MINUTES: int = 1
 MAX_SINCE_MINUTES: int = 43200
@@ -30,6 +33,8 @@ MIN_SIMILARITY_FLOOR: float = 0.50
 MAX_SIMILARITY_CEIL: float = 0.99
 MIN_TOP_K: int = 1
 MAX_TOP_K: int = 50
+MIN_TELEMETRY_EVENTS: int = 1
+MAX_TELEMETRY_EVENTS: int = 500
 
 visualizer_router = APIRouter()
 
@@ -96,17 +101,50 @@ async def search_visualizer_knowledge(
     )
 
 
+@visualizer_router.get(
+    VISUALIZER_TELEMETRY_ROUTE_PATH,
+    response_model=VisualizerTelemetryResponse,
+    tags=["visualizer"],
+)
+async def get_visualizer_telemetry(
+    request: Request,
+    workspace_path: str | None = Query(default=None),
+    since_minutes: int = Query(
+        default=DEFAULT_SINCE_MINUTES,
+        ge=MIN_SINCE_MINUTES,
+        le=MAX_SINCE_MINUTES,
+    ),
+    limit: int = Query(
+        default=DEFAULT_TELEMETRY_LIMIT,
+        ge=MIN_TELEMETRY_EVENTS,
+        le=MAX_TELEMETRY_EVENTS,
+    ),
+) -> VisualizerTelemetryResponse:
+    """Возвращает агрегированную аналитику токен-экономики, топ инъекций Harness и поток событий хуков."""
+    cleaned_workspace = workspace_path.strip() if workspace_path and workspace_path.strip() else None
+    service = _get_visualizer_service(request)
+    return await service.get_telemetry_analytics(
+        workspace_path=cleaned_workspace,
+        since_minutes=since_minutes,
+        limit=limit,
+    )
+
+
 __all__ = [
     "MAX_SIMILARITY_CEIL",
     "MAX_SINCE_MINUTES",
+    "MAX_TELEMETRY_EVENTS",
     "MAX_TOP_K",
     "MIN_SIMILARITY_FLOOR",
     "MIN_SINCE_MINUTES",
+    "MIN_TELEMETRY_EVENTS",
     "MIN_TOP_K",
     "UI_ROUTE_PATH",
     "VISUALIZER_GRAPH_ROUTE_PATH",
     "VISUALIZER_SEARCH_ROUTE_PATH",
+    "VISUALIZER_TELEMETRY_ROUTE_PATH",
     "get_visualizer_graph",
+    "get_visualizer_telemetry",
     "search_visualizer_knowledge",
     "serve_visualizer_ui",
     "visualizer_router",

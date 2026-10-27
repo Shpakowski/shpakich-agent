@@ -119,6 +119,9 @@ governed_by:
 * **`GET /api/visualizer/search`**
   * **Параметры запроса:** `q: str` (min_length=1), `workspace_path: str | None`, `top_k: int` (1..50).
   * **Ответ (`200 OK`, `VisualizerSearchResponse`):** Результаты гибридного (pgvector + tsvector + trigram) поиска `results: list[VisualizerSearchHit]`.
+* **`GET /api/visualizer/telemetry`**
+  * **Параметры запроса:** `workspace_path: str | None`, `since_minutes: int` (1..43200), `limit: int` (1..500, по умолчанию 80).
+  * **Ответ (`200 OK`, `VisualizerTelemetryResponse`):** Агрегированная сводка токен-экономики `summary` (`TelemetrySummaryStats`: `total_events`, `total_user_in_tokens`, `total_harness_injected_tokens`, `total_output_tokens`, `avg_saved_pct`, `avg_duration_ms`, `denied_count`, `mcp_calls_count`), рейтинг впрыскиваемых правил/скиллов/скриптов `top_components` (`list[TelemetryComponentRank]`) и лента событий `events` (`list[TelemetryEventRow]`).
 
 ## Логи контекста (AI Traces)
 - 2026-10-25: Сформирован контракт `contract-mcp-and-http-api`, специфицирующий 8 инструментов локального шлюза `FastMCP` (`Streamable HTTP /mcp`) и управляющие REST API эндпоинты `FastAPI` (`/health`, `/api/projects/register`, `/api/harness/components`, `/api/providers`, `/api/decisions/evaluate`, `/api/context/heal`).
@@ -127,4 +130,5 @@ governed_by:
 - 2026-10-25: Специфицированы маршруты визуализатора `GET /ui`, `GET /api/visualizer/graph`, `GET /api/visualizer/search` (`src/core/api/routes_visualizer.py`).
 - 2026-10-26: Обновлены ссылки и пути клиентских адаптеров после декомпозиции CLI в рантайм-агностичные узлы (`mod-cli`, `mod-cli-core-api`, `mod-cli-sync`, `mod-cli-commands`).
 - 2026-10-27: Контракт `CoopMCPGateway` (`src/core/mcp/server.py`) обновлён под стандарт MCP 2025-03-26+ и SDK `mcp>=2.0.0` (`MCPServer`): все 8 схем `TOOL_INPUT_SCHEMAS` снабжены `$schema` (Draft-07), `additionalProperties: false`, детальными `description`, строгими `enum` и явным списком `required`, а шлюз `/mcp` поддерживает `title` в `tools/list`, JSON-RPC 2.0 batch-запросы и методы `resources/list`, `resources/templates/list`, `prompts/list`.
+- 2026-10-27: Добавлен аналитический эндпоинт `GET /api/visualizer/telemetry` (`VisualizerTelemetryResponse`) и запись `_telemetry` в аудит хуков и 8 MCP-инструментов.
 

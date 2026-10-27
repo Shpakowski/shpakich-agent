@@ -29,6 +29,8 @@ MAX_SEMANTIC_EDGES = 120
 MAX_RECENT_CHANGES = 50
 MAX_CONTENT_PREVIEW_CHARS = 320
 DEFAULT_SEARCH_TOP_K = 15
+DEFAULT_TELEMETRY_LIMIT = 80
+DEFAULT_TOP_COMPONENTS_LIMIT = 25
 
 # Весовые коэффициенты гибридного и лексического ранжирования
 HYBRID_VEC_WEIGHT = 0.65
@@ -165,11 +167,67 @@ class VisualizerSearchResponse(VisualizerImmutableModel):
     hits: list[VisualizerSearchHit] = Field(default_factory=list)
 
 
+class TelemetrySummaryStats(VisualizerImmutableModel):
+    """Сводные KPI-метрики токен-экономики и телеметрии жизненных хуков."""
+
+    total_events: int = 0
+    total_user_in_tokens: int = 0
+    total_harness_injected_tokens: int = 0
+    total_output_tokens: int = 0
+    avg_saved_pct: float = 100.0
+    avg_duration_ms: float = 0.0
+    denied_count: int = 0
+    mcp_calls_count: int = 0
+
+
+class TelemetryComponentRank(VisualizerImmutableModel):
+    """Ранг частоты инъекции и средней релевантности компонента Harness (правила, скилла, скрипта)."""
+
+    slug: str
+    kind: str
+    inject_count: int = 0
+    avg_relevance: float = 1.0
+
+
+class TelemetryEventRow(VisualizerImmutableModel):
+    """Отдельная запись потока событий жизненных хуков и вызовов MCP с оценкой токенов."""
+
+    id: int
+    created_at: str
+    event_type: str
+    agent_type: str = "antigravity"
+    tool_name: str = ""
+    target: str = ""
+    verdict: str = "allow"
+    duration_ms: float = 0.0
+    user_in_tokens: int = 0
+    harness_injected_tokens: int = 0
+    output_tokens: int = 0
+    saved_pct: float = 100.0
+    rules: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    scripts: list[str] = Field(default_factory=list)
+    summary_line: str = ""
+
+
+class VisualizerTelemetryResponse(VisualizerImmutableModel):
+    """Ответ аналитического эндпоинта токен-экономики и живой телеметрии хуков."""
+
+    status: str = STATUS_OK
+    workspace_path: str | None = None
+    since_minutes: int = DEFAULT_SINCE_MINUTES
+    summary: TelemetrySummaryStats = Field(default_factory=TelemetrySummaryStats)
+    top_components: list[TelemetryComponentRank] = Field(default_factory=list)
+    events: list[TelemetryEventRow] = Field(default_factory=list)
+
+
 __all__ = [
     "DEFAULT_LAYOUT_MODE",
     "DEFAULT_MIN_SIMILARITY",
     "DEFAULT_SEARCH_TOP_K",
     "DEFAULT_SINCE_MINUTES",
+    "DEFAULT_TELEMETRY_LIMIT",
+    "DEFAULT_TOP_COMPONENTS_LIMIT",
     "GROUP_COMPACTIONS_ID",
     "GROUP_CONTEXT_ID",
     "GROUP_GUARDRAILS_ID",
@@ -186,6 +244,9 @@ __all__ = [
     "MAX_RECENT_CHANGES",
     "MAX_SEMANTIC_EDGES",
     "STATUS_OK",
+    "TelemetryComponentRank",
+    "TelemetryEventRow",
+    "TelemetrySummaryStats",
     "VisualizerEdgeData",
     "VisualizerEdgeElement",
     "VisualizerGraphSnapshot",
@@ -196,4 +257,5 @@ __all__ = [
     "VisualizerSearchHit",
     "VisualizerSearchResponse",
     "VisualizerStatsSummary",
+    "VisualizerTelemetryResponse",
 ]

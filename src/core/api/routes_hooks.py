@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,7 @@ from src.core.enums import (
 from src.core.harness import HarnessCompiler
 from src.core.harness.seed import load_prompts_config
 from src.core.services import EmbeddingClient
+from src.core.telemetry import build_and_log_hook_telemetry
 
 logger = logging.getLogger("mcp_coop.core")
 
@@ -196,6 +198,7 @@ async def hook_session_start(
     request: Request,
 ) -> dict[str, Any]:
     """Обрабатывает старт сессии: инициализирует метаданные в Redis и запускает скрипты `session-start`."""
+    start_t = time.perf_counter()
     if not raw_payload.get("context_index_md"):
         ws_candidate = str(
             raw_payload.get("workspace_path")
@@ -264,7 +267,18 @@ async def hook_session_start(
         system_message=sys_msg,
         sync_files=sync_files,
     )
-    await _log_hook_event(db, hook_in, response_dict)
+    telemetry = build_and_log_hook_telemetry(
+        event_type=HookEventType.SESSION_START.value,
+        agent_type=hook_in.agent_type.value,
+        workspace_path=hook_in.workspace_path,
+        stack_tags=stack_tags,
+        duration_ms=(time.perf_counter() - start_t) * 1000.0,
+        compiled_files_count=len(sync_files),
+        executed_scripts=script_res.executed_slugs,
+        state_updates=script_res.state_updates,
+        system_message=sys_msg,
+    )
+    await _log_hook_event(db, hook_in, response_dict, telemetry=telemetry)
     return response_dict
 
 
@@ -274,6 +288,7 @@ async def hook_pre_tool_use(
     request: Request,
 ) -> dict[str, Any]:
     """Перехватывает вызов инструмента: проверяет `DecisionEngine` и скрипты `pre-tool-use` из БД."""
+    start_t = time.perf_counter()
     hook_in = normalize_hook_payload(HookEventType.PRE_TOOL_USE, raw_payload)
     db: PostgresDatabase | None = getattr(request.app.state, "db", None)
     engine = _get_engine(request)
@@ -343,7 +358,23 @@ async def hook_pre_tool_use(
         hook_in.dialect,
         resolution,
     )
-    await _log_hook_event(db, hook_in, response_dict)
+    telemetry = build_and_log_hook_telemetry(
+        event_type=HookEventType.PRE_TOOL_USE.value,
+        agent_type=hook_in.agent_type.value,
+        workspace_path=hook_in.workspace_path,
+        stack_tags=stack_tags,
+        duration_ms=(time.perf_counter() - start_t) * 1000.0,
+        verdict=resolution.action.value,
+        decided_by_tier=resolution.decided_by_tier,
+        reason=resolution.reason,
+        tool_name=hook_in.tool_name,
+        tool_args=hook_in.tool_args,
+        executed_scripts=script_res.executed_slugs,
+        state_updates=script_res.state_updates,
+        transcript_path=hook_in.transcript_path,
+        raw_payload=raw_payload,
+    )
+    await _log_hook_event(db, hook_in, response_dict, telemetry=telemetry)
     return response_dict
 
 
@@ -353,6 +384,7 @@ async def hook_post_tool_use(
     request: Request,
 ) -> dict[str, Any]:
     """Фиксирует ошибку инструмента в Redis и исполняет скрипты `post-tool-use` (трекинг файлов и др.)."""
+    start_t = time.perf_counter()
     hook_in = normalize_hook_payload(HookEventType.POST_TOOL_USE, raw_payload)
     db: PostgresDatabase | None = getattr(request.app.state, "db", None)
     redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
@@ -412,7 +444,24 @@ async def hook_post_tool_use(
         hook_in.dialect,
         ephemeral_message=eph_msg,
     )
-    await _log_hook_event(db, hook_in, response_dict)
+    telemetry = build_and_log_hook_telemetry(
+        event_type=HookEventType.POST_TOOL_USE.value,
+        agent_type=hook_in.agent_type.value,
+        workspace_path=hook_in.workspace_path,
+        stack_tags=stack_tags,
+        duration_ms=(time.perf_counter() - start_t) * 1000.0,
+        verdict="error" if hook_in.error else "ok",
+        decided_by_tier="redis_working_memory",
+        reason=hook_in.error,
+        tool_name=hook_in.tool_name,
+        tool_args=hook_in.tool_args,
+        ephemeral_message=eph_msg,
+        executed_scripts=script_res.executed_slugs,
+        state_updates=script_res.state_updates,
+        transcript_path=hook_in.transcript_path,
+        raw_payload=raw_payload,
+    )
+    await _log_hook_event(db, hook_in, response_dict, telemetry=telemetry)
     return response_dict
 
 
@@ -422,6 +471,7 @@ async def hook_pre_invocation(
     request: Request,
 ) -> dict[str, Any]:
     """Анализирует контекст перед вызовом LLM: ре-гидратация и архивация `/compact` (`SPEC-003`), `/plan` и RAG."""
+    start_t = time.perf_counter()
     hook_in = normalize_hook_payload(HookEventType.PRE_INVOCATION, raw_payload)
     db: PostgresDatabase | None = getattr(request.app.state, "db", None)
     redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
@@ -442,6 +492,10 @@ async def hook_pre_invocation(
     active_prompt = hook_in.prompt or inspection.last_user_prompt
     hints: list[str] = []
     sys_parts: list[str] = []
+    rag_source = ""
+    matched_rules: list[tuple[str, float]] = []
+    matched_skills: list[tuple[str, float, bool]] = []
+    is_plan_mode = False
 
     if inspection.is_post_compact:
         checkpoint = inspection.checkpoint
@@ -519,7 +573,8 @@ async def hook_pre_invocation(
             compiler._redis = redis_store
 
         prompt_lower = active_prompt.lower()
-        if any(kw in prompt_lower for kw in PLAN_KEYWORDS):
+        is_plan_mode = any(kw in prompt_lower for kw in PLAN_KEYWORDS)
+        if is_plan_mode:
             hints.append(
                 await _build_plan_best_practices_hint(
                     compiler=compiler,
@@ -539,6 +594,18 @@ async def hook_pre_invocation(
                 profile_overrides=profile_overrides,
                 embedding_client=embedding_client,
             )
+            rag_source = str(
+                getattr(rag_result, "source", "")
+                or (
+                    "pgvector+tsvector"
+                    if getattr(embedding_client, "is_configured", False)
+                    else "tsvector+trgm"
+                )
+            )
+            matched_rules = [(r.slug, r.relevance) for r in rag_result.rules]
+            matched_skills = [
+                (s.slug, s.relevance, s.is_full_blueprint) for s in rag_result.skills
+            ]
             dynamic_hint = rag_result.format_ephemeral_hint()
             if dynamic_hint:
                 hints.append(dynamic_hint)
@@ -584,7 +651,26 @@ async def hook_pre_invocation(
         system_message=sys_msg,
         ephemeral_message=eph_msg,
     )
-    await _log_hook_event(db, hook_in, response_dict)
+    telemetry = build_and_log_hook_telemetry(
+        event_type=HookEventType.PRE_INVOCATION.value,
+        agent_type=hook_in.agent_type.value,
+        workspace_path=hook_in.workspace_path,
+        stack_tags=stack_tags,
+        duration_ms=(time.perf_counter() - start_t) * 1000.0,
+        rag_source=rag_source,
+        matched_rules=matched_rules,
+        matched_skills=matched_skills,
+        is_plan_mode=is_plan_mode,
+        is_post_compact=inspection.is_post_compact,
+        prompt=active_prompt,
+        system_message=sys_msg,
+        ephemeral_message=eph_msg,
+        executed_scripts=script_res.executed_slugs,
+        state_updates=script_res.state_updates,
+        transcript_path=hook_in.transcript_path,
+        raw_payload=raw_payload,
+    )
+    await _log_hook_event(db, hook_in, response_dict, telemetry=telemetry)
     return response_dict
 
 
@@ -594,6 +680,7 @@ async def hook_stop(
     request: Request,
 ) -> dict[str, Any]:
     """Перехватывает завершение хода: исполняет скрипты `stop` (`enforce-context-sync` и др.) и рефлексию `Harness`."""
+    start_t = time.perf_counter()
     hook_in = normalize_hook_payload(HookEventType.STOP, raw_payload)
     db: PostgresDatabase | None = getattr(request.app.state, "db", None)
     redis_store: RedisSessionStore | None = getattr(request.app.state, "redis", None)
@@ -643,7 +730,21 @@ async def hook_stop(
         hook_in.dialect,
         resolution,
     )
-    await _log_hook_event(db, hook_in, response_dict)
+    telemetry = build_and_log_hook_telemetry(
+        event_type=HookEventType.STOP.value,
+        agent_type=hook_in.agent_type.value,
+        workspace_path=hook_in.workspace_path,
+        stack_tags=stack_tags,
+        duration_ms=(time.perf_counter() - start_t) * 1000.0,
+        verdict=resolution.action.value,
+        decided_by_tier=resolution.decided_by_tier,
+        reason=resolution.reason,
+        executed_scripts=script_res.executed_slugs,
+        state_updates=script_res.state_updates,
+        transcript_path=hook_in.transcript_path,
+        raw_payload=raw_payload,
+    )
+    await _log_hook_event(db, hook_in, response_dict, telemetry=telemetry)
     return response_dict
 
 

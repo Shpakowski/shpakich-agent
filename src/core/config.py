@@ -33,6 +33,10 @@ DEFAULT_ANTIGRAVITY_LOCATION: str = "us-central1"
 DEFAULT_ANTIGRAVITY_TIMEOUT_MS: int = 30_000
 DEFAULT_ANTIGRAVITY_MAX_CONCURRENCY: int = 2
 
+# Базовые параметры логирования и телеметрии Docker-ядра
+DEFAULT_LOG_FORMAT: str = "pretty"
+DEFAULT_LOG_LEVEL: str = "INFO"
+
 
 class CoreSettings(BaseSettings):
     """Централизованная конфигурация ядра фабрики, синхронизированная с docker-compose.yml.
@@ -75,6 +79,16 @@ class CoreSettings(BaseSettings):
         default=AgentType.ANTIGRAVITY,
         validation_alias=AliasChoices("MCP_COOP_DEFAULT_AGENT", "DEFAULT_AGENT"),
         description="Default target AI coding agent when not explicitly specified by the client.",
+    )
+    log_format: str = Field(
+        default=DEFAULT_LOG_FORMAT,
+        validation_alias=AliasChoices("MCP_COOP_LOG_FORMAT", "LOG_FORMAT"),
+        description="Telemetry output format for Docker logs ('pretty' expandable tree or 'json').",
+    )
+    log_level: str = Field(
+        default=DEFAULT_LOG_LEVEL,
+        validation_alias=AliasChoices("MCP_COOP_LOG_LEVEL", "LOG_LEVEL"),
+        description="Minimum logging level for the mcp_coop.core logger (e.g. INFO, DEBUG).",
     )
 
     # Строки подключения к инфраструктуре хранения (имена хостов соответствуют сервисам в docker-compose.yml)

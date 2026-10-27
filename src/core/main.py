@@ -57,6 +57,7 @@ from src.core.harness import (
 )
 from src.core.mcp import CoopMCPGateway, CoopMCPToolService
 from src.core.services import AntigravitySDKService, EmbeddingClient
+from src.core.telemetry import configure_core_logging
 from src.core.visualizer import VisualizerGraphService
 
 logger = logging.getLogger("mcp_coop.core")
@@ -66,6 +67,7 @@ logger = logging.getLogger("mcp_coop.core")
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Управляет жизненным циклом приложения (Startup / Shutdown) без глобальных переменных."""
     settings: CoreSettings = get_settings()
+    configure_core_logging(settings.log_format, settings.log_level)
     app.state.settings = settings
 
     db = PostgresDatabase(settings.postgres_dsn)
@@ -160,6 +162,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("Redis is unavailable at startup (%s); running in degraded mode", exc)
 
         await provider_pool.seed_from_env(settings.openai_api_key)
+        logger.info(
+            "[Startup] %s v%s ready │ postgres=%s redis=%s embeddings=%s log_format=%s",
+            settings.app_name,
+            settings.version,
+            db.is_connected,
+            redis_store.is_connected,
+            settings.embedding_api_configured,
+            settings.log_format,
+        )
         if mcp_gateway is not None:
             async with mcp_gateway.run_lifespan():
                 yield
@@ -174,6 +185,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     """Фабрика экземпляра FastAPI для запуска через Uvicorn и изоляции в интеграционных тестах."""
     settings = get_settings()
+    configure_core_logging(settings.log_format, settings.log_level)
     application = FastAPI(
         title=settings.app_name,
         version=settings.version,

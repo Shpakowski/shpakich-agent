@@ -5,6 +5,8 @@
  * `sync_files` на диск и гарантированный Fail-Open (`exit code 0`) при остановленном Docker.
  */
 
+import { Buffer } from "node:buffer";
+import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
@@ -55,6 +57,12 @@ export const STOP_HOOK_HTTP_TIMEOUT_MS = TIMEOUTS_MS.CORE_REGISTRATION_MS;
 const EXECUTABLE_FILE_MODE = 0o755 as const;
 const LEGACY_HARNESS_MANIFEST_REL_PATH =
   ".agents/mcp-coop-harness.json" as const;
+const TRANSCRIPT_TAIL_MAX_BYTES = 65_536 as const;
+const TRANSCRIPT_PATH_KEYS = [
+  "transcriptPath",
+  "transcript_path",
+  "transcript",
+] as const;
 
 const RM_ROOT_COMMAND_PATTERN =
   /(?:^|[;&|]\s*|\bsudo\s+)rm\s+(?:-[a-zA-Z]*[rf][a-zA-Z]*\s+|--(?:recursive|force|no-preserve-root)\s+)*(?:-[a-zA-Z]*[rf][a-zA-Z]*|--(?:recursive|force))\s+\/(?:\*|\s|$|[;&|])/i;
@@ -209,6 +217,54 @@ function readWorkspaceContextIndex(workspacePath: string): string | undefined {
   }
   const trimmed = raw.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * Читает последние 64 КБ файла транскрипта (`transcriptPath` / `transcript_path`) на хосте,
+ * чтобы передать `transcript_tail` в изолированный Docker-контейнер аналитического ядра.
+ */
+export function readTranscriptTailIfExists(
+  payload: Record<string, unknown>,
+): string | undefined {
+  let rawPath = "";
+  for (const key of TRANSCRIPT_PATH_KEYS) {
+    const candidate = payload[key];
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      rawPath = candidate.trim();
+      break;
+    }
+  }
+  if (!rawPath) {
+    return undefined;
+  }
+
+  let fd: number | undefined;
+  try {
+    const stat = fs.statSync(rawPath);
+    if (!stat.isFile() || stat.size <= 0) {
+      return undefined;
+    }
+    const readSize = Math.min(stat.size, TRANSCRIPT_TAIL_MAX_BYTES);
+    const offset = Math.max(0, stat.size - readSize);
+    const buffer = Buffer.alloc(readSize);
+    fd = fs.openSync(rawPath, "r");
+    const bytesRead = fs.readSync(fd, buffer, 0, readSize, offset);
+    if (bytesRead <= 0) {
+      return undefined;
+    }
+    const text = buffer.subarray(0, bytesRead).toString("utf-8").trim();
+    return text.length > 0 ? text : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // Игнорируем ошибку закрытия дескриптора при чтении хвоста транскрипта.
+      }
+    }
+  }
 }
 
 /**
@@ -436,6 +492,13 @@ export async function executeHook(
     const contextIndexMd = readWorkspaceContextIndex(workspacePath);
     if (contextIndexMd) {
       enrichedPayload["context_index_md"] = contextIndexMd;
+    }
+  }
+
+  if (typeof enrichedPayload["transcript_tail"] !== "string") {
+    const transcriptTail = readTranscriptTailIfExists(stdinPayload);
+    if (transcriptTail) {
+      enrichedPayload["transcript_tail"] = transcriptTail;
     }
   }
 

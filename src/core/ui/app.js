@@ -19,9 +19,25 @@ const DOM_SELECTORS = Object.freeze({
   SIMILARITY_RANGE: "#similarity-range",
   SIMILARITY_VAL: "#similarity-val",
   LIVE_POLL_TOGGLE: "#live-poll-toggle",
+  TELEMETRY_BTN: "#telemetry-btn",
   DIFF_LAST_VIEW_BTN: "#diff-last-view-btn",
   CONSOLIDATE_BTN: "#consolidate-btn",
   REFRESH_BTN: "#refresh-btn",
+  TELEMETRY_MODAL: "#telemetry-modal",
+  TELEMETRY_CLOSE_BTN: "#telemetry-close-btn",
+  TELEMETRY_REFRESH_BTN: "#telemetry-refresh-btn",
+  TELEMETRY_WINDOW_LABEL: "#telemetry-window-label",
+  TEL_KPI_EVENTS: "#tel-kpi-events",
+  TEL_KPI_DENIED: "#tel-kpi-denied",
+  TEL_KPI_USER_IN: "#tel-kpi-user-in",
+  TEL_KPI_INJECTED: "#tel-kpi-injected",
+  TEL_KPI_OUTPUT: "#tel-kpi-output",
+  TEL_KPI_SAVED_PCT: "#tel-kpi-saved-pct",
+  TEL_KPI_LATENCY: "#tel-kpi-latency",
+  TEL_COMPONENTS_COUNT: "#tel-components-count",
+  TEL_TOP_COMPONENTS_LIST: "#tel-top-components-list",
+  TEL_EVENTS_COUNT: "#tel-events-count",
+  TEL_EVENTS_LIST: "#tel-events-list",
   DB_STATUS_BADGE: "#db-status-badge",
   DB_STATUS_TEXT: "#db-status-badge .status-text",
   ZOOM_IN_BTN: "#zoom-in-btn",
@@ -62,6 +78,7 @@ const DOM_SELECTORS = Object.freeze({
 const API_ENDPOINTS = Object.freeze({
   GRAPH_SNAPSHOT: "/api/visualizer/graph",
   KNOWLEDGE_SEARCH: "/api/visualizer/search",
+  TELEMETRY_ANALYTICS: "/api/visualizer/telemetry",
   COMPONENT_STATUS: (slug) => `/api/harness/components/${encodeURIComponent(slug)}`,
   CONSOLIDATE: "/api/harness/consolidate",
 });
@@ -143,6 +160,7 @@ class VisualizerApp {
     this._searchDebounceTimer = null;
     this._toastTimer = null;
     this._isFetchInFlight = false;
+    this._isTelemetryModalOpen = false;
     this._selectedNodeData = null;
   }
 
@@ -173,9 +191,25 @@ class VisualizerApp {
       similarityRange: document.querySelector(DOM_SELECTORS.SIMILARITY_RANGE),
       similarityVal: document.querySelector(DOM_SELECTORS.SIMILARITY_VAL),
       livePollToggle: document.querySelector(DOM_SELECTORS.LIVE_POLL_TOGGLE),
+      telemetryBtn: document.querySelector(DOM_SELECTORS.TELEMETRY_BTN),
       diffLastViewBtn: document.querySelector(DOM_SELECTORS.DIFF_LAST_VIEW_BTN),
       consolidateBtn: document.querySelector(DOM_SELECTORS.CONSOLIDATE_BTN),
       refreshBtn: document.querySelector(DOM_SELECTORS.REFRESH_BTN),
+      telemetryModal: document.querySelector(DOM_SELECTORS.TELEMETRY_MODAL),
+      telemetryCloseBtn: document.querySelector(DOM_SELECTORS.TELEMETRY_CLOSE_BTN),
+      telemetryRefreshBtn: document.querySelector(DOM_SELECTORS.TELEMETRY_REFRESH_BTN),
+      telemetryWindowLabel: document.querySelector(DOM_SELECTORS.TELEMETRY_WINDOW_LABEL),
+      telKpiEvents: document.querySelector(DOM_SELECTORS.TEL_KPI_EVENTS),
+      telKpiDenied: document.querySelector(DOM_SELECTORS.TEL_KPI_DENIED),
+      telKpiUserIn: document.querySelector(DOM_SELECTORS.TEL_KPI_USER_IN),
+      telKpiInjected: document.querySelector(DOM_SELECTORS.TEL_KPI_INJECTED),
+      telKpiOutput: document.querySelector(DOM_SELECTORS.TEL_KPI_OUTPUT),
+      telKpiSavedPct: document.querySelector(DOM_SELECTORS.TEL_KPI_SAVED_PCT),
+      telKpiLatency: document.querySelector(DOM_SELECTORS.TEL_KPI_LATENCY),
+      telComponentsCount: document.querySelector(DOM_SELECTORS.TEL_COMPONENTS_COUNT),
+      telTopComponentsList: document.querySelector(DOM_SELECTORS.TEL_TOP_COMPONENTS_LIST),
+      telEventsCount: document.querySelector(DOM_SELECTORS.TEL_EVENTS_COUNT),
+      telEventsList: document.querySelector(DOM_SELECTORS.TEL_EVENTS_LIST),
       dbStatusBadge: document.querySelector(DOM_SELECTORS.DB_STATUS_BADGE),
       dbStatusText: document.querySelector(DOM_SELECTORS.DB_STATUS_TEXT),
       zoomInBtn: document.querySelector(DOM_SELECTORS.ZOOM_IN_BTN),
@@ -378,6 +412,30 @@ class VisualizerApp {
         this.handleConsolidate();
       });
     }
+
+    // 10. Модальное окно телеметрии и токен-экономики
+    if (this._el.telemetryBtn) {
+      this._el.telemetryBtn.addEventListener("click", () => {
+        this.openTelemetryModal();
+      });
+    }
+    if (this._el.telemetryCloseBtn) {
+      this._el.telemetryCloseBtn.addEventListener("click", () => {
+        this.closeTelemetryModal();
+      });
+    }
+    if (this._el.telemetryRefreshBtn) {
+      this._el.telemetryRefreshBtn.addEventListener("click", () => {
+        this.fetchTelemetry();
+      });
+    }
+    if (this._el.telemetryModal) {
+      this._el.telemetryModal.addEventListener("click", (evt) => {
+        if (evt.target === this._el.telemetryModal) {
+          this.closeTelemetryModal();
+        }
+      });
+    }
   }
 
   /**
@@ -445,6 +503,10 @@ class VisualizerApp {
           diffNodeIds: this._activeDiffIds,
           preserveViewport,
         });
+      }
+
+      if (this._isTelemetryModalOpen) {
+        this.fetchTelemetry();
       }
     } catch (err) {
       console.error("Failed to load graph snapshot:", err);
@@ -956,6 +1018,197 @@ class VisualizerApp {
       this.showToast(`Consolidation error: ${err.message}`, "error");
     } finally {
       this._el.consolidateBtn.disabled = false;
+    }
+  }
+
+  /**
+   * Открывает модальное окно аналитики токенов и живой телеметрии хуков.
+   */
+  openTelemetryModal() {
+    this._isTelemetryModalOpen = true;
+    if (this._el.telemetryModal) {
+      this._el.telemetryModal.classList.remove("hidden");
+    }
+    this.fetchTelemetry();
+  }
+
+  /**
+   * Скрывает модальное окно телеметрии.
+   */
+  closeTelemetryModal() {
+    this._isTelemetryModalOpen = false;
+    if (this._el.telemetryModal) {
+      this._el.telemetryModal.classList.add("hidden");
+    }
+  }
+
+  /**
+   * Запрашивает аналитику токен-экономики и потока хуков с эндпоинта `/api/visualizer/telemetry`.
+   */
+  async fetchTelemetry() {
+    try {
+      const workspace = this._el.workspaceInput ? this._el.workspaceInput.value.trim() : "";
+      const sinceMinutes = this._el.sinceSelect ? this._el.sinceSelect.value : "60";
+
+      if (this._el.telemetryWindowLabel && this._el.sinceSelect) {
+        const selectedOption = this._el.sinceSelect.options[this._el.sinceSelect.selectedIndex];
+        this._el.telemetryWindowLabel.textContent = `Window: ${selectedOption ? selectedOption.text : `${sinceMinutes}m`}`;
+      }
+
+      const queryParams = new URLSearchParams({
+        workspace_path: workspace,
+        since_minutes: sinceMinutes,
+      });
+
+      const response = await fetch(`${API_ENDPOINTS.TELEMETRY_ANALYTICS}?${queryParams.toString()}`);
+      if (!response.ok) {
+        throw new Error(`Telemetry fetch failed with HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      this.renderTelemetryAnalytics(data);
+    } catch (err) {
+      console.error("Failed to load telemetry analytics:", err);
+      this.showToast(err.message || "Failed to load telemetry", "error");
+    }
+  }
+
+  /**
+   * Отрисовывает сводные KPI-карточки, топ компонентов и живой поток хуков в модальном окне.
+   *
+   * @param {Object} data Ответ `VisualizerTelemetryResponse`.
+   */
+  renderTelemetryAnalytics(data) {
+    const summary = data && data.summary ? data.summary : {};
+    const topComponents = Array.isArray(data && data.top_components) ? data.top_components : [];
+    const events = Array.isArray(data && data.events) ? data.events : [];
+
+    if (this._el.telKpiEvents) {
+      this._el.telKpiEvents.textContent = `${summary.total_events ?? 0} / ${summary.mcp_calls_count ?? 0}`;
+    }
+    if (this._el.telKpiDenied) {
+      this._el.telKpiDenied.textContent = `${summary.denied_count ?? 0} denied`;
+    }
+    if (this._el.telKpiUserIn) {
+      this._el.telKpiUserIn.textContent = Number(summary.total_user_in_tokens ?? 0).toLocaleString();
+    }
+    if (this._el.telKpiInjected) {
+      this._el.telKpiInjected.textContent = Number(summary.total_harness_injected_tokens ?? 0).toLocaleString();
+    }
+    if (this._el.telKpiOutput) {
+      this._el.telKpiOutput.textContent = Number(summary.total_output_tokens ?? 0).toLocaleString();
+    }
+    if (this._el.telKpiSavedPct) {
+      const savedPct = typeof summary.avg_saved_pct === "number" ? summary.avg_saved_pct.toFixed(1) : "100.0";
+      this._el.telKpiSavedPct.textContent = `${savedPct}%`;
+    }
+    if (this._el.telKpiLatency) {
+      const avgMs = typeof summary.avg_duration_ms === "number" ? summary.avg_duration_ms.toFixed(1) : "0.0";
+      this._el.telKpiLatency.textContent = `${avgMs} ms`;
+    }
+
+    // Отрисовка левой колонки: Top Injected Harness Components
+    if (this._el.telComponentsCount) {
+      this._el.telComponentsCount.textContent = String(topComponents.length);
+    }
+    if (this._el.telTopComponentsList) {
+      this._el.telTopComponentsList.innerHTML = "";
+      if (topComponents.length === 0) {
+        this._el.telTopComponentsList.innerHTML = `
+          <div style="font-size:11px; color:var(--text-muted); padding:10px 6px;">
+            No Harness components injected in the selected time window.
+          </div>
+        `;
+      } else {
+        topComponents.forEach((comp) => {
+          const item = document.createElement("div");
+          item.className = "tel-rank-item";
+          const kind = comp.kind || "rule";
+          const slugText = escapeHtml(comp.slug || "");
+          const relVal = typeof comp.avg_relevance === "number" ? comp.avg_relevance.toFixed(2) : "1.00";
+          item.innerHTML = `
+            <div class="tel-rank-left">
+              <span class="tel-kind-pill tel-kind-${escapeHtml(kind)}">${escapeHtml(kind)}</span>
+              <span class="tel-rank-slug" title="${slugText}">${slugText}</span>
+            </div>
+            <div class="tel-rank-right">
+              <span class="tel-rank-rel">rel ${escapeHtml(relVal)}</span>
+              <span class="tel-rank-hits">${escapeHtml(String(comp.inject_count ?? 0))}&times;</span>
+            </div>
+          `;
+          item.addEventListener("click", () => {
+            this.closeTelemetryModal();
+            if (this._canvas && comp.slug) {
+              this._canvas.focusNode(`component:${comp.slug}`);
+            }
+          });
+          this._el.telTopComponentsList.appendChild(item);
+        });
+      }
+    }
+
+    // Отрисовка правой колонки: Live Hook & MCP Telemetry Stream
+    if (this._el.telEventsCount) {
+      this._el.telEventsCount.textContent = String(events.length);
+    }
+    if (this._el.telEventsList) {
+      this._el.telEventsList.innerHTML = "";
+      if (events.length === 0) {
+        this._el.telEventsList.innerHTML = `
+          <div style="font-size:11px; color:var(--text-muted); padding:10px 6px;">
+            No hook or MCP telemetry events recorded in the selected time window.
+          </div>
+        `;
+      } else {
+        events.forEach((ev) => {
+          const card = document.createElement("div");
+          card.className = "tel-event-card";
+
+          const timeStr = formatTime(ev.created_at);
+          const isMcp = ev.event_type === "mcp-tool" || ev.agent_type === "mcp";
+          const eventBadgeClass = isMcp ? "tel-event-badge tel-event-badge-mcp" : "tel-event-badge";
+          const eventLabel = isMcp && ev.tool_name ? `MCP:${ev.tool_name}` : ev.event_type;
+          const isDenied = String(ev.verdict || "").toLowerCase() !== "allow";
+          const verdictClass = isDenied ? "tel-verdict-badge tel-verdict-deny" : "tel-verdict-badge tel-verdict-allow";
+          const targetPreview = ev.target || ev.tool_name || ev.agent_type || "-";
+          const msVal = typeof ev.duration_ms === "number" ? `${ev.duration_ms.toFixed(1)}ms` : "0.0ms";
+          const savedVal = typeof ev.saved_pct === "number" ? `${ev.saved_pct.toFixed(1)}%` : "100.0%";
+
+          const rulesStr = Array.isArray(ev.rules) && ev.rules.length ? ev.rules.join(", ") : "-";
+          const skillsStr = Array.isArray(ev.skills) && ev.skills.length ? ev.skills.join(", ") : "-";
+          const scriptsStr = Array.isArray(ev.scripts) && ev.scripts.length ? ev.scripts.join(", ") : "-";
+
+          card.innerHTML = `
+            <div class="tel-event-row-main">
+              <div class="tel-event-left">
+                <span class="tel-event-time">${escapeHtml(timeStr)}</span>
+                <span class="${eventBadgeClass}">[${escapeHtml(eventLabel)}]</span>
+                <span class="${verdictClass}">${escapeHtml(ev.verdict || "allow")}</span>
+                <span class="tel-event-target" title="${escapeHtml(targetPreview)}">${escapeHtml(targetPreview)}</span>
+              </div>
+              <div class="tel-event-right">
+                <span class="tel-tok-pill" title="Input / Injected / Output Tokens">in:${ev.user_in_tokens ?? 0} +inj:${ev.harness_injected_tokens ?? 0} out:${ev.output_tokens ?? 0}</span>
+                <span class="tel-saved-pill" title="Progressive Disclosure Context Saved %">saved ${escapeHtml(savedVal)}</span>
+                <span class="tel-ms-pill">${escapeHtml(msVal)}</span>
+              </div>
+            </div>
+            <div class="tel-event-details hidden">
+              <div class="tel-detail-line"><strong>Summary:</strong> ${escapeHtml(ev.summary_line || "-")}</div>
+              <div class="tel-detail-line"><strong>Agent:</strong> ${escapeHtml(ev.agent_type || "-")} │ <strong>Tool:</strong> ${escapeHtml(ev.tool_name || "-")}</div>
+              <div class="tel-detail-line"><strong>Rules:</strong> [${escapeHtml(rulesStr)}] │ <strong>Skills:</strong> [${escapeHtml(skillsStr)}] │ <strong>Scripts:</strong> [${escapeHtml(scriptsStr)}]</div>
+            </div>
+          `;
+
+          card.addEventListener("click", () => {
+            const detailsEl = card.querySelector(".tel-event-details");
+            if (detailsEl) {
+              detailsEl.classList.toggle("hidden");
+            }
+          });
+
+          this._el.telEventsList.appendChild(card);
+        });
+      }
     }
   }
 

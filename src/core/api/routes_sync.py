@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -22,6 +23,7 @@ from src.core.api.models import (
     SyncIngestRequest,
 )
 from src.core.db import PostgresDatabase
+from src.core.telemetry import log_sync_operation
 
 STATUS_OK: str = "ok"
 
@@ -34,6 +36,7 @@ async def ingest_workspace_components(
     request: Request,
 ) -> dict[str, Any]:
     """Принимает кастомные скиллы и правила из рабочей директории и сохраняет в `harness_components`."""
+    start_t = time.perf_counter()
     db: PostgresDatabase | None = getattr(request.app.state, "db", None)
     sync_engine = _get_sync_engine(request)
     raw_lookup: dict[str, Any] = (
@@ -49,9 +52,23 @@ async def ingest_workspace_components(
         resolved_tags,
         payload.components,
     )
+    report_dict = report.model_dump(mode="json")
+    log_sync_operation(
+        operation="ingest",
+        workspace_path=payload.workspace_path,
+        duration_ms=(time.perf_counter() - start_t) * 1000.0,
+        details={
+            "received": len(payload.components),
+            **{
+                k: len(v) if isinstance(v, list) else v
+                for k, v in report_dict.items()
+                if isinstance(v, (int, float, str, bool, list))
+            },
+        },
+    )
     return {
         "status": STATUS_OK,
-        **report.model_dump(mode="json"),
+        **report_dict,
     }
 
 
@@ -61,14 +78,29 @@ async def sync_workspace_context_nodes(
     request: Request,
 ) -> dict[str, Any]:
     """Выполняет 3-Way Hash сверку `(local_hash, db_hash, base_hash)` и AST-мерж узлов `.context/`."""
+    start_t = time.perf_counter()
     sync_engine = _get_sync_engine(request)
     report = await sync_engine.sync_context_nodes(
         payload.workspace_path,
         payload.nodes,
     )
+    report_dict = report.model_dump(mode="json")
+    log_sync_operation(
+        operation="context",
+        workspace_path=payload.workspace_path,
+        duration_ms=(time.perf_counter() - start_t) * 1000.0,
+        details={
+            "nodes_in": len(payload.nodes),
+            **{
+                k: len(v) if isinstance(v, list) else v
+                for k, v in report_dict.items()
+                if isinstance(v, (int, float, str, bool, list))
+            },
+        },
+    )
     return {
         "status": STATUS_OK,
-        **report.model_dump(mode="json"),
+        **report_dict,
     }
 
 

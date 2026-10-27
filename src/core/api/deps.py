@@ -357,10 +357,16 @@ async def _log_hook_event(
     db: PostgresDatabase | None,
     hook_input: CanonicalHookInput,
     decision_payload: dict[str, Any],
+    telemetry: dict[str, Any] | None = None,
 ) -> None:
     """Асинхронно фиксирует событие жизненного хука и принятый вердикт в таблице `hook_events`."""
     if db is None or not db.is_connected:
         return
+    persisted_decision = (
+        {"_telemetry": telemetry, **decision_payload}
+        if telemetry is not None
+        else decision_payload
+    )
     try:
         await db.pool.execute(
             """
@@ -372,10 +378,44 @@ async def _log_hook_event(
             hook_input.event_type.value,
             hook_input.tool_name or None,
             json.dumps(hook_input.raw_payload, ensure_ascii=False),
-            json.dumps(decision_payload, ensure_ascii=False),
+            json.dumps(persisted_decision, ensure_ascii=False),
         )
     except Exception as exc:  # noqa: BLE001
         logger.debug("Hook event audit log failed: %s", exc)
+
+
+async def _log_mcp_tool_event(
+    db: PostgresDatabase | None,
+    *,
+    tool_name: str,
+    workspace_path: str,
+    args_payload: dict[str, Any],
+    result_payload: dict[str, Any],
+    telemetry: dict[str, Any],
+) -> None:
+    """Асинхронно фиксирует вызов MCP-инструмента и его токен-телеметрию в таблице `hook_events`."""
+    if db is None or not db.is_connected:
+        return
+    persisted_decision: dict[str, Any] = {
+        "_telemetry": telemetry,
+        "summary": telemetry.get("summary_note", ""),
+        "ok": "error" not in result_payload,
+    }
+    try:
+        await db.pool.execute(
+            """
+            INSERT INTO hook_events (conversation_id, workspace_path, event_type, tool_name, payload, decision)
+            VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+            """,
+            "mcp",
+            workspace_path or None,
+            "mcp-tool",
+            tool_name,
+            json.dumps(args_payload, ensure_ascii=False),
+            json.dumps(persisted_decision, ensure_ascii=False),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("MCP tool event audit log failed: %s", exc)
 
 
 __all__ = [
@@ -387,6 +427,7 @@ __all__ = [
     "_get_sync_engine",
     "_get_visualizer_service",
     "_log_hook_event",
+    "_log_mcp_tool_event",
     "_resolve_project_context",
     "_resolve_project_stack_tags",
 ]

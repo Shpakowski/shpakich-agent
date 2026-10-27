@@ -34,3 +34,4 @@ governed_by:
 
 ## Логи контекста (AI Traces)
 - 2026-10-26: Реализован тонкий локальный транспорт жизненных хуков к `HookScriptDispatcher` в Docker (`src/cli/hooks/`): неблокирующее чтение JSON-контекста из `stdin` с таймаутом (`readStdinJson` в `stdin-reader.ts`), генерация Fail-Open ответов для 3 протокольных диалектов (`ANTIGRAVITY_PROTOJSON`, `CLAUDE_CODEX_V1`, `CURSOR_V1` в `dialect-translator.ts`) с локальной инъекцией `.context/index.md` при оффлайне ядра, а также проксирование 5 событий (`session-start`, `pre-tool-use`, `post-tool-use`, `pre-invocation`, `stop`) в `POST /api/hooks/{event}` с атомарным применением `_syncFiles` (`executeHookCommand` в `hook-executor.ts`).
+- 2026-10-27: В `src/cli/hooks/hook-executor.ts` добавлена функция `readTranscriptTailIfExists`, читающая последние 64 КБ файла `transcriptPath` на хосте и пробрасывающая `transcript_tail` в `enrichedPayload` для изолированного Docker-контейнера ядра.
