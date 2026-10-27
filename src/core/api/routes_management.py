@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -34,7 +35,7 @@ from src.core.decision import (
     DecisionRequest,
     DecisionResolution,
 )
-from src.core.enums import ComponentStatus
+from src.core.enums import EMBEDDING_PROVIDER_DIALECTS, ComponentStatus
 from src.core.harness import (
     MCP_HTTP_PATH,
     HarnessCompiler,
@@ -73,7 +74,7 @@ async def health_check(request: Request) -> dict[str, Any]:
         "postgres_connected": postgres_connected,
         "redis_connected": redis_connected,
         "decisions_api_configured": active_settings.decisions_api_configured,
-        "embedding_api_configured": active_settings.embedding_api_configured,
+        "embedding_api_configured": emb_client.is_configured,
         "antigravity_sdk_configured": active_settings.antigravity_sdk_configured,
         "embedding_client": emb_client.get_status(),
         "antigravity_sdk": agy_sdk.get_status(),
@@ -265,9 +266,26 @@ async def upsert_provider(
     payload: DecisionProviderConfig,
     request: Request,
 ) -> dict[str, Any]:
-    """Добавляет или полностью обновляет провайдера второго контура на лету."""
+    """Добавляет или полностью обновляет провайдера в рантайм-пуле (Tier 2 или Embeddings) на лету."""
     engine = _get_engine(request)
+    prev_emb = engine.provider_pool.get_enabled_embedding_providers()
+    prev_model = prev_emb[0].model if prev_emb else None
+
     view = await engine.provider_pool.upsert_provider(payload)
+    if payload.enabled and payload.dialect in EMBEDDING_PROVIDER_DIALECTS:
+        new_emb = engine.provider_pool.get_enabled_embedding_providers()
+        new_model = new_emb[0].model if new_emb else None
+        model_switched = bool(prev_model and new_model and prev_model != new_model)
+        db: PostgresDatabase | None = getattr(request.app.state, "db", None)
+        emb_client: EmbeddingClient | None = getattr(
+            request.app.state,
+            "embedding_client",
+            None,
+        )
+        if db is not None and emb_client is not None:
+            asyncio.create_task(
+                emb_client.backfill_missing_embeddings(db, force_reindex=model_switched)
+            )
     return {
         "status": "ok",
         "provider": view.model_dump(mode="json"),
@@ -282,6 +300,9 @@ async def patch_provider(
 ) -> dict[str, Any]:
     """Частично обновляет приоритет, ключ, статус включения или сбрасывает Circuit Breaker провайдера."""
     engine = _get_engine(request)
+    prev_emb = engine.provider_pool.get_enabled_embedding_providers()
+    prev_model = prev_emb[0].model if prev_emb else None
+
     view = await engine.provider_pool.update_provider(
         name,
         priority=payload.priority,
@@ -294,6 +315,20 @@ async def patch_provider(
     )
     if view is None:
         raise HTTPException(status_code=404, detail=f"Provider '{name}' not found")
+    if view.enabled and view.dialect in EMBEDDING_PROVIDER_DIALECTS:
+        new_emb = engine.provider_pool.get_enabled_embedding_providers()
+        new_model = new_emb[0].model if new_emb else None
+        model_switched = bool(prev_model and new_model and prev_model != new_model)
+        db: PostgresDatabase | None = getattr(request.app.state, "db", None)
+        emb_client: EmbeddingClient | None = getattr(
+            request.app.state,
+            "embedding_client",
+            None,
+        )
+        if db is not None and emb_client is not None:
+            asyncio.create_task(
+                emb_client.backfill_missing_embeddings(db, force_reindex=model_switched)
+            )
     return {
         "status": "ok",
         "provider": view.model_dump(mode="json"),

@@ -191,35 +191,43 @@ export function renderConsolidationView(params: ConsolidationViewModel): void {
  */
 export function renderProvidersView(params: ProvidersViewModel): void {
   const { version, runtime, providers } = params;
-  intro(renderCliBanner(version, runtime, "Tier 2 Decision Providers"));
+  intro(renderCliBanner(version, runtime, "Runtime Provider Pool (Decisions & Embeddings)"));
 
   if (providers.length === 0) {
     note(
       styleText(
         "dim",
-        "No Tier 2 providers registered. DecisionEngine runs in Tier 1 deterministic fallback mode.",
+        "No providers registered. Running on deterministic local rules and PostgreSQL FTS.",
       ),
       "Runtime Provider Pool (0 providers)",
     );
   } else {
     const lines = providers.map((prov) => {
+      const cooldownSec =
+        prov.cooldown_seconds_remaining ?? prov.cooldown_remaining_seconds ?? 0;
+      const isHealthy = prov.health_status === PROVIDER_HEALTH_STATES.HEALTHY;
       const statusBadge =
         !prov.enabled || prov.health_status === PROVIDER_HEALTH_STATES.DISABLED
           ? formatBadge("disabled", "muted", TUI_GLYPHS.OFFLINE)
-          : prov.health_status === PROVIDER_HEALTH_STATES.COOLDOWN
+          : !isHealthy
             ? formatBadge(
-                `cooldown (${prov.cooldown_remaining_seconds}s)`,
+                `${prov.health_status} (${cooldownSec}s)`,
                 "warning",
                 TUI_GLYPHS.PARTIAL,
               )
             : formatBadge("healthy", "success", TUI_GLYPHS.ONLINE);
+      const isEmbedding =
+        prov.dialect === "gemini_native" || prov.dialect === "openai_compatible";
+      const roleTag = isEmbedding
+        ? styleText("magenta", "[embedding]".padEnd(12))
+        : styleText("blue", "[decision]".padEnd(12));
       const prio = styleText("cyan", `[#${prov.priority}]`.padEnd(7));
-      const name = styleText(["bold", "white"], prov.name.padEnd(18));
+      const name = styleText(["bold", "white"], prov.name.padEnd(16));
       const dialectModel = styleText(
         "dim",
         `${prov.dialect} · ${prov.model} (${prov.base_url})`,
       );
-      return `${prio} ${name} ${statusBadge.padEnd(22)} ${dialectModel}`;
+      return `${prio} ${roleTag} ${name} ${statusBadge.padEnd(24)} ${dialectModel}`;
     });
     note(
       lines.join("\n"),
@@ -230,7 +238,7 @@ export function renderProvidersView(params: ProvidersViewModel): void {
   outro(
     styleText(
       "dim",
-      "Use `providers add <name> --dialect ... --url ... --model ... --key ...` to register a provider.",
+      "Use `providers add <name> --dialect gemini_native|openai_compatible|... --key <key> [--priority <p>]` to register.",
     ),
   );
 }

@@ -21,8 +21,8 @@ import {
 const CORE_ENGINEERING_MENTOR_SLUG = "core-engineering-mentor" as const;
 
 export const DEFAULT_OFFLINE_MCP_URL = "http://127.0.0.1:8787/mcp" as const;
-export const DEFAULT_MCP_SERVER_KEY = "mcp-coop-factory" as const;
-export const CODEX_MCP_SERVER_KEY = "mcp_coop_factory" as const;
+export const DEFAULT_MCP_SERVER_KEY = "harness-factory" as const;
+export const CODEX_MCP_SERVER_KEY = "harness_factory" as const;
 export const DEFAULT_HOOK_TIMEOUT_SECONDS = 15 as const;
 export const DEFAULT_PLUGIN_DISPLAY_NAME = "MCP-COOP Agentic Factory" as const;
 export const DEFAULT_PLUGIN_DESCRIPTION =

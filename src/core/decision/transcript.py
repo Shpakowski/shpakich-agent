@@ -46,6 +46,8 @@ NESTED_MESSAGE_KEYS: tuple[str, ...] = (
 PAYLOAD_PROMPT_KEYS: tuple[str, ...] = (
     "prompt",
     "user_prompt",
+    "lastUserInput",
+    "last_user_input",
 )
 TRANSCRIPT_TAIL_KEYS: tuple[str, ...] = (
     "transcript_tail",
@@ -451,6 +453,15 @@ def inspect_transcript_tail_detailed(
                         checkpoint_hash=compute_checkpoint_hash(summary_candidate),
                         step_idx=line_step_idx,
                         source_marker=source_marker,
+                    )
+                    last_checkpoint_line_idx = idx
+                elif checkpoint is None:
+                    fallback_marker = f"compact_step_{line_step_idx}_{idx}"
+                    checkpoint = CompactionCheckpoint(
+                        summary_text="",
+                        checkpoint_hash=compute_checkpoint_hash(fallback_marker),
+                        step_idx=line_step_idx,
+                        source_marker=COMPACT_STEP_TYPE,
                     )
                     last_checkpoint_line_idx = idx
 

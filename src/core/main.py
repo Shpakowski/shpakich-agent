@@ -101,7 +101,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state,
         "embedding_client",
         None,
-    ) or EmbeddingClient(settings)
+    ) or EmbeddingClient(settings, provider_pool=provider_pool)
+    embedding_client._provider_pool = provider_pool
     app.state.embedding_client = embedding_client
 
     antigravity_sdk: AntigravitySDKService = getattr(
@@ -162,13 +163,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("Redis is unavailable at startup (%s); running in degraded mode", exc)
 
         await provider_pool.seed_from_env(settings.openai_api_key)
+        await provider_pool.seed_embedding_from_env(
+            api_key=settings.embedding_api_key,
+            base_url=settings.embedding_api_url,
+            model=settings.embedding_model,
+            dialect=settings.embedding_dialect,
+            timeout_ms=settings.embedding_timeout_ms,
+        )
         logger.info(
             "[Startup] %s v%s ready │ postgres=%s redis=%s embeddings=%s log_format=%s",
             settings.app_name,
             settings.version,
             db.is_connected,
             redis_store.is_connected,
-            settings.embedding_api_configured,
+            embedding_client.is_configured,
             settings.log_format,
         )
         if mcp_gateway is not None:
@@ -192,9 +200,10 @@ def create_app() -> FastAPI:
         description="MCP-COOP Agentic Factory Core Engine (FastAPI + FastMCP)",
         lifespan=lifespan,
     )
-    embedding_client = EmbeddingClient(settings)
+    provider_pool = RuntimeProviderPool()
+    embedding_client = EmbeddingClient(settings, provider_pool=provider_pool)
     application.state.settings = settings
-    application.state.provider_pool = RuntimeProviderPool()
+    application.state.provider_pool = provider_pool
     application.state.embedding_client = embedding_client
     application.state.antigravity_sdk = AntigravitySDKService(settings)
     application.state.compaction_store = CompactionArchiveStore(

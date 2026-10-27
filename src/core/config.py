@@ -23,7 +23,7 @@ DEFAULT_MAX_CONSECUTIVE_CMD_FAILURES: int = 2
 
 # Базовые параметры тонкого HTTP-клиента векторных эмбеддингов (EmbeddingGemma 2 / Gemini / OpenAI)
 DEFAULT_EMBEDDING_API_URL: str = "https://generativelanguage.googleapis.com/v1beta"
-DEFAULT_EMBEDDING_MODEL: str = "models/gemini-embedding-001"
+DEFAULT_EMBEDDING_MODEL: str = "models/gemini-embedding-2"
 DEFAULT_EMBEDDING_DIMENSIONS: int = 768
 DEFAULT_EMBEDDING_TIMEOUT_MS: int = 1500
 

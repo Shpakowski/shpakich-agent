@@ -41,6 +41,7 @@ from src.core.decision import (
     DecisionEngine,
     DecisionRequest,
     DecisionResolution,
+    compute_checkpoint_hash,
     format_hook_response,
     inspect_transcript_tail_detailed,
     normalize_hook_payload,
@@ -54,7 +55,7 @@ from src.core.enums import (
     SessionMetaField,
     VerdictAction,
 )
-from src.core.harness import HarnessCompiler
+from src.core.harness import DynamicPromptRAGResult, HarnessCompiler
 from src.core.harness.seed import load_prompts_config
 from src.core.services import EmbeddingClient
 from src.core.telemetry import build_and_log_hook_telemetry
@@ -529,19 +530,20 @@ async def hook_pre_invocation(
                 rehydrated_msg = f"{rehydrated_msg}\n\n{active_ctx_block}"
             sys_parts.append(rehydrated_msg)
 
-            if checkpoint is not None and checkpoint.summary_text.strip():
-                try:
-                    await compaction_store.archive_compaction(
-                        conversation_id=hook_in.conversation_id,
-                        workspace_path=hook_in.workspace_path,
-                        agent_type=hook_in.agent_type,
-                        step_idx=checkpoint.step_idx,
-                        checkpoint_hash=checkpoint.checkpoint_hash,
-                        summary_text=checkpoint.summary_text,
-                        stack_tags=stack_tags,
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("Post-compaction archival failed: %s", exc)
+            if checkpoint is not None:
+                if checkpoint.summary_text.strip():
+                    try:
+                        await compaction_store.archive_compaction(
+                            conversation_id=hook_in.conversation_id,
+                            workspace_path=hook_in.workspace_path,
+                            agent_type=hook_in.agent_type,
+                            step_idx=checkpoint.step_idx,
+                            checkpoint_hash=checkpoint.checkpoint_hash,
+                            summary_text=checkpoint.summary_text,
+                            stack_tags=stack_tags,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("Post-compaction archival failed: %s", exc)
 
                 if redis_store is not None and redis_store.is_connected:
                     try:
@@ -554,6 +556,30 @@ async def hook_pre_invocation(
                         logger.debug("Compaction checkpoint Redis record failed: %s", exc)
 
     if active_prompt.strip():
+        prompt_hash = compute_checkpoint_hash(active_prompt)
+        prompt_already_enriched = False
+        already_injected_slugs: set[str] = set()
+        if redis_store is not None and redis_store.is_connected:
+            try:
+                meta = await redis_store.get_session_meta(hook_in.conversation_id)
+                raw_injected = str(
+                    meta.get(SessionMetaField.INJECTED_RAG_SLUGS.value) or ""
+                ).strip()
+                if raw_injected:
+                    already_injected_slugs = {
+                        s.strip().lower() for s in raw_injected.split(",") if s.strip()
+                    }
+                if meta.get(SessionMetaField.LAST_PRE_INVOCATION_HASH.value) == prompt_hash:
+                    prompt_already_enriched = True
+                else:
+                    await redis_store.set_session_meta_field(
+                        hook_in.conversation_id,
+                        SessionMetaField.LAST_PRE_INVOCATION_HASH,
+                        prompt_hash,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("PreInvocation prompt hash check failed: %s", exc)
+
         active_settings: CoreSettings = getattr(request.app.state, "settings", get_settings())
         embedding_client: EmbeddingClient = getattr(
             request.app.state,
@@ -573,7 +599,9 @@ async def hook_pre_invocation(
             compiler._redis = redis_store
 
         prompt_lower = active_prompt.lower()
-        is_plan_mode = any(kw in prompt_lower for kw in PLAN_KEYWORDS)
+        is_plan_mode = not prompt_already_enriched and any(
+            kw in prompt_lower for kw in PLAN_KEYWORDS
+        )
         if is_plan_mode:
             hints.append(
                 await _build_plan_best_practices_hint(
@@ -587,30 +615,56 @@ async def hook_pre_invocation(
                 )
             )
 
-        try:
-            rag_result = await compiler.select_dynamic_components_for_prompt(
-                active_prompt,
-                stack_tags,
-                profile_overrides=profile_overrides,
-                embedding_client=embedding_client,
-            )
-            rag_source = str(
-                getattr(rag_result, "source", "")
-                or (
-                    "pgvector+tsvector"
-                    if getattr(embedding_client, "is_configured", False)
-                    else "tsvector+trgm"
+        if not prompt_already_enriched:
+            try:
+                rag_result = await compiler.select_dynamic_components_for_prompt(
+                    active_prompt,
+                    stack_tags,
+                    profile_overrides=profile_overrides,
+                    embedding_client=embedding_client,
                 )
-            )
-            matched_rules = [(r.slug, r.relevance) for r in rag_result.rules]
-            matched_skills = [
-                (s.slug, s.relevance, s.is_full_blueprint) for s in rag_result.skills
-            ]
-            dynamic_hint = rag_result.format_ephemeral_hint()
-            if dynamic_hint:
-                hints.append(dynamic_hint)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("PreInvocation dynamic prompt RAG failed: %s", exc)
+                new_rules = tuple(
+                    r for r in rag_result.rules if r.slug.strip().lower() not in already_injected_slugs
+                )
+                new_skills = tuple(
+                    s for s in rag_result.skills if s.slug.strip().lower() not in already_injected_slugs
+                )
+                filtered_rag = DynamicPromptRAGResult(
+                    rules=new_rules,
+                    skills=new_skills,
+                    source=rag_result.source,
+                )
+                rag_source = str(
+                    getattr(filtered_rag, "source", "")
+                    or (
+                        "pgvector+tsvector"
+                        if getattr(embedding_client, "is_configured", False)
+                        else "tsvector+trgm"
+                    )
+                )
+                matched_rules = [(r.slug, r.relevance) for r in filtered_rag.rules]
+                matched_skills = [
+                    (s.slug, s.relevance, s.is_full_blueprint) for s in filtered_rag.skills
+                ]
+                dynamic_hint = filtered_rag.format_ephemeral_hint()
+                if dynamic_hint:
+                    hints.append(dynamic_hint)
+                    if redis_store is not None and redis_store.is_connected:
+                        updated_slugs = sorted(
+                            already_injected_slugs
+                            | {r.slug.strip().lower() for r in new_rules}
+                            | {s.slug.strip().lower() for s in new_skills}
+                        )
+                        try:
+                            await redis_store.set_session_meta_field(
+                                hook_in.conversation_id,
+                                SessionMetaField.INJECTED_RAG_SLUGS,
+                                ",".join(updated_slugs),
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            logger.debug("PreInvocation injected slugs update failed: %s", exc)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("PreInvocation dynamic prompt RAG failed: %s", exc)
 
     if redis_store is not None and redis_store.is_connected:
         try:

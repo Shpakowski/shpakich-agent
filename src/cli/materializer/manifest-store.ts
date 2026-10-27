@@ -26,7 +26,7 @@ export const HARNESS_MANIFEST_REL_PATH =
   WORKSPACE_RELATIVE_PATHS.HARNESS_MANIFEST;
 export const HARNESS_MANIFEST_SCHEMA_VERSION = "2026.2" as const;
 export const HARNESS_MANIFEST_VERSION = HARNESS_MANIFEST_SCHEMA_VERSION;
-export const FACTORY_HOOK_SIGNATURE = "mcp-coop-agentic-factory" as const;
+export const FACTORY_HOOK_SIGNATURE = "mcp-coop" as const;
 
 export const ALL_HOOK_EVENTS = [
   "session-start",

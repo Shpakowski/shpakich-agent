@@ -64,7 +64,6 @@ RAG_SOURCE_SEED_FALLBACK: str = "seed_fallback"
 DYNAMIC_RULE_TYPES: tuple[str, ...] = (
     ComponentType.SYSTEM_PROMPT.value,
     ComponentType.TOOL_GUIDANCE.value,
-    ComponentType.GUARDRAIL.value,
 )
 DYNAMIC_QUERY_TYPES: tuple[str, ...] = (*DYNAMIC_RULE_TYPES, ComponentType.SKILL.value)
 
@@ -76,7 +75,11 @@ STOP_TOKENS: frozenset[str] = frozenset(
 SELECT_DYNAMIC_COMPONENTS_VECTOR_SQL: str = """
 SELECT slug, component_type, title, description, content, metadata, score,
     (
-        CASE WHEN embedding IS NOT NULL THEN (1.0 - (embedding <=> $7::vector)) * 0.65 ELSE 0.0 END
+        CASE
+            WHEN embedding IS NOT NULL AND (1.0 - (embedding <=> $7::vector)) >= 0.59
+            THEN (1.0 - (embedding <=> $7::vector)) * 0.75
+            ELSE 0.0
+        END
         + ts_rank_cd(search_tsv, websearch_to_tsquery('simple', $8)) * 0.20
         + word_similarity($8, slug || ' ' || title || ' ' || description) * 0.15
     ) AS relevance
@@ -149,7 +152,17 @@ class DynamicPromptRAGResult(BaseModel):
         if not self.rules and not self.skills:
             return None
 
-        sections: list[str] = []
+        summary_parts: list[str] = []
+        if self.rules:
+            summary_parts.append(
+                "rules=[" + ", ".join(f"{r.slug} ({r.relevance:.2f})" for r in self.rules) + "]"
+            )
+        if self.skills:
+            summary_parts.append(
+                "skills=[" + ", ".join(f"{s.slug} ({s.relevance:.2f})" for s in self.skills) + "]"
+            )
+
+        sections: list[str] = [f"[MCP-COOP Context Enriched]: {', '.join(summary_parts)}"]
         if self.rules:
             rule_items = [
                 DYNAMIC_RULE_ITEM_TEMPLATE.format(
@@ -162,21 +175,12 @@ class DynamicPromptRAGResult(BaseModel):
             sections.append(f"{DYNAMIC_RULES_HEADER}\n" + "\n\n".join(rule_items))
 
         for skill in self.skills:
-            if skill.is_full_blueprint:
-                sections.append(
-                    SKILL_BLUEPRINT_TEMPLATE.format(
-                        slug=skill.slug,
-                        content=skill.content.strip(),
-                    )
+            sections.append(
+                SKILL_BLUEPRINT_TEMPLATE.format(
+                    slug=skill.slug,
+                    content=skill.content.strip(),
                 )
-            else:
-                clean_desc = " ".join(skill.description.strip().splitlines())
-                sections.append(
-                    SKILL_HINT_TEMPLATE.format(
-                        slug=skill.slug,
-                        description=clean_desc,
-                    )
-                )
+            )
 
         return "\n\n".join(sections) if sections else None
 
@@ -247,7 +251,7 @@ def _classify_candidates(
             matched_skills.append(
                 DynamicMatchedSkill(
                     slug=slug, title=title, description=description or title, content=content,
-                    relevance=round(relevance, 4), is_full_blueprint=relevance >= MIN_SKILL_BLUEPRINT_RELEVANCE,
+                    relevance=round(relevance, 4), is_full_blueprint=True,
                 )
             )
             seen_slugs.add(norm_slug)

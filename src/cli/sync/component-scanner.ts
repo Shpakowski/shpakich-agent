@@ -47,7 +47,7 @@ export const SYSTEM_BOOTSTRAP_SLUGS = [
   "inject-context-map",
   "track-file-changes",
   "enforce-context-sync",
-  "mcp-coop-factory",
+  "harness-factory",
 ] as const;
 
 const SYSTEM_BOOTSTRAP_SLUG_SET: ReadonlySet<string> = new Set(

@@ -17,9 +17,12 @@ export interface ProviderStatusItem {
   priority: number;
   timeout_ms: number;
   enabled: boolean;
-  has_api_key: boolean;
+  has_api_key?: boolean | undefined;
+  api_key_configured?: boolean | undefined;
   health_status: string;
-  cooldown_remaining_seconds: number;
+  cooldown_remaining_seconds?: number | undefined;
+  cooldown_seconds_remaining?: number | undefined;
+  circuit_reason?: string | null | undefined;
   last_error?: string | null | undefined;
 }
 

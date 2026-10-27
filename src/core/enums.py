@@ -112,6 +112,8 @@ class SessionMetaField(StrEnum):
     MODIFIED_FILES = "modified_files"
     LAST_COMPACT_HASH = "last_compact_hash"
     LAST_COMPACT_STEP = "last_compact_step"
+    LAST_PRE_INVOCATION_HASH = "last_pre_invocation_hash"
+    INJECTED_RAG_SLUGS = "injected_rag_slugs"
 
 
 class ScriptExecutionMode(StrEnum):
@@ -221,11 +223,29 @@ class DecisionQuestionType(StrEnum):
 
 
 class DecisionProviderDialect(StrEnum):
-    """Протокольные диалекты HTTP-провайдеров второго контура принятия решений (Tier 2 Pool)."""
+    """Протокольные диалекты HTTP-провайдеров в едином рантайм-пуле (Tier 2 Decisions + Embeddings)."""
 
     OPENAI_DECISIONS = "openai_decisions"
     JEV_CLEF = "jev_clef"
     OPENAI_CHAT_SCHEMA = "openai_chat_schema"
+    GEMINI_NATIVE = "gemini_native"
+    OPENAI_COMPATIBLE = "openai_compatible"
+
+
+DECISION_PROVIDER_DIALECTS: frozenset[DecisionProviderDialect] = frozenset(
+    {
+        DecisionProviderDialect.OPENAI_DECISIONS,
+        DecisionProviderDialect.JEV_CLEF,
+        DecisionProviderDialect.OPENAI_CHAT_SCHEMA,
+    }
+)
+
+EMBEDDING_PROVIDER_DIALECTS: frozenset[DecisionProviderDialect] = frozenset(
+    {
+        DecisionProviderDialect.GEMINI_NATIVE,
+        DecisionProviderDialect.OPENAI_COMPATIBLE,
+    }
+)
 
 
 class ProviderHealthStatus(StrEnum):
@@ -343,6 +363,8 @@ class VisualizerLayoutMode(StrEnum):
 
 
 __all__ = [
+    "DECISION_PROVIDER_DIALECTS",
+    "EMBEDDING_PROVIDER_DIALECTS",
     "AgentType",
     "AntigravityAgentRole",
     "AntigravityAuthMode",

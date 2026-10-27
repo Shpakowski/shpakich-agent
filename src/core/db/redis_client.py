@@ -214,6 +214,7 @@ class RedisSessionStore:
             SessionMetaField.WORKSPACE_PATH.value: workspace_path,
             SessionMetaField.RESOLVED_ERROR.value: RedisFlag.FALSE.value,
             SessionMetaField.REFLECTION_PROMPTED.value: RedisFlag.FALSE.value,
+            SessionMetaField.INJECTED_RAG_SLUGS.value: "",
         }
         async with self.client.pipeline(transaction=True) as pipe:
             pipe.hset(meta_key, mapping=mapping)
@@ -289,6 +290,7 @@ class RedisSessionStore:
         mapping: dict[FieldT, EncodableT] = {
             SessionMetaField.LAST_COMPACT_HASH.value: str(checkpoint_hash).strip(),
             SessionMetaField.LAST_COMPACT_STEP.value: str(safe_step),
+            SessionMetaField.INJECTED_RAG_SLUGS.value: "",
         }
         async with self.client.pipeline(transaction=True) as pipe:
             pipe.hset(meta_key, mapping=mapping)

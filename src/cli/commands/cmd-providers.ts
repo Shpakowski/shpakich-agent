@@ -22,6 +22,49 @@ export const DEFAULT_PROVIDER_URL = "https://api.openai.com/v1/decisions" as con
 export const DEFAULT_PROVIDER_MODEL = "gpt-6-luna" as const;
 export const DEFAULT_PROVIDER_PRIORITY = 100 as const;
 
+export const DIALECT_DEFAULTS: Readonly<
+  Record<
+    string,
+    {
+      readonly url: string;
+      readonly model: string;
+      readonly timeoutMs: number;
+      readonly kindLabel: string;
+    }
+  >
+> = {
+  openai_decisions: {
+    url: DEFAULT_PROVIDER_URL,
+    model: DEFAULT_PROVIDER_MODEL,
+    timeoutMs: 600,
+    kindLabel: "Tier 2 Decision",
+  },
+  jev_clef: {
+    url: DEFAULT_PROVIDER_URL,
+    model: DEFAULT_PROVIDER_MODEL,
+    timeoutMs: 600,
+    kindLabel: "Tier 2 Decision",
+  },
+  openai_chat_schema: {
+    url: "https://api.openai.com/v1/chat/completions",
+    model: "gpt-4o-mini",
+    timeoutMs: 1200,
+    kindLabel: "Tier 2 Decision",
+  },
+  gemini_native: {
+    url: "https://generativelanguage.googleapis.com/v1beta",
+    model: "models/gemini-embedding-2",
+    timeoutMs: 1500,
+    kindLabel: "Embedding",
+  },
+  openai_compatible: {
+    url: "https://api.openai.com/v1/embeddings",
+    model: "text-embedding-3-small",
+    timeoutMs: 1500,
+    kindLabel: "Embedding",
+  },
+};
+
 /**
  * Исполняет подкоманды `providers` (`list`, `add`, `enable`, `disable`,
  * `priority`, `remove`, `reset`) и рендерит результат мутации в TUI.
@@ -44,23 +87,33 @@ export async function handleProvidersCommand(
   }
 
   if (subcmd === "add") {
+    const resolvedDialect = (ctx.dialect ?? DEFAULT_PROVIDER_DIALECT)
+      .trim()
+      .toLowerCase();
+    const preset = DIALECT_DEFAULTS[resolvedDialect];
+    const resolvedUrl = ctx.url ?? preset?.url ?? DEFAULT_PROVIDER_URL;
+    const resolvedModel = ctx.model ?? preset?.model ?? DEFAULT_PROVIDER_MODEL;
+    const resolvedTimeoutMs = preset?.timeoutMs ?? 600;
+    const kindLabel = preset?.kindLabel ?? "Runtime";
+
     const created = await upsertTier2Provider({
       name: providerName,
-      dialect: ctx.dialect ?? DEFAULT_PROVIDER_DIALECT,
-      base_url: ctx.url ?? DEFAULT_PROVIDER_URL,
-      model: ctx.model ?? DEFAULT_PROVIDER_MODEL,
+      dialect: resolvedDialect,
+      base_url: resolvedUrl,
+      model: resolvedModel,
       api_key: ctx.key ?? "",
       priority: Number(ctx.priority ?? DEFAULT_PROVIDER_PRIORITY),
+      timeout_ms: resolvedTimeoutMs,
       enabled: true,
     });
     if (!created) {
-      throw new Error(`Failed to register Tier 2 provider "${providerName}".`);
+      throw new Error(`Failed to register provider "${providerName}".`);
     }
     renderQuickMutationResult(
       CLI_VERSION,
       runtime,
-      "Tier 2 Provider Registered",
-      `Provider "${providerName}" added/updated in RuntimeProviderPool.`,
+      `${kindLabel} Provider Registered`,
+      `Provider "${providerName}" (${resolvedDialect} · ${resolvedModel}) added/updated in RuntimeProviderPool.`,
     );
     return;
   }

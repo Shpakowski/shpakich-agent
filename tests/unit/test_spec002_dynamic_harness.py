@@ -248,13 +248,14 @@ async def test_contour1_minimal_bootstrap_and_progressive_disclosure() -> None:
     by_slug = {s.slug: s for s in rag_res.skills}
     assert "java" not in by_slug
     assert by_slug[STEWARD_SLUG].is_full_blueprint is True
-    assert by_slug["fastapi-pagination-skill"].is_full_blueprint is False
+    assert by_slug["fastapi-pagination-skill"].is_full_blueprint is True
 
     hint_text = rag_res.format_ephemeral_hint()
     assert hint_text is not None
+    assert "[MCP-COOP Context Enriched]:" in hint_text
     assert "[Dynamic Harness Rules]:" in hint_text
     assert f"[Active Skill Blueprint: {STEWARD_SLUG}]:" in hint_text
-    assert "[Available Skill Hint]: fastapi-pagination-skill —" in hint_text
+    assert "[Active Skill Blueprint: fastapi-pagination-skill]:" in hint_text
 
 
 @pytest.mark.asyncio
@@ -441,3 +442,70 @@ async def test_contour4_consolidator_and_fastapi_sync_endpoints() -> None:
         assert "detectors" in comp_by_slug["typescript"]
         assert comp_by_slug["java"]["has_content"] is False
         assert comp_by_slug["java"]["is_empty_stub"] is True
+
+
+@pytest.mark.asyncio
+async def test_embedding_provider_pool_cascading_failover() -> None:
+    """Проверяет каскадный фолбэк пула провайдеров эмбеддингов при исчерпании лимитов (HTTP 429)."""
+    from src.core.decision import DecisionProviderConfig, RuntimeProviderPool
+    from src.core.enums import DecisionProviderDialect, ProviderHealthStatus
+    from src.core.services import EmbeddingClient
+
+    call_log: list[str] = []
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        api_key = request.headers.get("x-goog-api-key", "")
+        call_log.append(api_key)
+        if api_key == "key-exhausted-1":
+            return httpx.Response(
+                429,
+                json={"error": {"message": "Resource has been exhausted (e.g. check quota)."}},
+            )
+        return httpx.Response(
+            200,
+            json={"embedding": {"values": [1.0, 0.0, 0.0]}},
+        )
+
+    transport = httpx.MockTransport(mock_handler)
+    pool = RuntimeProviderPool(transport=transport)
+    await pool.upsert_provider(
+        DecisionProviderConfig(
+            name="google-free-1",
+            dialect=DecisionProviderDialect.GEMINI_NATIVE,
+            base_url="https://generativelanguage.googleapis.com/v1beta",
+            model="models/gemini-embedding-2",
+            api_key="key-exhausted-1",
+            priority=10,
+            timeout_ms=1500,
+        )
+    )
+    await pool.upsert_provider(
+        DecisionProviderConfig(
+            name="google-free-2",
+            dialect=DecisionProviderDialect.GEMINI_NATIVE,
+            base_url="https://generativelanguage.googleapis.com/v1beta",
+            model="models/gemini-embedding-2",
+            api_key="key-healthy-2",
+            priority=20,
+            timeout_ms=1500,
+        )
+    )
+
+    emb_client = EmbeddingClient(transport=transport, provider_pool=pool)
+    assert emb_client.is_configured is True
+
+    vec1 = await emb_client.embed_text("Test query for cascading embedding pool")
+    assert vec1 is not None
+    assert len(vec1) == 768
+    assert vec1[0] == 1.0
+    assert call_log == ["key-exhausted-1", "key-healthy-2"]
+    assert emb_client.get_status()["last_provider_used"] == "google-free-2"
+
+    views = {v.name: v for v in await pool.list_providers()}
+    assert views["google-free-1"].health_status == ProviderHealthStatus.QUOTA_EXHAUSTED
+    assert views["google-free-2"].health_status == ProviderHealthStatus.HEALTHY
+
+    call_log.clear()
+    vec2 = await emb_client.embed_text("Second query goes straight to backup provider")
+    assert vec2 is not None
+    assert call_log == ["key-healthy-2"]

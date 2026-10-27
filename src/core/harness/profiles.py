@@ -29,7 +29,7 @@ _PLUGIN_SECTION: dict[str, Any] = (
     else {}
 )
 
-FACTORY_PLUGIN_ID: str = str(_PLUGIN_SECTION.get("id") or "mcp-coop-agentic-factory")
+FACTORY_PLUGIN_ID: str = str(_PLUGIN_SECTION.get("id") or "mcp-coop")
 DEFAULT_PLUGIN_DISPLAY_NAME: str = str(
     _PLUGIN_SECTION.get("display_name") or "MCP-COOP Agentic Factory"
 )
@@ -40,8 +40,8 @@ DEFAULT_PLUGIN_DESCRIPTION: str = str(
         "management, cross-session memory, and automated workflow guardrails."
     )
 )
-DEFAULT_MCP_SERVER_KEY: str = str(_PLUGIN_SECTION.get("mcp_server_key") or "mcp-coop-factory")
-CODEX_MCP_SERVER_KEY: str = str(_PLUGIN_SECTION.get("codex_mcp_server_key") or "mcp_coop_factory")
+DEFAULT_MCP_SERVER_KEY: str = str(_PLUGIN_SECTION.get("mcp_server_key") or "harness-factory")
+CODEX_MCP_SERVER_KEY: str = str(_PLUGIN_SECTION.get("codex_mcp_server_key") or "harness_factory")
 DEFAULT_RULES_GLOB: str = "*"
 DEFAULT_SKILL_FILENAME: str = "SKILL.md"
 DEFAULT_SCRIPTS_SUBDIR: str = "scripts"

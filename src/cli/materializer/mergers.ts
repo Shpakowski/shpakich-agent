@@ -15,7 +15,7 @@ export const MANAGED_MD_END = "<!-- MCP-COOP-FACTORY:END -->" as const;
 export const MANAGED_TOML_START = "# --- MCP-COOP-FACTORY:START ---" as const;
 export const MANAGED_TOML_END = "# --- MCP-COOP-FACTORY:END ---" as const;
 
-const CODEX_MCP_SERVER_KEY = "mcp_coop_factory" as const;
+const CODEX_MCP_SERVER_KEY = "harness_factory" as const;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

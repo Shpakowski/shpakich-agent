@@ -159,6 +159,7 @@ export function renderStatusCommand(
   const labelPg = styleText("dim", "PostgreSQL 18 ");
   const labelRedis = styleText("dim", "Redis 7 Store ");
   const labelTier2 = styleText("dim", "Tier 2 Pool   ");
+  const labelEmb = styleText("dim", "Embeddings    ");
   const labelHooks = styleText("dim", "Harness Sync ");
 
   const health = resolvedLiveStatus?.health;
@@ -179,18 +180,36 @@ export function renderStatusCommand(
     : formatBadge("standby", "info", TUI_GLYPHS.STANDBY);
 
   const providers = resolvedLiveStatus?.providers ?? null;
-  const activeProvidersCount = providers
+  const decisionProviders = providers
     ? providers.filter(
-        (p) =>
-          p.enabled && p.health_status === PROVIDER_HEALTH_STATES.HEALTHY,
-      ).length
-    : 0;
+        (p) => p.dialect !== "gemini_native" && p.dialect !== "openai_compatible",
+      )
+    : [];
+  const embeddingProviders = providers
+    ? providers.filter(
+        (p) => p.dialect === "gemini_native" || p.dialect === "openai_compatible",
+      )
+    : [];
+  const activeDecisionCount = decisionProviders.filter(
+    (p) => p.enabled && p.health_status === PROVIDER_HEALTH_STATES.HEALTHY,
+  ).length;
+  const activeEmbeddingCount = embeddingProviders.filter(
+    (p) => p.enabled && p.health_status === PROVIDER_HEALTH_STATES.HEALTHY,
+  ).length;
+
   const tier2Badge =
     providers !== null
-      ? activeProvidersCount > 0
-        ? `${formatBadge(`${activeProvidersCount} active`, "success", TUI_GLYPHS.ONLINE)} ${styleText("dim", `(${providers.length} registered)`)}`
+      ? activeDecisionCount > 0
+        ? `${formatBadge(`${activeDecisionCount} active`, "success", TUI_GLYPHS.ONLINE)} ${styleText("dim", `(${decisionProviders.length} registered)`)}`
         : `${formatBadge("0 active", "warning", TUI_GLYPHS.OFFLINE)} ${styleText("dim", "(Tier 1 deterministic fallback)")}`
       : `${formatBadge("offline", "muted", TUI_GLYPHS.OFFLINE)} ${styleText("dim", "(Tier 1 deterministic fallback)")}`;
+
+  const embBadge =
+    providers !== null
+      ? activeEmbeddingCount > 0 || health?.embedding_api_configured
+        ? `${formatBadge(activeEmbeddingCount > 0 ? `${activeEmbeddingCount} active` : "online (.env)", "success", TUI_GLYPHS.ONLINE)} ${styleText("dim", embeddingProviders.length > 0 ? `(${embeddingProviders.length} in pool · pgvector 768d)` : "(pgvector 768d)")}`
+        : `${formatBadge("0 active", "warning", TUI_GLYPHS.OFFLINE)} ${styleText("dim", "(PostgreSQL FTS fallback)")}`
+      : `${formatBadge("offline", "muted", TUI_GLYPHS.OFFLINE)} ${styleText("dim", "(PostgreSQL FTS fallback)")}`;
 
   const manifestSummary = resolvedLiveStatus?.manifest
     ? formatManifestOverridesSummary(resolvedLiveStatus.manifest)
@@ -204,6 +223,7 @@ export function renderStatusCommand(
       `${labelPg}  ${pgBadge} ${styleText("dim", `(pgvector:pg18 @ ${DEFAULT_CORE_HOST}:${DEFAULT_SERVICE_PORTS.POSTGRES})`)}`,
       `${labelRedis}  ${redisBadge} ${styleText("dim", `(redis:7-alpine @ ${DEFAULT_CORE_HOST}:${DEFAULT_SERVICE_PORTS.REDIS})`)}`,
       `${labelTier2}  ${tier2Badge}`,
+      `${labelEmb}  ${embBadge}`,
       `${labelHooks}  ${manifestSummary}`,
     ].join("\n"),
     `Global Factory Stack (~/${GLOBAL_FACTORY_DIR_NAME})`,

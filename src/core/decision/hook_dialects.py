@@ -174,7 +174,13 @@ def normalize_hook_payload(
     transcript_path_raw = raw_payload.get("transcriptPath") or raw_payload.get("transcript_path")
     transcript_path = str(transcript_path_raw).strip() if transcript_path_raw else None
 
-    prompt = str(raw_payload.get("prompt") or raw_payload.get("user_prompt") or "").strip()
+    prompt = str(
+        raw_payload.get("prompt")
+        or raw_payload.get("user_prompt")
+        or raw_payload.get("lastUserInput")
+        or raw_payload.get("last_user_input")
+        or ""
+    ).strip()
     term_reason = str(raw_payload.get("terminationReason") or raw_payload.get("reason") or "").strip()
     stop_active = bool(raw_payload.get("stop_hook_active") or raw_payload.get("stopHookActive") or False)
 

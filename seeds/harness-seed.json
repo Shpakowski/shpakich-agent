@@ -1,11 +1,11 @@
 {
   "version": "2026.2",
   "plugin": {
-    "id": "mcp-coop-agentic-factory",
+    "id": "mcp-coop",
     "display_name": "MCP-COOP Agentic Factory",
     "description": "Adaptive engineering workspace plugin providing project context management, cross-session memory, and automated workflow guardrails.",
-    "mcp_server_key": "mcp-coop-factory",
-    "codex_mcp_server_key": "mcp_coop_factory",
+    "mcp_server_key": "harness-factory",
+    "codex_mcp_server_key": "harness_factory",
     "default_agent": "antigravity"
   },
   "legacy_slugs_to_purge": [
@@ -22,7 +22,7 @@
       "agent_type": "antigravity",
       "display_name": "Google Antigravity (AGY 2.0 Plugin Bundle)",
       "rules": {
-        "relative_path": ".agents/plugins/mcp-coop-agentic-factory/rules/AGENTS.md",
+        "relative_path": ".agents/plugins/mcp-coop/rules/AGENTS.md",
         "rules_format": "plain_md",
         "write_strategy": "overwrite",
         "description": "Antigravity 2.0 plugin-scoped engineering rules and tool guidance",
@@ -31,19 +31,19 @@
         "scoped_paths": []
       },
       "skills": {
-        "directory_template": ".agents/plugins/mcp-coop-agentic-factory/skills/{slug}",
+        "directory_template": ".agents/plugins/mcp-coop/skills/{slug}",
         "skill_filename": "SKILL.md",
         "scripts_subdir": "scripts",
         "write_strategy": "overwrite"
       },
       "mcp": {
-        "relative_path": ".agents/plugins/mcp-coop-agentic-factory/mcp_config.json",
+        "relative_path": ".agents/plugins/mcp-coop/mcp_config.json",
         "config_format": "mcp_servers_url",
-        "server_key": "mcp-coop-factory",
+        "server_key": "harness-factory",
         "write_strategy": "overwrite"
       },
       "hooks": {
-        "relative_path": ".agents/plugins/mcp-coop-agentic-factory/hooks.json",
+        "relative_path": ".agents/plugins/mcp-coop/hooks.json",
         "dialect": "agy_protojson",
         "event_mapping": {
           "session-start": "SessionStart",
@@ -53,12 +53,12 @@
           "stop": "Stop"
         },
         "write_strategy": "overwrite",
-        "hook_group_name": "mcp-coop-agentic-factory",
+        "hook_group_name": "mcp-coop",
         "default_timeout_seconds": 15
       },
       "plugin_manifest": {
-        "relative_path": ".agents/plugins/mcp-coop-agentic-factory/plugin.json",
-        "name": "mcp-coop-agentic-factory",
+        "relative_path": ".agents/plugins/mcp-coop/plugin.json",
+        "name": "mcp-coop",
         "display_name": "MCP-COOP Agentic Factory",
         "description": "Adaptive engineering workspace plugin providing project context management, cross-session memory, and automated workflow guardrails.",
         "suggested_prompts": [],
@@ -93,7 +93,7 @@
       "mcp": {
         "relative_path": ".mcp.json",
         "config_format": "mcp_servers_http_typed",
-        "server_key": "mcp-coop-factory",
+        "server_key": "harness-factory",
         "write_strategy": "merge_json"
       },
       "hooks": {
@@ -107,7 +107,7 @@
           "stop": "Stop"
         },
         "write_strategy": "merge_json",
-        "hook_group_name": "mcp-coop-agentic-factory",
+        "hook_group_name": "mcp-coop",
         "default_timeout_seconds": 15
       },
       "plugin_manifest": null,
@@ -140,7 +140,7 @@
       "mcp": {
         "relative_path": ".cursor/mcp.json",
         "config_format": "mcp_servers_url",
-        "server_key": "mcp-coop-factory",
+        "server_key": "harness-factory",
         "write_strategy": "merge_json"
       },
       "hooks": {
@@ -154,7 +154,7 @@
           "stop": "stop"
         },
         "write_strategy": "merge_json",
-        "hook_group_name": "mcp-coop-agentic-factory",
+        "hook_group_name": "mcp-coop",
         "default_timeout_seconds": 15
       },
       "plugin_manifest": null,
@@ -187,7 +187,7 @@
       "mcp": {
         "relative_path": ".codex/config.toml",
         "config_format": "codex_toml",
-        "server_key": "mcp_coop_factory",
+        "server_key": "harness_factory",
         "write_strategy": "merge_toml"
       },
       "hooks": {
@@ -201,7 +201,7 @@
           "stop": "Stop"
         },
         "write_strategy": "merge_json",
-        "hook_group_name": "mcp-coop-agentic-factory",
+        "hook_group_name": "mcp-coop",
         "default_timeout_seconds": 15
       },
       "plugin_manifest": null,
@@ -233,7 +233,7 @@
       "mcp": {
         "relative_path": "opencode.json",
         "config_format": "opencode_remote",
-        "server_key": "mcp-coop-factory",
+        "server_key": "harness-factory",
         "write_strategy": "merge_json"
       },
       "hooks": {
@@ -247,7 +247,7 @@
           "stop": "session.idle"
         },
         "write_strategy": "overwrite",
-        "hook_group_name": "mcp-coop-agentic-factory",
+        "hook_group_name": "mcp-coop",
         "default_timeout_seconds": 15
       },
       "plugin_manifest": null,

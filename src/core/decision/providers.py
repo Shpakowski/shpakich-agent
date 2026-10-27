@@ -32,8 +32,11 @@ from src.core.decision.models import (
     ProviderPoolResult,
 )
 from src.core.enums import (
+    DECISION_PROVIDER_DIALECTS,
+    EMBEDDING_PROVIDER_DIALECTS,
     DecisionProviderDialect,
     DecisionQuestionType,
+    EmbeddingDialect,
     ProviderHealthStatus,
 )
 
@@ -42,6 +45,7 @@ logger = logging.getLogger("mcp_coop.core.decision.providers")
 DEFAULT_OPENAI_DECISIONS_NAME: str = "openai-luna"
 DEFAULT_OPENAI_DECISIONS_URL: str = "https://api.openai.com/v1/decisions"
 DEFAULT_OPENAI_DECISIONS_MODEL: str = "gpt-6-luna"
+DEFAULT_ENV_EMBEDDING_PROVIDER_NAME: str = "env-embedding"
 DEFAULT_PRIMARY_PRIORITY: int = 10
 
 QUOTA_COOLDOWN_SECONDS: int = 1800
@@ -131,6 +135,76 @@ class RuntimeProviderPool:
         )
         await self.upsert_provider(default_config)
 
+    async def seed_embedding_from_env(
+        self,
+        *,
+        api_key: str | None,
+        base_url: str,
+        model: str,
+        dialect: EmbeddingDialect = EmbeddingDialect.AUTO,
+        timeout_ms: int = 1500,
+    ) -> None:
+        """Регистрирует дефолтный провайдер эмбеддингов `env-embedding`, если задан ключ окружения и пул эмбеддингов пуст."""
+        clean_key = (api_key or "").strip()
+        if not clean_key:
+            return
+
+        has_any_embedding_provider = any(
+            cfg.dialect in EMBEDDING_PROVIDER_DIALECTS and bool(cfg.api_key.strip())
+            for cfg in self._providers.values()
+        )
+        if has_any_embedding_provider:
+            return
+
+        if dialect == EmbeddingDialect.GEMINI_NATIVE:
+            resolved_dialect = DecisionProviderDialect.GEMINI_NATIVE
+        elif dialect == EmbeddingDialect.OPENAI_COMPATIBLE:
+            resolved_dialect = DecisionProviderDialect.OPENAI_COMPATIBLE
+        elif "generativelanguage.googleapis.com" in base_url.lower() or ":embedcontent" in base_url.lower():
+            resolved_dialect = DecisionProviderDialect.GEMINI_NATIVE
+        else:
+            resolved_dialect = DecisionProviderDialect.OPENAI_COMPATIBLE
+
+        default_emb_config = DecisionProviderConfig(
+            name=DEFAULT_ENV_EMBEDDING_PROVIDER_NAME,
+            dialect=resolved_dialect,
+            base_url=base_url.strip(),
+            model=model.strip(),
+            api_key=clean_key,
+            priority=DEFAULT_PRIMARY_PRIORITY,
+            timeout_ms=max(100, min(10000, int(timeout_ms))),
+            enabled=True,
+        )
+        await self.upsert_provider(default_emb_config)
+
+    def get_enabled_embedding_providers(self) -> list[DecisionProviderConfig]:
+        """Возвращает отсортированный по `(priority, name)` список включённых провайдеров эмбеддингов."""
+        return sorted(
+            (
+                cfg
+                for cfg in self._providers.values()
+                if cfg.enabled and cfg.dialect in EMBEDDING_PROVIDER_DIALECTS
+            ),
+            key=lambda item: (item.priority, item.name),
+        )
+
+    async def get_active_circuit(
+        self,
+        provider_name: str,
+    ) -> tuple[ProviderHealthStatus, str, int] | None:
+        """Возвращает открытый Circuit Breaker провайдера (`status`, `reason`, `remaining_s`) или `None`."""
+        return await self._get_active_circuit(provider_name)
+
+    async def record_provider_failure(
+        self,
+        provider_name: str,
+        exc: Exception,
+    ) -> tuple[ProviderHealthStatus, int, str]:
+        """Классифицирует ошибку HTTP/сети и переводит провайдер в состояние кулдауна (Redis + память)."""
+        status, cooldown_s, reason = self._classify_failure(exc)
+        await self._trip_circuit(provider_name, status, reason, cooldown_s)
+        return status, cooldown_s, reason
+
     async def list_providers(self) -> list[DecisionProviderStatusView]:
         """Возвращает отсортированный по приоритету список провайдеров с актуальным статусом здоровья."""
         ordered = sorted(
@@ -216,7 +290,11 @@ class RuntimeProviderPool:
             return ProviderPoolResult(succeeded=True)
 
         enabled_providers = sorted(
-            (cfg for cfg in self._providers.values() if cfg.enabled),
+            (
+                cfg
+                for cfg in self._providers.values()
+                if cfg.enabled and cfg.dialect in DECISION_PROVIDER_DIALECTS
+            ),
             key=lambda item: (item.priority, item.name),
         )
         if not enabled_providers:
