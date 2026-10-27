@@ -6,13 +6,19 @@
  * и материализует артефакты адаптера (`syncWorkspaceArtifacts`).
  */
 
+import { intro } from "@clack/prompts";
 import path from "node:path";
 import process from "node:process";
 import { styleText } from "node:util";
 import { buildStackSignatureRulesFromComponents } from "../config/index.ts";
 import { fetchHarnessComponents } from "../core-api/endpoints-harness.ts";
 import { inspectWorkspace } from "../detector/index.ts";
-import { ensureGlobalStackUp } from "../docker/index.ts";
+import {
+  ensureGlobalStackUp,
+  isPostgresKnowledgeEmpty,
+  listAvailableBackupSnapshots,
+  restorePostgresSnapshotFile,
+} from "../docker/index.ts";
 import {
   HARNESS_MANIFEST_REL_PATH,
   loadProjectHarnessConfig,
@@ -20,6 +26,8 @@ import {
 import { syncWorkspaceArtifacts } from "../sync/index.ts";
 import {
   createPipelineProgress,
+  promptSnapshotRestoreSelection,
+  renderCliBanner,
   renderInitSummary,
   runInitWizard,
 } from "../tui/index.ts";
@@ -28,40 +36,31 @@ import { CLI_VERSION, type ParsedCliContext } from "./arg-parser.ts";
 /**
  * Выполняет полный DB-First цикл инициализации рабочего пространства проекта (`init`):
  * 1) синхронизирует `seeds/` и поднимает глобальный Docker-стек с PostgreSQL и Redis;
- * 2) запрашивает актуальный каталог компонентов и правил детекции стека из БД ядра;
- * 3) выполняет детекцию стека и запускает TUI-визард с индикацией активных скиллов и пустых заглушек;
- * 4) компилирует и материализует конфиги адаптеров, хуков и графа `.context/`.
+ * 2) при наличии слепков в `.backups/` предлагает первым шагом выбрать слепок для восстановления (или автоматически накатывает на пустую БД при `--yes`);
+ * 3) запрашивает актуальный каталог компонентов и правил детекции стека из БД ядра;
+ * 4) выполняет детекцию стека и запускает TUI-визард выбора агента и тегов;
+ * 5) компилирует и материализует конфиги адаптеров, хуков и графа `.context/`.
  */
 export async function handleInitCommand(
   ctx: ParsedCliContext,
   runtime: string,
 ): Promise<void> {
+  intro(renderCliBanner(CLI_VERSION, runtime, "Workspace Initialization"));
   const pipelineStart = Date.now();
   const progress = createPipelineProgress();
   progress.start(
     "[1/3] Syncing seeds & starting global Docker stack...",
   );
   const dockerResult = await ensureGlobalStackUp({
+    skipAutoRestore: true,
     onProgress: (phaseText: string) => progress.update(phaseText),
   });
-
-  progress.update(
-    "[2/3] Fetching live Harness catalog & detector signatures from PostgreSQL...",
-  );
-  const catalogRes = await fetchHarnessComponents({
-    workspacePath: process.cwd(),
-  });
-  const dbRules =
-    catalogRes.ok && catalogRes.data
-      ? buildStackSignatureRulesFromComponents(catalogRes.data.components)
-      : undefined;
-
   const bootElapsedSec = ((Date.now() - pipelineStart) / 1000).toFixed(1);
-  if (dockerResult.coreHealthy && catalogRes.ok) {
+  if (dockerResult.coreHealthy) {
     progress.stop(
       styleText(
         "green",
-        `✔ Global Docker stack & PostgreSQL catalog ready (${bootElapsedSec}s)`,
+        `✔ Global Docker stack & PostgreSQL online (${bootElapsedSec}s)`,
       ),
     );
   } else {
@@ -73,6 +72,61 @@ export async function handleInitCommand(
     );
   }
 
+  if (dockerResult.coreHealthy && dockerResult.health.postgres_connected) {
+    const snapshots = listAvailableBackupSnapshots(process.cwd());
+    if (snapshots.length > 0) {
+      const isEmpty = (await isPostgresKnowledgeEmpty()) === true;
+      const selection = await promptSnapshotRestoreSelection({
+        snapshots,
+        isDbEmpty: isEmpty,
+        yes: ctx.yes,
+      });
+      if (selection.action === "cancelled") {
+        process.exitCode = 1;
+        return;
+      }
+      if (selection.action === "restore") {
+        const restoreSpinner = createPipelineProgress();
+        restoreSpinner.start(
+          "Restoring selected PostgreSQL knowledge snapshot...",
+        );
+        const restoreRes = await restorePostgresSnapshotFile(
+          selection.snapshotPath,
+          {
+            onProgress: (msg) => restoreSpinner.update(msg),
+          },
+        );
+        if (restoreRes.restored) {
+          restoreSpinner.stop(
+            styleText("green", "✔ PostgreSQL knowledge snapshot restored"),
+          );
+        } else {
+          restoreSpinner.stop(
+            styleText(
+              "yellow",
+              `⚠ Snapshot restore failed: ${restoreRes.errorMessage ?? "unknown error"}`,
+            ),
+          );
+        }
+        dockerResult.restore = restoreRes;
+      } else {
+        dockerResult.restore = {
+          restored: false,
+          snapshotPath: snapshots[0]?.path,
+          skippedReason: selection.reason,
+        };
+      }
+    }
+  }
+
+  const catalogRes = await fetchHarnessComponents({
+    workspacePath: process.cwd(),
+  });
+  const dbRules =
+    catalogRes.ok && catalogRes.data
+      ? buildStackSignatureRulesFromComponents(catalogRes.data.components)
+      : undefined;
+
   const profile = inspectWorkspace(
     process.cwd(),
     ctx.agent,
@@ -83,6 +137,7 @@ export async function handleInitCommand(
     yes: ctx.yes,
     version: CLI_VERSION,
     runtime,
+    skipBanner: true,
     catalogComponents:
       catalogRes.ok && catalogRes.data
         ? catalogRes.data.components

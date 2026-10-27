@@ -5,6 +5,7 @@
  */
 
 import { intro, log, note, outro } from "@clack/prompts";
+import path from "node:path";
 import { styleText } from "node:util";
 import {
   CLI_VERSION,
@@ -250,6 +251,22 @@ export function renderUpCommand(
     `${styleText("dim", "PostgreSQL 18 ")}  ${pgBadge}`,
     `${styleText("dim", "Redis 7 Store ")}  ${redisBadge}`,
   ];
+  if (resolvedResult.restore) {
+    const restoreInfo = resolvedResult.restore;
+    const snapName = restoreInfo.snapshotPath
+      ? path.basename(restoreInfo.snapshotPath)
+      : "snapshot";
+    const restoreBadge = restoreInfo.restored
+      ? `${formatBadge("restored from .backups/", "success", TUI_GLYPHS.ONLINE)} ${styleText("cyan", `(${snapName})`)}`
+      : restoreInfo.skippedReason === "db_not_empty"
+        ? `${formatBadge("live DB preserved", "info", TUI_GLYPHS.ONLINE)} ${styleText("dim", `(skipped ${snapName})`)}`
+        : restoreInfo.skippedReason === "user_skipped"
+          ? `${formatBadge("skipped by user", "muted", TUI_GLYPHS.STANDBY)}`
+          : restoreInfo.skippedReason === "restore_failed"
+            ? `${formatBadge("restore failed", "warning", TUI_GLYPHS.WARN)} ${styleText("yellow", truncateText(restoreInfo.errorMessage ?? "", 56))}`
+            : `${formatBadge("default seed", "muted", TUI_GLYPHS.STANDBY)}`;
+    lines.push(`${styleText("dim", "Knowledge DB  ")}  ${restoreBadge}`);
+  }
   if (!resolvedResult.coreHealthy && resolvedResult.errorMessage) {
     lines.push(
       `${styleText("dim", "Diagnostics   ")}  ${styleText("yellow", truncateText(resolvedResult.errorMessage, DIAGNOSTICS_MAX_LENGTH))}`,
@@ -304,6 +321,20 @@ export function renderDownCommand(
 
   const targetPath =
     resolvedResult?.composeFilePath ?? DEFAULT_COMPOSE_PATH_HINT;
+  if (resolvedResult?.backup?.created && resolvedResult.backup.snapshotPath) {
+    const relSnapshot = path.join(
+      ".backups",
+      path.basename(resolvedResult.backup.snapshotPath),
+    );
+    const prunedCount = resolvedResult.backup.prunedPaths.length;
+    const prunedNote =
+      prunedCount > 0
+        ? ` ${styleText("dim", `(rotated ${String(prunedCount)} older snapshot(s), keeping latest 10)`)}`
+        : "";
+    log.step(
+      `${styleText("green", `Saved PostgreSQL knowledge snapshot → ${relSnapshot}`)}${prunedNote}`,
+    );
+  }
   log.step(styleText("yellow", `Stopping containers in ${targetPath}...`));
 
   if (resolvedResult && !resolvedResult.stopped) {

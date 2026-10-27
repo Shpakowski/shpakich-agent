@@ -11,6 +11,7 @@
 .gitignore
 .agents
 .context
+.backups
 
 # --- Хостовый слой CLI на Bun / TypeScript (Слой 1) ---
 # Согласно архитектурному инварианту, Bun CLI работает строго на хост-машине,

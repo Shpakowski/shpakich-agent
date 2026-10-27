@@ -27,6 +27,7 @@ import {
   SUPPORTED_AGENTS,
   type WorkspaceProfile,
 } from "../detector/index.ts";
+import type { BackupSnapshotMetadata } from "../docker/index.ts";
 import {
   DEFAULT_RUNTIME_LABEL,
   formatAgentSourceBadge,
@@ -36,8 +37,29 @@ import {
 } from "./theme.ts";
 
 const WIZARD_CANCEL_MESSAGE = "Initialization cancelled by user." as const;
+const SKIP_SNAPSHOT_RESTORE_VALUE = "__skip_snapshot_restore__" as const;
 const INIT_LOCKED_OUTRO_MESSAGE =
   `${TUI_GLYPHS.CHECK} Configuration locked — starting factory initialization pipeline...` as const;
+
+/**
+ * Параметры интерактивного меню выбора слепка БД из `.backups/` на первом шаге `init` / `up`.
+ */
+export interface SnapshotPromptOptions {
+  readonly snapshots: readonly BackupSnapshotMetadata[];
+  readonly isDbEmpty: boolean;
+  readonly yes?: boolean | undefined;
+}
+
+/**
+ * Результат выбора слепка БД пользователем.
+ */
+export type SnapshotSelectionOutcome =
+  | { readonly action: "restore"; readonly snapshotPath: string }
+  | {
+      readonly action: "skip";
+      readonly reason: "db_not_empty" | "user_skipped";
+    }
+  | { readonly action: "cancelled" };
 
 /**
  * Опции запуска интерактивного визарда инициализации проекта.
@@ -46,6 +68,7 @@ export interface WizardOptions {
   readonly yes?: boolean | undefined;
   readonly version?: string | undefined;
   readonly runtime?: string | undefined;
+  readonly skipBanner?: boolean | undefined;
   readonly catalogComponents?: readonly HarnessComponentItem[] | undefined;
 }
 
@@ -55,6 +78,106 @@ export type InitWizardOptions = WizardOptions;
  * Результат прохождения визарда: утверждённый профиль `WorkspaceProfile` либо `null` при отмене пользователем (`Ctrl+C` / `Esc`).
  */
 export type WizardSelectionResult = WorkspaceProfile | null;
+
+/**
+ * Отображает интерактивное меню выбора слепка знаний из `.backups/` (первый шаг перед выбором агента
+ * в `init` и при запуске `up`, если в `.backups/` найдены слепки).
+ * Если база пустая — по умолчанию предвыбран самый свежий слепок; если в базе уже есть данные —
+ * по умолчанию предвыбрано сохранение текущей БД без перезаписи.
+ */
+export async function promptSnapshotRestoreSelection(
+  options: SnapshotPromptOptions,
+): Promise<SnapshotSelectionOutcome> {
+  const { snapshots, isDbEmpty } = options;
+  if (snapshots.length === 0) {
+    return { action: "skip", reason: "user_skipped" };
+  }
+
+  const isNonInteractive = Boolean(options.yes) || !process.stdin.isTTY;
+  if (isNonInteractive) {
+    if (isDbEmpty && snapshots[0]) {
+      return { action: "restore", snapshotPath: snapshots[0].path };
+    }
+    return { action: "skip", reason: "db_not_empty" };
+  }
+
+  const selectOptions = isDbEmpty
+    ? [
+        ...snapshots.map((snap, idx) => ({
+          value: snap.path,
+          label:
+            idx === 0
+              ? `${styleText(["bold", "green"], snap.filename)} ${styleText("cyan", "(latest)")}`
+              : styleText("bold", snap.filename),
+          hint:
+            idx === 0
+              ? styleText(
+                  "green",
+                  `${TUI_GLYPHS.ONLINE} Recommended · DB is empty · ${snap.timestampLabel} · ${snap.formattedSize}`,
+                )
+              : styleText("dim", `${snap.timestampLabel} · ${snap.formattedSize}`),
+        })),
+        {
+          value: SKIP_SNAPSHOT_RESTORE_VALUE,
+          label: styleText(
+            "dim",
+            "Skip snapshot restore (start with fresh default seed)",
+          ),
+          hint: styleText("dim", "do not import .backups/ snapshot"),
+        },
+      ]
+    : [
+        {
+          value: SKIP_SNAPSHOT_RESTORE_VALUE,
+          label: styleText(
+            ["bold", "green"],
+            "Keep current live database (do not overwrite)",
+          ),
+          hint: styleText(
+            "green",
+            `${TUI_GLYPHS.ONLINE} Recommended · PostgreSQL already contains live data`,
+          ),
+        },
+        ...snapshots.map((snap, idx) => ({
+          value: snap.path,
+          label:
+            idx === 0
+              ? `${styleText("bold", snap.filename)} ${styleText("cyan", "(latest)")}`
+              : styleText("bold", snap.filename),
+          hint: styleText(
+            "yellow",
+            `restore & replace DB with snapshot from ${snap.timestampLabel} (${snap.formattedSize})`,
+          ),
+        })),
+      ];
+
+  const initialValue =
+    isDbEmpty && snapshots[0]
+      ? snapshots[0].path
+      : SKIP_SNAPSHOT_RESTORE_VALUE;
+
+  const selected = await select<string>({
+    message: isDbEmpty
+      ? `PostgreSQL knowledge DB is empty — select snapshot from .backups/ to restore (${String(snapshots.length)} available):`
+      : `Found ${String(snapshots.length)} knowledge snapshot(s) in .backups/ — select database state:`,
+    initialValue,
+    options: selectOptions,
+  });
+
+  if (isCancel(selected)) {
+    cancel(WIZARD_CANCEL_MESSAGE);
+    return { action: "cancelled" };
+  }
+
+  if (selected === SKIP_SNAPSHOT_RESTORE_VALUE) {
+    return {
+      action: "skip",
+      reason: isDbEmpty ? "user_skipped" : "db_not_empty",
+    };
+  }
+
+  return { action: "restore", snapshotPath: selected };
+}
 
 /**
  * Запускает интерактивный сценарий настройки проекта при вызове команды `init`.
@@ -69,7 +192,9 @@ export async function runInitWizard(
   const runtime = options.runtime ?? DEFAULT_RUNTIME_LABEL;
   const isNonInteractive = Boolean(options.yes) || !process.stdin.isTTY;
 
-  intro(renderCliBanner(version, runtime, "Workspace Initialization"));
+  if (!options.skipBanner) {
+    intro(renderCliBanner(version, runtime, "Workspace Initialization"));
+  }
 
   if (isNonInteractive) {
     note(

@@ -38,7 +38,10 @@ export {
 
 export {
   type InitWizardOptions,
+  promptSnapshotRestoreSelection,
   runInitWizard,
+  type SnapshotPromptOptions,
+  type SnapshotSelectionOutcome,
   type WizardOptions,
   type WizardSelectionResult,
 } from "./init-wizard.ts";

@@ -6,6 +6,7 @@
  */
 
 import { intro, log, note, outro } from "@clack/prompts";
+import path from "node:path";
 import { styleText } from "node:util";
 import type {
   ComponentIngestReportPayload,
@@ -101,6 +102,14 @@ export function renderInitSummary(params: InitSummaryViewModel): void {
     `${styleText("dim", "Hook Launcher ")}  ${launcherBadge}`,
     `${styleText("dim", "Materialized  ")}  ${filesSummary}`,
   ];
+  if (dockerResult.restore?.restored && dockerResult.restore.snapshotPath) {
+    const snapName = path.basename(dockerResult.restore.snapshotPath);
+    summaryLines.splice(
+      2,
+      0,
+      `${styleText("dim", "DB Snapshot   ")}  ${formatBadge("restored from .backups/", "success", TUI_GLYPHS.ONLINE)} ${styleText("cyan", `(${snapName})`)}`,
+    );
+  }
 
   if (!dockerResult.coreHealthy && dockerResult.errorMessage) {
     const cleanReason = truncateText(

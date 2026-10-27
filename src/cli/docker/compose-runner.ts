@@ -16,6 +16,12 @@ import {
   syncGlobalStackAssets,
 } from "./assets.ts";
 import {
+  type BackupSnapshotResult,
+  type RestoreSnapshotResult,
+  createPostgresBackupSnapshot,
+  restoreLatestPostgresBackupIfEmpty,
+} from "./db-backup.ts";
+import {
   type CoreHealthStatus,
   DEFAULT_WAIT_HEALTH_TIMEOUT_MS,
   DOCKER_BINARY,
@@ -38,6 +44,7 @@ export interface DockerBootstrapResult {
   startedContainers: boolean;
   coreHealthy: boolean;
   health: CoreHealthStatus;
+  restore?: RestoreSnapshotResult | undefined;
   errorMessage?: string | undefined;
 }
 
@@ -52,6 +59,7 @@ export type DockerStackResult = DockerBootstrapResult;
 export interface StopDockerStackResult {
   stopped: boolean;
   composeFilePath: string;
+  backup?: BackupSnapshotResult | undefined;
   errorMessage?: string | undefined;
 }
 
@@ -60,6 +68,7 @@ export interface StopDockerStackResult {
  */
 export interface EnsureGlobalStackOptions {
   skipDockerBuild?: boolean | undefined;
+  skipAutoRestore?: boolean | undefined;
   waitTimeoutMs?: number | undefined;
   onProgress?: ((phaseText: string) => void) | undefined;
 }
@@ -244,12 +253,19 @@ export async function ensureGlobalStackUp(
   const initialHealth = await checkCoreHealth(FAST_HEALTH_PROBE_TIMEOUT_MS);
   if (initialHealth.reachable && initialHealth.status === "ok") {
     options?.onProgress?.("[3/4] Core API is already online and healthy.");
+    const restore =
+      !options?.skipAutoRestore && initialHealth.postgres_connected
+        ? await restoreLatestPostgresBackupIfEmpty({
+            onProgress: options?.onProgress,
+          })
+        : undefined;
     return {
       stackDir,
       composeFilePath,
       startedContainers: false,
       coreHealthy: true,
       health: initialHealth,
+      ...(restore !== undefined ? { restore } : {}),
     };
   }
 
@@ -297,12 +313,21 @@ export async function ensureGlobalStackUp(
       : undefined,
   });
 
+  const coreHealthy = latestHealth.reachable && latestHealth.status === "ok";
+  const restore =
+    !options?.skipAutoRestore && coreHealthy && latestHealth.postgres_connected
+      ? await restoreLatestPostgresBackupIfEmpty({
+          onProgress: options?.onProgress,
+        })
+      : undefined;
+
   return {
     stackDir,
     composeFilePath,
     startedContainers: true,
-    coreHealthy: latestHealth.reachable && latestHealth.status === "ok",
+    coreHealthy,
     health: latestHealth,
+    ...(restore !== undefined ? { restore } : {}),
   };
 }
 
@@ -313,7 +338,7 @@ export const ensureGlobalDockerStack = ensureGlobalStackUp;
 
 /**
  * Асинхронно останавливает контейнеры глобального стека через `docker compose down`
- * с использованием `runSubprocess` без удаления именных томов БД.
+ * с предварительным созданием слепка знаний PostgreSQL в `.backups/`.
  */
 export async function stopGlobalDockerStack(): Promise<StopDockerStackResult> {
   const stackDir = getGlobalFactoryDir();
@@ -325,6 +350,8 @@ export async function stopGlobalDockerStack(): Promise<StopDockerStackResult> {
       errorMessage: `No global stack found at ${composeFilePath}`,
     };
   }
+
+  const backup = createPostgresBackupSnapshot();
 
   const result = await runSubprocess(
     DOCKER_BINARY,
@@ -339,6 +366,7 @@ export async function stopGlobalDockerStack(): Promise<StopDockerStackResult> {
     return {
       stopped: false,
       composeFilePath,
+      backup,
       errorMessage:
         result.stderr.trim() ||
         result.stdout.trim() ||
@@ -346,12 +374,12 @@ export async function stopGlobalDockerStack(): Promise<StopDockerStackResult> {
     };
   }
 
-  return { stopped: true, composeFilePath };
+  return { stopped: true, composeFilePath, backup };
 }
 
 /**
- * Останавливает контейнеры глобального стека через синхронный `docker compose down` без удаления
- * именных томов БД (сохранено для обратной совместимости с синхронными вызовами).
+ * Останавливает контейнеры глобального стека через синхронный `docker compose down`
+ * с предварительным созданием слепка знаний PostgreSQL в `.backups/`.
  */
 export function stopGlobalStackDown(): StopDockerStackResult {
   const stackDir = getGlobalFactoryDir();
@@ -364,6 +392,8 @@ export function stopGlobalStackDown(): StopDockerStackResult {
     };
   }
 
+  const backup = createPostgresBackupSnapshot();
+
   const proc = spawnSync(DOCKER_BINARY, ["compose", "-f", composeFilePath, "down"], {
     cwd: stackDir,
     encoding: "utf-8",
@@ -374,6 +404,7 @@ export function stopGlobalStackDown(): StopDockerStackResult {
     return {
       stopped: false,
       composeFilePath,
+      backup,
       errorMessage:
         proc.error?.message ||
         proc.stderr?.trim() ||
@@ -381,5 +412,5 @@ export function stopGlobalStackDown(): StopDockerStackResult {
     };
   }
 
-  return { stopped: true, composeFilePath };
+  return { stopped: true, composeFilePath, backup };
 }

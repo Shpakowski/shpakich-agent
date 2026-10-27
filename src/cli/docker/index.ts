@@ -62,3 +62,22 @@ export {
   stopGlobalDockerStack,
   stopGlobalStackDown,
 } from "./compose-runner.ts";
+
+export {
+  type BackupSnapshotMetadata,
+  type BackupSnapshotResult,
+  type RestoreSnapshotResult,
+  buildBackupFilename,
+  createPostgresBackupSnapshot,
+  findLatestBackupSnapshot,
+  formatBackupTimestamp,
+  formatSnapshotSize,
+  isPostgresKnowledgeEmpty,
+  listAvailableBackupSnapshots,
+  listBackupSnapshots,
+  parseSnapshotTimestampLabel,
+  pruneOldBackupSnapshots,
+  resolveWorkspaceBackupsDir,
+  restoreLatestPostgresBackupIfEmpty,
+  restorePostgresSnapshotFile,
+} from "./db-backup.ts";

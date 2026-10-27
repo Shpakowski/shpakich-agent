@@ -18,6 +18,8 @@ export const TIMEOUTS_MS = {
   STDIN_READ_MS: 250,
   DOCKER_COMPOSE_MS: 180_000,
   DOCKER_INSPECT_MS: 5_000,
+  PG_BACKUP_DUMP_MS: 30_000,
+  PG_BACKUP_RESTORE_MS: 45_000,
   BROWSER_OPEN_MS: 5_000,
 } as const;
 
@@ -25,6 +27,7 @@ export const LIMITS = {
   MAX_SCAN_DEPTH: 4,
   MAX_CUSTOM_COMPONENT_BYTES: 512 * 1024,
   MIN_TAG_LENGTH: 2,
+  MAX_BACKUP_SNAPSHOTS: 10,
 } as const;
 
 export const SLUG_TAG_STOP_WORDS: ReadonlySet<string> = new Set([

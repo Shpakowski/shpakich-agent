@@ -38,6 +38,7 @@ export const GLOBAL_FACTORY_RELATIVE_PATHS = {
 
 export const WORKSPACE_RELATIVE_PATHS = {
   AGENTS_DIR: ".agents",
+  BACKUPS_DIR: ".backups",
   MANIFEST_FILE: ".agents/.coop-manifest.json",
   HARNESS_MANIFEST: ".context/harness.json",
   SKILLS_DIR: ".agents/skills",
@@ -52,9 +53,17 @@ export const WORKSPACE_RELATIVE_PATHS = {
 } as const;
 
 export const DOCKER_CONTAINER_NAMES = {
-  CORE: "mcp-coop-core",
-  POSTGRES: "mcp-coop-postgres",
-  REDIS: "mcp-coop-redis",
+  CORE: "mcp-coop-agentic-factory-core",
+  POSTGRES: "mcp-coop-agentic-factory-postgres",
+  REDIS: "mcp-coop-agentic-factory-redis",
+} as const;
+
+export const POSTGRES_BACKUP_CONFIG = {
+  FILE_PREFIX: "mcp-coop-agentic-factory",
+  FILE_EXTENSION: ".sql",
+  DB_USER: "mcp_coop",
+  DB_NAME: "mcp_coop_agentic_factory",
+  EXCLUDED_TABLE_DATA: "hook_events",
 } as const;
 
 export const OFFLINE_ORCHESTRATOR_SLUG = "coop-orchestrator" as const;

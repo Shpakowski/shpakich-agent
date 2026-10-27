@@ -18,6 +18,9 @@ import {
 import {
   checkCoreHealth,
   ensureGlobalStackUp,
+  isPostgresKnowledgeEmpty,
+  listAvailableBackupSnapshots,
+  restorePostgresSnapshotFile,
   stopGlobalStackDown,
 } from "../docker/index.ts";
 import {
@@ -27,6 +30,7 @@ import {
 } from "../materializer/index.ts";
 import {
   createPipelineProgress,
+  promptSnapshotRestoreSelection,
   renderCliBanner,
   renderDownCommand,
   renderStatusCommand,
@@ -135,10 +139,11 @@ export async function handleUiCommand(
 
 /**
  * Поднимает глобальный Docker-стек (`~/.mcp-coop-agentic-factory/`) с отображением
- * прогресс-спиннера и ожидает готовности `/health` (`up`).
+ * прогресс-спиннера, ожидает готовности `/health` и при наличии слепков в `.backups/`
+ * предлагает выбрать слепок БД (или автоматически накатывает самый свежий слепок на пустую БД в `--yes`).
  */
 export async function handleUpCommand(
-  _ctx: ParsedCliContext,
+  ctx: ParsedCliContext,
   runtime: string,
 ): Promise<void> {
   intro(renderCliBanner(CLI_VERSION, runtime, "Global Stack Startup"));
@@ -148,6 +153,7 @@ export async function handleUpCommand(
     "[1/3] Syncing runtime & Docker stack files to ~/.mcp-coop-agentic-factory/...",
   );
   const dockerResult = await ensureGlobalStackUp({
+    skipAutoRestore: true,
     onProgress: (phaseText: string) => progress.update(phaseText),
   });
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
@@ -166,6 +172,54 @@ export async function handleUpCommand(
       ),
     );
   }
+
+  if (dockerResult.coreHealthy && dockerResult.health.postgres_connected) {
+    const snapshots = listAvailableBackupSnapshots(process.cwd());
+    if (snapshots.length > 0) {
+      const isEmpty = (await isPostgresKnowledgeEmpty()) === true;
+      const selection = await promptSnapshotRestoreSelection({
+        snapshots,
+        isDbEmpty: isEmpty,
+        yes: ctx.yes,
+      });
+      if (selection.action === "cancelled") {
+        process.exitCode = 1;
+        return;
+      }
+      if (selection.action === "restore") {
+        const restoreSpinner = createPipelineProgress();
+        restoreSpinner.start(
+          "Restoring selected PostgreSQL knowledge snapshot...",
+        );
+        const restoreRes = await restorePostgresSnapshotFile(
+          selection.snapshotPath,
+          {
+            onProgress: (msg) => restoreSpinner.update(msg),
+          },
+        );
+        if (restoreRes.restored) {
+          restoreSpinner.stop(
+            styleText("green", "✔ PostgreSQL knowledge snapshot restored"),
+          );
+        } else {
+          restoreSpinner.stop(
+            styleText(
+              "yellow",
+              `⚠ Snapshot restore failed: ${restoreRes.errorMessage ?? "unknown error"}`,
+            ),
+          );
+        }
+        dockerResult.restore = restoreRes;
+      } else {
+        dockerResult.restore = {
+          restored: false,
+          snapshotPath: snapshots[0]?.path,
+          skippedReason: selection.reason,
+        };
+      }
+    }
+  }
+
   renderUpCommand(CLI_VERSION, runtime, dockerResult);
 }
 
