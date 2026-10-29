@@ -13,7 +13,7 @@ updated_at: "2026-10-29"
 
 ## 0. Базовые документы и спецификации репозитория (Active)
 
-* [`seeds/harness-seed.json`](../seeds/harness-seed.json) — Единый декларативный источник истины (`Single Source of Truth`) для 5 профилей ИИ-агентов, 40 компонентов `Harness` (статических универсальных правил/скиллов, динамических семантических скиллов/правил и пустых технологических стабов) и сигнатур детектора стека (`detectors`).
+* [`seeds/harness-seed.json`](../seeds/harness-seed.json) — Единый декларативный источник истины (`Single Source of Truth`) для 5 профилей ИИ-агентов, 43 компонентов `Harness` (статических универсальных правил/скиллов, динамических семантических скиллов/правил, включая `swift`, `swiftui`, `macos`, и пустых технологических стабов) и сигнатур детектора стека (`detectors`).
 * [`seeds/prompts-config.json`](../seeds/prompts-config.json) — Единый реестр системных промптов компилятора, шаблонов сообщений хуков, подсказок Progressive Disclosure RAG, 5 доменов `DecisionEngine` Tier 2 и микро-агентов `AntigravitySDKService`.
 * [`README.md`](../README.md) — Краткий обзор проекта и команд CLI.
 * [`.context/schema.md`](./schema.md) — Формальная онтология и правила валидации графа (`Graph-as-Code`, классы `Module | Contract | Decision`, рёбра `nx.DiGraph`, инварианты `No Phantom Nodes` и `No Broken Links`).

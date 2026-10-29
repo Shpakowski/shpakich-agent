@@ -77,13 +77,18 @@ async def sync_workspace_context_nodes(
     payload: SyncContextRequest,
     request: Request,
 ) -> dict[str, Any]:
-    """Выполняет 3-Way Hash сверку `(local_hash, db_hash, base_hash)` и AST-мерж узлов `.context/`."""
+    """Выполняет 3-Way Hash сверку `(local_hash, db_hash, base_hash)`, AST-мерж узлов `.context/` и доиндексацию `embedding IS NULL`."""
     start_t = time.perf_counter()
+    db: PostgresDatabase | None = getattr(request.app.state, "db", None)
+    embedding_client = getattr(request.app.state, "embedding_client", None)
     sync_engine = _get_sync_engine(request)
     report = await sync_engine.sync_context_nodes(
         payload.workspace_path,
         payload.nodes,
     )
+    backfilled_embeddings = 0
+    if embedding_client is not None and db is not None and db.is_connected:
+        backfilled_embeddings = await embedding_client.backfill_missing_embeddings(db)
     report_dict = report.model_dump(mode="json")
     log_sync_operation(
         operation="context",
@@ -91,6 +96,7 @@ async def sync_workspace_context_nodes(
         duration_ms=(time.perf_counter() - start_t) * 1000.0,
         details={
             "nodes_in": len(payload.nodes),
+            "backfilled_embeddings": backfilled_embeddings,
             **{
                 k: len(v) if isinstance(v, list) else v
                 for k, v in report_dict.items()
@@ -100,6 +106,7 @@ async def sync_workspace_context_nodes(
     )
     return {
         "status": STATUS_OK,
+        "backfilled_embeddings": backfilled_embeddings,
         **report_dict,
     }
 

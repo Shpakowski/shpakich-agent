@@ -170,6 +170,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             dialect=settings.embedding_dialect,
             timeout_ms=settings.embedding_timeout_ms,
         )
+        if db.is_connected and embedding_client.is_configured:
+            await embedding_client.backfill_missing_embeddings(db)
         logger.info(
             "[Startup] %s v%s ready │ postgres=%s redis=%s embeddings=%s log_format=%s",
             settings.app_name,
