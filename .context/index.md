@@ -2,7 +2,7 @@
 type: GraphIndex
 version: "2026.2"
 project: mcp-coop-agentic-factory
-updated_at: "2026-10-28"
+updated_at: "2026-10-29"
 ---
 
 # Карта Контекстного Графа (`index.md`)
@@ -17,7 +17,7 @@ updated_at: "2026-10-28"
 * [`seeds/prompts-config.json`](../seeds/prompts-config.json) — Единый реестр системных промптов компилятора, шаблонов сообщений хуков, подсказок Progressive Disclosure RAG, 5 доменов `DecisionEngine` Tier 2 и микро-агентов `AntigravitySDKService`.
 * [`README.md`](../README.md) — Краткий обзор проекта и команд CLI.
 * [`.context/schema.md`](./schema.md) — Формальная онтология и правила валидации графа (`Graph-as-Code`, классы `Module | Contract | Decision`, рёбра `nx.DiGraph`, инварианты `No Phantom Nodes` и `No Broken Links`).
-* [`specs/`](../specs/) — Директория архитектурных спецификаций проекта (выполненные вехи в [`specs/001-mcp-coop-agentic-factory-v1.md`](../specs/001-mcp-coop-agentic-factory-v1.md), черновики [`specs/004-e2e-test-suite.md`](../specs/004-e2e-test-suite.md) и [`specs/005-smart-tag-routing-pre-invocation.md`](../specs/005-smart-tag-routing-pre-invocation.md)).
+* [`specs/`](../specs/) — Директория архитектурных спецификаций проекта (выполненные вехи в [`specs/001-mcp-coop-agentic-factory-v1.md`](../specs/001-mcp-coop-agentic-factory-v1.md), черновик [`specs/004-e2e-test-suite.md`](../specs/004-e2e-test-suite.md) и спецификация SEO-роутинга компонентов с двухступенчатым LLM-арбитром [`specs/005-smart-tag-routing-pre-invocation.md`](../specs/005-smart-tag-routing-pre-invocation.md)).
 
 ---
 
